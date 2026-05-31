@@ -11,13 +11,16 @@ type AssignMembershipBody = {
 };
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
+    { error: "Administrace členství není povolena." },
+    { status: 403 },
   );
 }
 
@@ -26,7 +29,10 @@ function mockAdminResponse() {
     return null;
   }
 
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
+  return NextResponse.json(
+    { error: "Pro tuto akci je potřeba role administrátora." },
+    { status: 403 },
+  );
 }
 
 function requiredString(value: unknown) {
@@ -53,7 +59,12 @@ function getAdminClientOrError() {
     return {
       supabase: null,
       response: NextResponse.json(
-        { error: error instanceof Error ? error.message : "Server configuration error." },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Nepodařilo se načíst serverové nastavení.",
+        },
         { status: 500 },
       ),
     };
@@ -80,34 +91,45 @@ export async function GET() {
     return response;
   }
 
-  const [playersResult, teamsResult, seasonsResult, teamSeasonsResult, membershipsResult] =
-    await Promise.all([
-      supabase
-        .from("players")
-        .select("id, display_name, nickname")
-        .is("deleted_at", null)
-        .order("display_name", { ascending: true }),
-      supabase
-        .from("teams")
-        .select("id, name")
-        .is("deleted_at", null)
-        .order("name", { ascending: true }),
-      supabase
-        .from("seasons")
-        .select("id, name, is_active, starts_on, ends_on")
-        .is("deleted_at", null)
-        .order("starts_on", { ascending: false }),
-      supabase
-        .from("team_seasons")
-        .select("id, team_id, season_id, display_name")
-        .is("deleted_at", null),
-      supabase
-        .from("team_memberships")
-        .select("id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at")
-        .is("deleted_at", null)
-        .order("left_on", { ascending: true, nullsFirst: true })
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    playersResult,
+    teamsResult,
+    seasonsResult,
+    teamSeasonsResult,
+    membershipsResult,
+  ] = await Promise.all([
+    supabase
+      .from("players")
+      .select("id, display_name, nickname")
+      .is("deleted_at", null)
+      .order("display_name", { ascending: true }),
+
+    supabase
+      .from("teams")
+      .select("id, name")
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
+
+    supabase
+      .from("seasons")
+      .select("id, name, is_active, starts_on, ends_on")
+      .is("deleted_at", null)
+      .order("starts_on", { ascending: false }),
+
+    supabase
+      .from("team_seasons")
+      .select("id, team_id, season_id, display_name")
+      .is("deleted_at", null),
+
+    supabase
+      .from("team_memberships")
+      .select(
+        "id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at",
+      )
+      .is("deleted_at", null)
+      .order("left_on", { ascending: true, nullsFirst: true })
+      .order("created_at", { ascending: false }),
+  ]);
 
   const error =
     playersResult.error ??
@@ -135,7 +157,10 @@ export async function POST(request: Request) {
     return guardResponse;
   }
 
-  const body = (await request.json().catch(() => null)) as AssignMembershipBody | null;
+  const body = (await request.json().catch(() => null)) as
+    | AssignMembershipBody
+    | null;
+
   const playerId = requiredString(body?.player_id);
   const teamId = requiredString(body?.team_id);
   const seasonId = requiredString(body?.season_id);
@@ -143,7 +168,9 @@ export async function POST(request: Request) {
 
   if (!playerId || !teamId || !seasonId) {
     return NextResponse.json(
-      { error: "player_id, team_id and season_id are required." },
+      {
+        error: "Vyberte hráče, tým a sezónu.",
+      },
       { status: 400 },
     );
   }
@@ -153,46 +180,58 @@ export async function POST(request: Request) {
     return response;
   }
 
-  const { data: existingTeamSeason, error: teamSeasonLookupError } = await supabase
-    .from("team_seasons")
-    .select("id, team_id, season_id")
-    .eq("team_id", teamId)
-    .eq("season_id", seasonId)
-    .is("deleted_at", null)
-    .maybeSingle();
+  const { data: existingTeamSeason, error: teamSeasonLookupError } =
+    await supabase
+      .from("team_seasons")
+      .select("id, team_id, season_id")
+      .eq("team_id", teamId)
+      .eq("season_id", seasonId)
+      .is("deleted_at", null)
+      .maybeSingle();
 
   if (teamSeasonLookupError) {
-    return NextResponse.json({ error: teamSeasonLookupError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: teamSeasonLookupError.message },
+      { status: 500 },
+    );
   }
 
   let teamSeasonId = existingTeamSeason?.id;
 
   if (!teamSeasonId) {
-    const { data: createdTeamSeason, error: createTeamSeasonError } = await supabase
-      .from("team_seasons")
-      .insert({
-        team_id: teamId,
-        season_id: seasonId,
-      })
-      .select("id")
-      .single();
+    const { data: createdTeamSeason, error: createTeamSeasonError } =
+      await supabase
+        .from("team_seasons")
+        .insert({
+          team_id: teamId,
+          season_id: seasonId,
+        })
+        .select("id")
+        .single();
 
     if (createTeamSeasonError) {
-      return NextResponse.json({ error: createTeamSeasonError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: createTeamSeasonError.message },
+        { status: 500 },
+      );
     }
 
     teamSeasonId = createdTeamSeason.id;
   }
 
-  const { data: activeMemberships, error: activeMembershipsError } = await supabase
-    .from("team_memberships")
-    .select("id, team_season_id")
-    .eq("player_id", playerId)
-    .is("left_on", null)
-    .is("deleted_at", null);
+  const { data: activeMemberships, error: activeMembershipsError } =
+    await supabase
+      .from("team_memberships")
+      .select("id, team_season_id")
+      .eq("player_id", playerId)
+      .is("left_on", null)
+      .is("deleted_at", null);
 
   if (activeMembershipsError) {
-    return NextResponse.json({ error: activeMembershipsError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: activeMembershipsError.message },
+      { status: 500 },
+    );
   }
 
   const currentMembership = activeMemberships?.find(
@@ -204,7 +243,9 @@ export async function POST(request: Request) {
       .from("team_memberships")
       .update({ member_role: memberRole })
       .eq("id", currentMembership.id)
-      .select("id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at")
+      .select(
+        "id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at",
+      )
       .single();
 
     if (error) {
@@ -223,7 +264,10 @@ export async function POST(request: Request) {
       .is("deleted_at", null);
 
     if (closeMembershipsError) {
-      return NextResponse.json({ error: closeMembershipsError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: closeMembershipsError.message },
+        { status: 500 },
+      );
     }
   }
 
@@ -236,11 +280,16 @@ export async function POST(request: Request) {
       member_role: memberRole,
       joined_on: todayIsoDate(),
     })
-    .select("id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at")
+    .select(
+      "id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at",
+    )
     .single();
 
   if (createMembershipError) {
-    return NextResponse.json({ error: createMembershipError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: createMembershipError.message },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ membership }, { status: 201 });
