@@ -26,7 +26,10 @@ type PrepareMatchSetupBody = {
   league_id?: unknown;
 };
 
-type MatchRequestBody = CreateMatchBody | SaveResultBody | PrepareMatchSetupBody;
+type MatchRequestBody =
+  | CreateMatchBody
+  | SaveResultBody
+  | PrepareMatchSetupBody;
 
 type LeagueGroup = {
   id: string;
@@ -50,13 +53,16 @@ type ExistingTeamSeason = {
 };
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Administrace zápasů je dostupná pouze ve vývojovém režimu." },
-    { status: 404 },
+    { error: "Administrace zápasů není povolena." },
+    { status: 403 },
   );
 }
 
@@ -149,49 +155,57 @@ export async function GET() {
     return response;
   }
 
-  const [seasons, leagues, groups, teams, teamSeasons, assignments, matches, results] =
-    await Promise.all([
-      supabase
-        .from("seasons")
-        .select("id, name, is_active, starts_on")
-        .is("deleted_at", null)
-        .order("starts_on", { ascending: false }),
-      supabase
-        .from("leagues")
-        .select("id, season_id, name")
-        .is("deleted_at", null)
-        .order("name", { ascending: true }),
-      supabase
-        .from("league_groups")
-        .select("id, league_id, name, sort_order")
-        .is("deleted_at", null)
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true }),
-      supabase
-        .from("teams")
-        .select("id, name")
-        .is("deleted_at", null)
-        .order("name", { ascending: true }),
-      supabase
-        .from("team_seasons")
-        .select("id, team_id, season_id, display_name")
-        .is("deleted_at", null),
-      supabase
-        .from("league_group_teams")
-        .select("id, league_group_id, team_season_id")
-        .is("deleted_at", null),
-      supabase
-        .from("matches")
-        .select(
-          "id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status, created_at",
-        )
-        .is("deleted_at", null)
-        .order("scheduled_at", { ascending: false }),
-      supabase
-        .from("match_results")
-        .select("id, match_id, home_points, away_points")
-        .is("deleted_at", null),
-    ]);
+  const [
+    seasons,
+    leagues,
+    groups,
+    teams,
+    teamSeasons,
+    assignments,
+    matches,
+    results,
+  ] = await Promise.all([
+    supabase
+      .from("seasons")
+      .select("id, name, is_active, starts_on")
+      .is("deleted_at", null)
+      .order("starts_on", { ascending: false }),
+    supabase
+      .from("leagues")
+      .select("id, season_id, name")
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
+    supabase
+      .from("league_groups")
+      .select("id, league_id, name, sort_order")
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
+    supabase
+      .from("teams")
+      .select("id, name")
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
+    supabase
+      .from("team_seasons")
+      .select("id, team_id, season_id, display_name")
+      .is("deleted_at", null),
+    supabase
+      .from("league_group_teams")
+      .select("id, league_group_id, team_season_id")
+      .is("deleted_at", null),
+    supabase
+      .from("matches")
+      .select(
+        "id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status, created_at",
+      )
+      .is("deleted_at", null)
+      .order("scheduled_at", { ascending: false }),
+    supabase
+      .from("match_results")
+      .select("id, match_id, home_points, away_points")
+      .is("deleted_at", null),
+  ]);
 
   const error =
     seasons.error ??
@@ -232,6 +246,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as MatchRequestBody | null;
   const { supabase, response } = getAdminClientOrError();
+
   if (response) {
     return response;
   }
@@ -458,9 +473,11 @@ export async function POST(request: Request) {
     const existingTeamSeasonByTeamId = new Map(
       (existingTeamSeasons ?? []).map((teamSeason) => [teamSeason.team_id, teamSeason]),
     );
+
     const missingTeams = teams.filter((team) => !existingTeamSeasonByTeamId.has(team.id));
 
     let createdTeamSeasons: ExistingTeamSeason[] = [];
+
     if (missingTeams.length > 0) {
       const { data, error } = await supabase
         .from("team_seasons")
@@ -481,6 +498,7 @@ export async function POST(request: Request) {
     }
 
     const allTeamSeasons = [...(existingTeamSeasons ?? []), ...createdTeamSeasons];
+
     const { data: existingAssignments, error: assignmentsLookupError } = await supabase
       .from("league_group_teams")
       .select("team_season_id")
@@ -494,6 +512,7 @@ export async function POST(request: Request) {
     const assignedTeamSeasonIds = new Set(
       (existingAssignments ?? []).map((assignment) => assignment.team_season_id),
     );
+
     const missingAssignments = allTeamSeasons.filter(
       (teamSeason) => !assignedTeamSeasonIds.has(teamSeason.id),
     );
@@ -572,13 +591,17 @@ export async function POST(request: Request) {
           .single();
 
     const { data, error } = await resultQuery;
+
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     const { error: matchUpdateError } = await supabase
       .from("matches")
-      .update({ status: "awaiting_confirmation", played_at: new Date().toISOString() })
+      .update({
+        status: "awaiting_confirmation",
+        played_at: new Date().toISOString(),
+      })
       .eq("id", matchId);
 
     if (matchUpdateError) {
@@ -592,7 +615,10 @@ export async function POST(request: Request) {
       .is("deleted_at", null);
 
     if (confirmationsDeleteError) {
-      return NextResponse.json({ error: confirmationsDeleteError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: confirmationsDeleteError.message },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ result: data });
