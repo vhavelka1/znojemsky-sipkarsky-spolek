@@ -1,8 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --brand-navy: #23364d;
+  --brand-blue: #6b8fbf;
+  --brand-light-blue: #b7cce8;
+  --brand-coral: #e07a7a;
+  --brand-soft-coral: #f3b6b6;
+  --brand-cream: #f7f4ee;
+  --brand-gold: #e2c57a;
+  --brand-white: #ffffff;
+  --brand-slate: #0f172a;
+  --background: var(--brand-cream);
+  --foreground: var(--brand-navy);
+  --admin-border: rgba(107, 143, 191, 0.24);
+  --admin-muted: #5b6b7f;
+  --admin-soft-blue: #eef5fc;
+  --admin-soft-coral: #fff1f1;
+  --admin-shadow: 0 14px 36px rgba(35, 54, 77, 0.055);
+  --admin-shadow-soft: 0 8px 22px rgba(35, 54, 77, 0.045);
 }
 
 @theme inline {
@@ -12,15 +27,254 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Inter, Arial, Helvetica, sans-serif;
+}
+
+.admin-shell {
+  background: #f8fbff;
+  color: var(--brand-navy);
+}
+
+.admin-content {
+  color: var(--brand-navy);
+}
+
+.admin-content .grid,
+.admin-content section {
+  min-width: 0;
+}
+
+.admin-sidebar {
+  border-bottom: 1px solid rgba(107, 143, 191, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.admin-sidebar-brand {
+  border-bottom: 1px solid rgba(107, 143, 191, 0.18);
+  padding: 1rem;
+}
+
+.admin-sidebar-nav {
+  padding: 0.8rem 1rem 1rem;
+}
+
+.admin-brand-link {
+  display: block;
+  border-radius: 12px;
+  padding: 0.15rem;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.admin-brand-link:hover {
+  background-color: var(--admin-soft-blue);
+  transform: translateY(-1px);
+}
+
+.admin-content .bg-white,
+.admin-card {
+  background-color: var(--brand-white) !important;
+  border: 1px solid rgba(107, 143, 191, 0.2);
+  box-shadow: var(--admin-shadow);
+}
+
+.admin-content .shadow-sm,
+.admin-card {
+  box-shadow: var(--admin-shadow) !important;
+}
+
+.admin-content .rounded-lg,
+.admin-card {
+  border-radius: 18px !important;
+}
+
+.admin-content > div > header > p {
+  color: var(--brand-coral) !important;
+  font-size: 0.75rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase;
+}
+
+.admin-content > div > header > h2 {
+  color: var(--brand-navy) !important;
+  font-weight: 800 !important;
+}
+
+.admin-content .text-slate-900 {
+  color: var(--brand-navy) !important;
+}
+
+.admin-content .text-slate-700,
+.admin-content .text-slate-600 {
+  color: #3b4d63 !important;
+}
+
+.admin-content .text-slate-500 {
+  color: var(--admin-muted) !important;
+}
+
+.admin-content .border-slate-200,
+.admin-content .border-slate-300 {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-content input,
+.admin-content select,
+.admin-content textarea {
+  background-color: #fbfdff;
+  border-color: var(--admin-border) !important;
+  color: var(--brand-navy);
+  border-radius: 12px !important;
+}
+
+.admin-content input:focus,
+.admin-content select:focus,
+.admin-content textarea:focus {
+  border-color: var(--brand-blue) !important;
+  box-shadow: 0 0 0 3px rgba(107, 143, 191, 0.18);
+}
+
+.admin-content button,
+.admin-content a {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.admin-content .bg-slate-900,
+.admin-content button.bg-slate-900 {
+  background: #23364d !important;
+  box-shadow: 0 10px 24px rgba(35, 54, 77, 0.14);
+}
+
+.admin-content .bg-slate-900:hover,
+.admin-content button.bg-slate-900:hover {
+  background: #1a2a3e !important;
+  transform: translateY(-1px);
+}
+
+.admin-content .bg-slate-100,
+.admin-content .bg-slate-50 {
+  background-color: var(--admin-soft-blue) !important;
+}
+
+.admin-content .font-bold {
+  color: var(--brand-navy);
+}
+
+.admin-content .text-red-700 {
+  color: #b83b4a !important;
+}
+
+.admin-content table thead {
+  background-color: var(--admin-soft-blue);
+}
+
+.admin-content table thead th {
+  padding-bottom: 0.9rem !important;
+  padding-top: 0.9rem !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 0.8125rem !important;
+  color: #52677f !important;
+}
+
+.admin-content table tbody td {
+  padding-bottom: 0.95rem !important;
+  padding-top: 0.95rem !important;
+}
+
+.admin-content table tbody tr:hover {
+  background-color: rgba(238, 245, 252, 0.58);
+}
+
+.admin-nav-link {
+  position: relative;
+  color: #3b4d63;
+  border: 1px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.admin-nav-link:hover {
+  background-color: var(--admin-soft-blue);
+  border-color: var(--admin-border);
+  border-left-color: rgba(226, 197, 122, 0.55);
+  color: var(--brand-navy);
+}
+
+.admin-nav-link-active {
+  position: relative;
+  background: var(--admin-soft-blue);
+  border: 1px solid rgba(107, 143, 191, 0.2);
+  border-left: 4px solid var(--brand-gold);
+  color: var(--brand-navy);
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--admin-border);
+  background-color: var(--admin-soft-blue);
+  color: var(--brand-navy);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+@media (min-width: 1024px) {
+  .admin-sidebar {
+    border-bottom: 0;
+    border-right: 1px solid rgba(107, 143, 191, 0.18);
+  }
+
+  .admin-sidebar-brand {
+    padding: 1.25rem 1rem;
+  }
+}
+
+@media (max-width: 1023px) {
+  .admin-content .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.public-feature-card {
+  display: block;
+  min-height: 220px;
+  border: 1px solid rgba(107, 143, 191, 0.2);
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 1.4rem;
+  box-shadow: 0 14px 36px rgba(35, 54, 77, 0.055);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.public-feature-card:hover {
+  border-color: rgba(107, 143, 191, 0.48);
+  box-shadow: 0 20px 42px rgba(35, 54, 77, 0.1);
+  transform: translateY(-3px);
+}
+
+.public-feature-card-blue {
+  border-top: 4px solid var(--brand-blue);
+}
+
+.public-feature-card-coral {
+  border-top: 4px solid var(--brand-coral);
+}
+
+.public-feature-card-gold {
+  border-top: 4px solid var(--brand-gold);
 }
