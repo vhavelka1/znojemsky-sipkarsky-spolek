@@ -4,13 +4,16 @@ import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 const mockRole = "admin";
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
+    { error: "Administrace není povolena." },
+    { status: 403 },
   );
 }
 
@@ -19,7 +22,10 @@ function mockAdminResponse() {
     return null;
   }
 
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
+  return NextResponse.json(
+    { error: "Pro tuto akci je potřeba role administrátora." },
+    { status: 403 },
+  );
 }
 
 function getAdminClientOrError() {
@@ -29,7 +35,12 @@ function getAdminClientOrError() {
     return {
       supabase: null,
       response: NextResponse.json(
-        { error: error instanceof Error ? error.message : "Server configuration error." },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Nepodařilo se načíst serverové nastavení.",
+        },
         { status: 500 },
       ),
     };
@@ -53,16 +64,26 @@ export async function GET() {
   }
 
   const [players, teams, seasons, memberships] = await Promise.all([
-    supabase.from("players").select("id", { count: "exact", head: true }).is("deleted_at", null),
-    supabase.from("teams").select("id", { count: "exact", head: true }).is("deleted_at", null),
-    supabase.from("seasons").select("id", { count: "exact", head: true }).is("deleted_at", null),
+    supabase
+      .from("players")
+      .select("id", { count: "exact", head: true })
+      .is("deleted_at", null),
+    supabase
+      .from("teams")
+      .select("id", { count: "exact", head: true })
+      .is("deleted_at", null),
+    supabase
+      .from("seasons")
+      .select("id", { count: "exact", head: true })
+      .is("deleted_at", null),
     supabase
       .from("team_memberships")
       .select("id", { count: "exact", head: true })
       .is("deleted_at", null),
   ]);
 
-  const error = players.error ?? teams.error ?? seasons.error ?? memberships.error;
+  const error =
+    players.error ?? teams.error ?? seasons.error ?? memberships.error;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
