@@ -29,7 +29,9 @@ const bundledLogoUrls: Record<string, string> = {
   "octopus-kridluvky": "/team-logos/oktopus-kridluvky.png",
 };
 
-function withBundledLogo<T extends { slug: string; logo_url?: string | null }>(team: T) {
+function withBundledLogo<T extends { slug: string; logo_url?: string | null }>(
+  team: T,
+) {
   return {
     ...team,
     logo_url: team.logo_url ?? bundledLogoUrls[team.slug] ?? null,
@@ -37,13 +39,16 @@ function withBundledLogo<T extends { slug: string; logo_url?: string | null }>(t
 }
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
+    { error: "Administrace týmů není povolena." },
+    { status: 403 },
   );
 }
 
@@ -52,7 +57,10 @@ function mockAdminResponse() {
     return null;
   }
 
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
+  return NextResponse.json(
+    { error: "Pro tuto akci je potřeba role administrátora." },
+    { status: 403 },
+  );
 }
 
 function requiredString(value: unknown) {
@@ -65,13 +73,14 @@ function requiredString(value: unknown) {
 }
 
 function createSlug(name: string) {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    || crypto.randomUUID();
+  return (
+    name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || crypto.randomUUID()
+  );
 }
 
 function getAdminClientOrError() {
@@ -81,22 +90,31 @@ function getAdminClientOrError() {
     return {
       supabase: null,
       response: NextResponse.json(
-        { error: error instanceof Error ? error.message : "Server configuration error." },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Nepodařilo se načíst serverové nastavení.",
+        },
         { status: 500 },
       ),
     };
   }
 }
 
-export async function GET() {
+function guardRequest() {
   const developmentResponse = developmentOnlyResponse();
   if (developmentResponse) {
     return developmentResponse;
   }
 
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
+  return mockAdminResponse();
+}
+
+export async function GET() {
+  const guardResponse = guardRequest();
+  if (guardResponse) {
+    return guardResponse;
   }
 
   const { supabase, response } = getAdminClientOrError();
@@ -121,7 +139,9 @@ export async function GET() {
       return NextResponse.json({ error: fallback.error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ teams: (fallback.data ?? []).map(withBundledLogo) });
+    return NextResponse.json({
+      teams: (fallback.data ?? []).map(withBundledLogo),
+    });
   }
 
   if (error) {
@@ -132,9 +152,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
+  const guardResponse = guardRequest();
+  if (guardResponse) {
+    return guardResponse;
   }
 
   const adminResponse = mockAdminResponse();
@@ -146,7 +166,10 @@ export async function POST(request: Request) {
   const name = requiredString(body?.name);
 
   if (!name) {
-    return NextResponse.json({ error: "name is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Název týmu je povinný." },
+      { status: 400 },
+    );
   }
 
   const { supabase, response } = getAdminClientOrError();
@@ -167,5 +190,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ team: data }, { status: 201 });
+  return NextResponse.json({ team: withBundledLogo(data) }, { status: 201 });
 }
