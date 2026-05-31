@@ -13,13 +13,16 @@ type CreateSeasonBody = {
 };
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
+    { error: "Administrace sezón není povolena." },
+    { status: 403 },
   );
 }
 
@@ -28,7 +31,10 @@ function mockAdminResponse() {
     return null;
   }
 
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
+  return NextResponse.json(
+    { error: "Pro tuto akci je potřeba role administrátora." },
+    { status: 403 },
+  );
 }
 
 function requiredString(value: unknown) {
@@ -55,13 +61,17 @@ function parseTransferWaitDays(value: unknown) {
   return null;
 }
 
-function validateDates(startsOn: string, endsOn: string, transferDeadlineOn: string) {
+function validateDates(
+  startsOn: string,
+  endsOn: string,
+  transferDeadlineOn: string,
+) {
   if (startsOn >= endsOn) {
-    return "Season start date must be before end date.";
+    return "Začátek sezóny musí být před koncem sezóny.";
   }
 
   if (transferDeadlineOn < startsOn || transferDeadlineOn > endsOn) {
-    return "Transfer deadline must be within season dates.";
+    return "Uzávěrka přestupů musí být v rozmezí sezóny.";
   }
 
   return null;
@@ -74,7 +84,12 @@ function getAdminClientOrError() {
     return {
       supabase: null,
       response: NextResponse.json(
-        { error: error instanceof Error ? error.message : "Server configuration error." },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Nepodařilo se načíst serverové nastavení.",
+        },
         { status: 500 },
       ),
     };
@@ -103,7 +118,9 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("seasons")
-    .select("id, name, starts_on, ends_on, transfer_deadline_on, transfer_wait_days, is_active, created_at, updated_at, deleted_at")
+    .select(
+      "id, name, starts_on, ends_on, transfer_deadline_on, transfer_wait_days, is_active, created_at, updated_at, deleted_at",
+    )
     .is("deleted_at", null)
     .order("starts_on", { ascending: false });
 
@@ -127,9 +144,18 @@ export async function POST(request: Request) {
   const transferDeadlineOn = requiredString(body?.transfer_deadline_on);
   const transferWaitDays = parseTransferWaitDays(body?.transfer_wait_days);
 
-  if (!name || !startsOn || !endsOn || !transferDeadlineOn || transferWaitDays === null) {
+  if (
+    !name ||
+    !startsOn ||
+    !endsOn ||
+    !transferDeadlineOn ||
+    transferWaitDays === null
+  ) {
     return NextResponse.json(
-      { error: "name, starts_on, ends_on, transfer_deadline_on and transfer_wait_days are required." },
+      {
+        error:
+          "Vyplňte název, začátek, konec, uzávěrku přestupů a čekací dobu přestupu.",
+      },
       { status: 400 },
     );
   }
@@ -166,7 +192,9 @@ export async function POST(request: Request) {
       transfer_wait_days: transferWaitDays,
       is_active: body?.is_active === true,
     })
-    .select("id, name, starts_on, ends_on, transfer_deadline_on, transfer_wait_days, is_active, created_at, updated_at, deleted_at")
+    .select(
+      "id, name, starts_on, ends_on, transfer_deadline_on, transfer_wait_days, is_active, created_at, updated_at, deleted_at",
+    )
     .single();
 
   if (error) {
