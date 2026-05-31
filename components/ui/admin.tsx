@@ -16,16 +16,16 @@ export function Button({
   variant = "primary",
 }: ButtonProps) {
   const variants = {
-    primary: "bg-[#23364D] text-white hover:-translate-y-px hover:bg-[#1A2A3E]",
+    primary: "bg-[#0B2F6B] text-white shadow-[0_10px_22px_rgba(11,47,107,0.18)] hover:-translate-y-px hover:bg-[#061A3A]",
     secondary:
-      "border border-[var(--admin-border)] bg-white text-[var(--brand-navy)] hover:bg-[var(--admin-soft-blue)]",
+      "border border-[var(--admin-border)] bg-white text-[var(--brand-navy)] hover:bg-[#F4F8FF]",
     danger:
-      "border border-red-200 bg-white text-red-700 hover:bg-red-50",
+      "border border-red-200 bg-white text-[#EF233C] hover:bg-red-50",
   };
 
   return (
     <button
-      className={`rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}
+      className={`rounded-2xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}
       disabled={disabled}
       onClick={onClick}
       type={type}
@@ -52,8 +52,8 @@ export function PageHeader({
 }) {
   return (
     <header>
-      <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--brand-coral)]">{eyebrow}</p>
-      <h2 className="mt-2 text-3xl font-extrabold text-[var(--brand-navy)]">{title}</h2>
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--brand-coral)]">{eyebrow}</p>
+      <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--brand-navy)]">{title}</h2>
       {description ? (
         <p className="mt-2 max-w-2xl text-sm text-[var(--admin-muted)]">{description}</p>
       ) : null}
@@ -72,7 +72,7 @@ export function AdminSection({
 }) {
   return (
     <Card>
-      <h3 className="text-lg font-semibold text-[var(--brand-navy)]">{title}</h3>
+      <h3 className="text-lg font-black text-[var(--brand-navy)]">{title}</h3>
       <div className="mt-5">{children}</div>
     </Card>
   );
@@ -92,7 +92,7 @@ export function StatCard({
   return (
     <Card>
       <p className="text-sm font-bold text-[var(--admin-muted)]">{label}</p>
-      <div className="mt-4 border-l-2 border-[var(--brand-gold)] pl-4 text-3xl font-extrabold text-[var(--brand-navy)]">{value}</div>
+      <div className="mt-4 border-l-4 border-[var(--brand-coral)] pl-4 text-3xl font-black text-[var(--brand-navy)]">{value}</div>
     </Card>
   );
 }

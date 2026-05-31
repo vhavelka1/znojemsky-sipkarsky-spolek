@@ -701,9 +701,17 @@ export default function AdminMatchSheetPage() {
 
   return (
     <div className="flex flex-col gap-7">
-      <div>
-        <Link className="text-sm font-semibold text-[var(--brand-blue)] hover:text-[var(--brand-navy)]" href="/admin/matches">Zpět na zápasy</Link>
-        <div className="mt-4"><PageHeader title="Zápis utkání" description="Oficiální zápis ZŠS podle jednotlivých bloků utkání." /></div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <Link className="text-sm font-semibold text-[var(--brand-blue)] hover:text-[var(--brand-navy)]" href="/admin/matches">Zpět na zápasy</Link>
+          <div className="mt-4"><PageHeader title="Zápis utkání" description="Oficiální zápis ZŠS podle jednotlivých bloků utkání." /></div>
+        </div>
+        <Link
+          className="inline-flex w-fit items-center justify-center rounded-2xl bg-[var(--brand-navy)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1A2A3E]"
+          href={`/admin/matches/${matchId}/scoreboard`}
+        >
+          Otevřít skórování
+        </Link>
       </div>
       <Card>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">

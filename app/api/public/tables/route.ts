@@ -1,11 +1,4 @@
-import { NextResponse } from "next/server";
-import {
-  homepageSettingKeys,
-  isMissingHomepageSettingsTable,
-  publicSettingsFromRows,
-  readLocalHomepageSettings,
-  SettingRow,
-} from "@/lib/homepageSettings";
+import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 type Season = {
@@ -47,6 +40,8 @@ type LeagueGroupTeam = {
   team_season_id: string;
 };
 
+type MatchStatus = "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
+
 type Match = {
   id: string;
   season_id: string;
@@ -56,7 +51,7 @@ type Match = {
   away_team_id: string;
   scheduled_at: string;
   played_at: string | null;
-  status: "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
+  status: MatchStatus;
 };
 
 type MatchResult = {
@@ -65,16 +60,27 @@ type MatchResult = {
   away_points: number;
 };
 
+type MatchGame = {
+  match_id: string;
+  home_legs: number;
+  away_legs: number;
+};
+
 type StandingRow = {
   teamSeasonId: string;
   teamName: string;
   logoUrl: string | null;
   played: number;
   wins: number;
-  draws: number;
+  overtimeWins: number;
+  overtimeLosses: number;
   losses: number;
-  scoreFor: number;
-  scoreAgainst: number;
+  matchScoreFor: number;
+  matchScoreAgainst: number;
+  matchScoreDiff: number;
+  legScoreFor: number;
+  legScoreAgainst: number;
+  legScoreDiff: number;
   points: number;
 };
 
@@ -100,64 +106,63 @@ const bundledLogoUrls: Record<string, string> = {
   "octopus-kridluvky": "/team-logos/oktopus-kridluvky.png",
 };
 
+function isFinishedMatch(match: Match) {
+  return (
+    match.status === "played" ||
+    match.status === "confirmed" ||
+    match.status === "awaiting_confirmation"
+  );
+}
+
 function compareStandingRows(first: StandingRow, second: StandingRow) {
   const pointsDiff = second.points - first.points;
   if (pointsDiff !== 0) return pointsDiff;
 
-  const scoreDiff =
-    second.scoreFor - second.scoreAgainst - (first.scoreFor - first.scoreAgainst);
-  if (scoreDiff !== 0) return scoreDiff;
+  const matchDiff = second.matchScoreDiff - first.matchScoreDiff;
+  if (matchDiff !== 0) return matchDiff;
 
-  const scoreForDiff = second.scoreFor - first.scoreFor;
-  return scoreForDiff !== 0 ? scoreForDiff : first.teamName.localeCompare(second.teamName, "cs");
+  const matchScoreForDiff = second.matchScoreFor - first.matchScoreFor;
+  if (matchScoreForDiff !== 0) return matchScoreForDiff;
+
+  const legDiff = second.legScoreDiff - first.legScoreDiff;
+  if (legDiff !== 0) return legDiff;
+
+  return first.teamName.localeCompare(second.teamName, "cs");
 }
 
-function isFinalMatch(match: Match) {
-  return match.status === "confirmed" || match.status === "played";
+function createEmptyRow(teamSeasonId: string, teamName: string, logoUrl: string | null): StandingRow {
+  return {
+    teamSeasonId,
+    teamName,
+    logoUrl,
+    played: 0,
+    wins: 0,
+    overtimeWins: 0,
+    overtimeLosses: 0,
+    losses: 0,
+    matchScoreFor: 0,
+    matchScoreAgainst: 0,
+    matchScoreDiff: 0,
+    legScoreFor: 0,
+    legScoreAgainst: 0,
+    legScoreDiff: 0,
+    points: 0,
+  };
 }
 
-async function loadHomepageSettings(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-) {
-  const { data, error } = await supabase
-    .from("app_settings")
-    .select("key, value")
-    .in("key", Object.values(homepageSettingKeys))
-    .is("deleted_at", null)
-    .returns<SettingRow[]>();
-
-  if (error) {
-    if (isMissingHomepageSettingsTable(error.message)) {
-      return readLocalHomepageSettings();
-    }
-
-    return readLocalHomepageSettings();
-  }
-
-  return publicSettingsFromRows(data);
-}
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = createSupabaseAdminClient();
-    const homepageSettings = await loadHomepageSettings(supabase);
     const [
-      players,
-      teamsWithLogos,
       seasons,
       leagues,
       groups,
       teamSeasons,
       assignments,
+      teamsWithLogos,
       matches,
       results,
     ] = await Promise.all([
-      supabase.from("players").select("id", { count: "exact", head: true }).is("deleted_at", null),
-      supabase
-        .from("teams")
-        .select("id, name, slug, logo_url")
-        .is("deleted_at", null)
-        .order("name", { ascending: true }),
       supabase
         .from("seasons")
         .select("id, name, is_active, starts_on")
@@ -187,6 +192,11 @@ export async function GET() {
         .is("deleted_at", null)
         .returns<LeagueGroupTeam[]>(),
       supabase
+        .from("teams")
+        .select("id, name, slug, logo_url")
+        .is("deleted_at", null)
+        .order("name", { ascending: true }),
+      supabase
         .from("matches")
         .select("id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status")
         .is("deleted_at", null)
@@ -212,23 +222,42 @@ export async function GET() {
     }
 
     const error =
-      players.error ??
-      teamsError ??
       seasons.error ??
       leagues.error ??
       groups.error ??
       teamSeasons.error ??
       assignments.error ??
+      teamsError ??
       matches.error ??
       results.error;
 
     if (error) {
-      return NextResponse.json({ error: "Veřejný přehled se nepodařilo načíst." }, { status: 500 });
+      return NextResponse.json(
+        { error: "Veřejné tabulky se nepodařilo načíst." },
+        { status: 500 },
+      );
     }
 
-    const activeSeason = (seasons.data ?? []).find((season) => season.is_active) ?? seasons.data?.[0] ?? null;
-    const activeLeague = (leagues.data ?? []).find((league) => league.season_id === activeSeason?.id) ?? null;
-    const activeGroup = (groups.data ?? []).find((group) => group.league_id === activeLeague?.id) ?? null;
+    const activeSeason =
+      (seasons.data ?? []).find((season) => season.is_active) ?? seasons.data?.[0] ?? null;
+    const selectedSeasonId = request.nextUrl.searchParams.get("season_id") || activeSeason?.id || "";
+    const selectedLeague =
+      (leagues.data ?? []).find(
+        (league) =>
+          league.id === request.nextUrl.searchParams.get("league_id") &&
+          league.season_id === selectedSeasonId,
+      ) ??
+      (leagues.data ?? []).find((league) => league.season_id === selectedSeasonId) ??
+      null;
+    const selectedGroup =
+      (groups.data ?? []).find(
+        (group) =>
+          group.id === request.nextUrl.searchParams.get("group_id") &&
+          group.league_id === selectedLeague?.id,
+      ) ??
+      (groups.data ?? []).find((group) => group.league_id === selectedLeague?.id) ??
+      null;
+
     const teamRows = (teams ?? []).map((team) => ({
       ...team,
       logo_url: team.logo_url ?? bundledLogoUrls[team.slug] ?? null,
@@ -236,6 +265,43 @@ export async function GET() {
     const teamById = new Map(teamRows.map((team) => [team.id, team]));
     const teamSeasonById = new Map((teamSeasons.data ?? []).map((teamSeason) => [teamSeason.id, teamSeason]));
     const resultByMatchId = new Map((results.data ?? []).map((result) => [result.match_id, result]));
+    const selectedGroupTeamSeasonIds = new Set(
+      (assignments.data ?? [])
+        .filter((assignment) => assignment.league_group_id === selectedGroup?.id)
+        .map((assignment) => assignment.team_season_id),
+    );
+
+    const matchIdsForLegs = (matches.data ?? [])
+      .filter(
+        (match) =>
+          isFinishedMatch(match) &&
+          match.season_id === selectedSeasonId &&
+          match.league_id === selectedLeague?.id &&
+          match.group_id === selectedGroup?.id &&
+          resultByMatchId.has(match.id),
+      )
+      .map((match) => match.id);
+
+    let matchGames: MatchGame[] = [];
+    if (matchIdsForLegs.length > 0) {
+      const gamesResult = await supabase
+        .from("match_games")
+        .select("match_id, home_legs, away_legs")
+        .in("match_id", matchIdsForLegs)
+        .is("deleted_at", null)
+        .returns<MatchGame[]>();
+
+      matchGames = gamesResult.error ? [] : gamesResult.data ?? [];
+    }
+
+    const legScoreByMatchId = new Map<string, { home: number; away: number }>();
+    matchGames.forEach((game) => {
+      const current = legScoreByMatchId.get(game.match_id) ?? { home: 0, away: 0 };
+      current.home += game.home_legs;
+      current.away += game.away_legs;
+      legScoreByMatchId.set(game.match_id, current);
+    });
+
     const teamSeasonLabel = (teamSeasonId: string) => {
       const teamSeason = teamSeasonById.get(teamSeasonId);
       const team = teamSeason ? teamById.get(teamSeason.team_id) : null;
@@ -245,102 +311,74 @@ export async function GET() {
       };
     };
 
-    const finalMatches = (matches.data ?? []).filter(isFinalMatch);
-    const matchPreview = (match: Match) => {
-      const result = resultByMatchId.get(match.id);
-      return {
-        id: match.id,
-        scheduledAt: match.scheduled_at,
-        playedAt: match.played_at,
-        homeTeam: teamSeasonLabel(match.home_team_id),
-        awayTeam: teamSeasonLabel(match.away_team_id),
-        result: result ? { homePoints: result.home_points, awayPoints: result.away_points } : null,
-      };
-    };
-
-    const latestResults = finalMatches
-      .filter((match) => resultByMatchId.has(match.id))
-      .sort((first, second) =>
-        new Date(second.played_at ?? second.scheduled_at).getTime() -
-        new Date(first.played_at ?? first.scheduled_at).getTime(),
-      )
-      .slice(0, 5)
-      .map(matchPreview);
-    const now = Date.now();
-    const upcomingMatches = (matches.data ?? [])
-      .filter((match) => match.status === "scheduled" && new Date(match.scheduled_at).getTime() >= now)
-      .sort((first, second) => new Date(first.scheduled_at).getTime() - new Date(second.scheduled_at).getTime())
-      .slice(0, 5)
-      .map(matchPreview);
-
-    const standings = new Map<string, StandingRow>();
-    const activeTeamSeasonIds = new Set(
-      (assignments.data ?? [])
-        .filter((assignment) => assignment.league_group_id === activeGroup?.id)
-        .map((assignment) => assignment.team_season_id),
-    );
-    activeTeamSeasonIds.forEach((teamSeasonId) => {
+    const rows = new Map<string, StandingRow>();
+    selectedGroupTeamSeasonIds.forEach((teamSeasonId) => {
       const team = teamSeasonLabel(teamSeasonId);
-      standings.set(teamSeasonId, {
-        teamSeasonId,
-        teamName: team.name,
-        logoUrl: team.logoUrl,
-        played: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-        scoreFor: 0,
-        scoreAgainst: 0,
-        points: 0,
-      });
+      rows.set(teamSeasonId, createEmptyRow(teamSeasonId, team.name, team.logoUrl));
     });
-    finalMatches
-      .filter((match) => match.group_id === activeGroup?.id)
+
+    (matches.data ?? [])
+      .filter(
+        (match) =>
+          isFinishedMatch(match) &&
+          match.season_id === selectedSeasonId &&
+          match.league_id === selectedLeague?.id &&
+          match.group_id === selectedGroup?.id,
+      )
       .forEach((match) => {
         const result = resultByMatchId.get(match.id);
-        const home = standings.get(match.home_team_id);
-        const away = standings.get(match.away_team_id);
+        const home = rows.get(match.home_team_id);
+        const away = rows.get(match.away_team_id);
         if (!result || !home || !away) return;
 
+        const legs = legScoreByMatchId.get(match.id) ?? { home: 0, away: 0 };
         home.played += 1;
         away.played += 1;
-        home.scoreFor += result.home_points;
-        home.scoreAgainst += result.away_points;
-        away.scoreFor += result.away_points;
-        away.scoreAgainst += result.home_points;
+        home.matchScoreFor += result.home_points;
+        home.matchScoreAgainst += result.away_points;
+        away.matchScoreFor += result.away_points;
+        away.matchScoreAgainst += result.home_points;
+        home.legScoreFor += legs.home;
+        home.legScoreAgainst += legs.away;
+        away.legScoreFor += legs.away;
+        away.legScoreAgainst += legs.home;
+
+        // TODO: Replace this with explicit tiebreak/overtime metadata once match_results stores it.
         if (result.home_points > result.away_points) {
           home.wins += 1;
-          home.points += 2;
+          home.points += 3;
           away.losses += 1;
         } else if (result.home_points < result.away_points) {
           away.wins += 1;
-          away.points += 2;
+          away.points += 3;
           home.losses += 1;
         } else {
-          home.draws += 1;
-          away.draws += 1;
           home.points += 1;
           away.points += 1;
         }
       });
 
+    const standings = Array.from(rows.values()).map((row) => ({
+      ...row,
+      matchScoreDiff: row.matchScoreFor - row.matchScoreAgainst,
+      legScoreDiff: row.legScoreFor - row.legScoreAgainst,
+    }));
+
     return NextResponse.json({
-      activeSeason: activeSeason ? { id: activeSeason.id, name: activeSeason.name } : null,
-      activeCompetition:
-        activeLeague && activeGroup
-          ? { leagueName: activeLeague.name, groupName: activeGroup.name }
-          : null,
-      counts: {
-        teams: teamRows.length,
-        players: players.count ?? 0,
-        playedMatches: finalMatches.length,
+      seasons: seasons.data ?? [],
+      leagues: leagues.data ?? [],
+      groups: groups.data ?? [],
+      selected: {
+        seasonId: selectedSeasonId,
+        leagueId: selectedLeague?.id ?? "",
+        groupId: selectedGroup?.id ?? "",
       },
-      latestResults,
-      upcomingMatches,
-      standings: Array.from(standings.values()).sort(compareStandingRows).slice(0, 5),
-      homepageSettings,
+      standings: standings.sort(compareStandingRows),
     });
   } catch {
-    return NextResponse.json({ error: "Veřejný přehled se nepodařilo načíst." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Veřejné tabulky se nepodařilo načíst." },
+      { status: 500 },
+    );
   }
 }

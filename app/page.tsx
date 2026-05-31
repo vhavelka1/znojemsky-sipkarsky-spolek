@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type MatchTeam = {
   name: string;
@@ -35,6 +35,11 @@ type StandingRow = {
 };
 
 type HomepagePayload = {
+  homepageSettings: {
+    kicker: string;
+    title: string;
+    subtitle: string;
+  };
   activeSeason: { id: string; name: string } | null;
   activeCompetition: { leagueName: string; groupName: string } | null;
   counts: {
@@ -50,23 +55,36 @@ type HomepagePayload = {
 
 const navigationItems = [
   { href: "/", label: "Úvod" },
-  { href: "/tabulky", label: "Tabulky" },
-  { href: "/zapasy", label: "Zápasy" },
-  { href: "/tymy", label: "Týmy" },
-  { href: "/hraci", label: "Hráči" },
+  { href: "/tabulky", label: "Liga" },
   { href: "/turnaje", label: "Turnaje" },
+  { href: "/kalendar", label: "Kalendář" },
+  { href: "/hraci", label: "Hráči" },
+  { href: "/tymy", label: "Týmy" },
+  { href: "/galerie", label: "Galerie" },
+  { href: "/scoreboard", label: "ScoreBoard" },
+  { href: "/diskuze", label: "Diskuze" },
+  { href: "/kontakt", label: "Kontakt" },
 ];
 
-const featureTiles = [
-  { href: "/tabulky", index: "01", title: "Týmová liga", text: "Tabulky, výsledky a rozpis týmové ligy.", tone: "blue" },
-  { href: "/zapasy", index: "02", title: "Zápasy", text: "Rozpis utkání a poslední výsledky.", tone: "coral" },
-  { href: "/hraci", index: "03", title: "Hráči", text: "Profily hráčů a individuální statistiky.", tone: "gold" },
-  { href: "/turnaje", index: "04", title: "Turnaje", text: "Mini, major, ženy a dvojice.", tone: "blue" },
-  { href: "/galerie", index: "05", title: "Galerie", text: "Fotky a videa ze šipkařských akcí.", tone: "coral" },
-  { href: "/kalendar", index: "06", title: "Kalendář akcí", text: "Ligová kola, turnaje a klubové akce.", tone: "gold" },
+const quickLinks = [
+  { href: "/tabulky", label: "Tabulky", primary: true },
+  { href: "/zapasy", label: "Zápasy", primary: false },
+  { href: "/scoreboard", label: "ScoreBoard", primary: false },
+  { href: "/turnaje", label: "Turnaje", primary: false },
+];
+
+const galleryPlaceholders = [
+  "from-[#061A3A] via-[#0F4FA8] to-[#EF233C]",
+  "from-[#0B2F6B] via-[#3B82F6] to-[#061A3A]",
+  "from-[#EF233C] via-[#0F4FA8] to-[#0B1F3A]",
 ];
 
 const emptyPayload: HomepagePayload = {
+  homepageSettings: {
+    kicker: "Regionální šipková liga",
+    title: "Znojemský šipkařský spolek",
+    subtitle: "Oficiální systém lig, turnajů a statistik.",
+  },
   activeSeason: null,
   activeCompetition: null,
   counts: { teams: 0, players: 0, playedMatches: 0 },
@@ -95,7 +113,7 @@ function formatDateTime(value: string) {
 function TeamLogo({ team, size = 42 }: { team: MatchTeam; size?: number }) {
   return (
     <div
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[rgba(107,143,191,0.2)] bg-white p-1"
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#D8E4F2] bg-white p-1 shadow-sm"
       style={{ height: size, width: size }}
     >
       {team.logoUrl ? (
@@ -108,26 +126,54 @@ function TeamLogo({ team, size = 42 }: { team: MatchTeam; size?: number }) {
           width={size}
         />
       ) : (
-        <span className="text-xs font-extrabold text-[var(--brand-navy)]">{team.name.charAt(0)}</span>
+        <span className="text-sm font-black text-[#0B2F6B]">{team.name.charAt(0)}</span>
       )}
     </div>
   );
 }
 
-function SectionHeader({ eyebrow, title, link }: { eyebrow: string; title: string; link?: { href: string; label: string } }) {
+function PortalCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    <section className={`rounded-[28px] border border-[#D8E4F2] bg-white shadow-[0_20px_60px_rgba(6,26,58,0.08)] ${className}`}>
+      {children}
+    </section>
+  );
+}
+
+function CardHeader({
+  kicker,
+  title,
+  href,
+  action,
+}: {
+  kicker?: string;
+  title: string;
+  href?: string;
+  action?: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#D8E4F2] px-5 py-5 sm:px-6">
       <div>
-        <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--brand-coral)]">{eyebrow}</p>
-        <h2 className="mt-2 text-2xl font-extrabold text-[var(--brand-navy)] sm:text-3xl">{title}</h2>
+        {kicker ? <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">{kicker}</p> : null}
+        <h2 className="mt-1 text-2xl font-black tracking-tight text-[#061A3A]">{title}</h2>
       </div>
-      {link ? (
-        <Link className="text-sm font-bold text-[var(--brand-blue)] transition-colors hover:text-[var(--brand-navy)]" href={link.href}>
-          {link.label} <span aria-hidden="true">→</span>
+      {href && action ? (
+        <Link className="rounded-full bg-[#0F4FA8] px-4 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#0B2F6B]" href={href}>
+          {action}
         </Link>
       ) : null}
     </div>
   );
+}
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return <p className="px-5 py-6 text-sm font-semibold text-[#64748b] sm:px-6">{children}</p>;
 }
 
 export default function Home() {
@@ -137,6 +183,7 @@ export default function Home() {
 
   useEffect(() => {
     let isMounted = true;
+
     fetch("/api/public/homepage")
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as HomepagePayload;
@@ -145,7 +192,11 @@ export default function Home() {
       })
       .then((body) => {
         if (!isMounted) return;
-        setPayload(body);
+        setPayload({
+          ...emptyPayload,
+          ...body,
+          homepageSettings: body.homepageSettings ?? emptyPayload.homepageSettings,
+        });
         setIsLoading(false);
       })
       .catch((loadError) => {
@@ -159,180 +210,329 @@ export default function Home() {
     };
   }, []);
 
+  const featuredTeams = useMemo(() => {
+    const teams = new Map<string, MatchTeam>();
+    payload.standings.forEach((row) => {
+      teams.set(row.teamName, { name: row.teamName, logoUrl: row.logoUrl });
+    });
+    [...payload.latestResults, ...payload.upcomingMatches].forEach((match) => {
+      teams.set(match.homeTeam.name, match.homeTeam);
+      teams.set(match.awayTeam.name, match.awayTeam);
+    });
+    return Array.from(teams.values()).slice(0, 8);
+  }, [payload.latestResults, payload.standings, payload.upcomingMatches]);
+
+  const tableTitle = payload.activeCompetition
+    ? `Tabulka - ${payload.activeCompetition.groupName}`
+    : "Tabulka ligy";
+
   return (
-    <main className="min-h-screen bg-[#f8fbff] text-[var(--brand-navy)]">
-      <header className="sticky top-0 z-20 border-b border-[rgba(107,143,191,0.16)] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:px-8">
-          <Link aria-label="Znojemský šipkařský spolek" className="block w-40 sm:w-52" href="/">
-            <Image alt="Logo Znojemského šipkařského spolku" height={548} priority src="/brand/zss-logo-horizontal.png" width={1507} />
+    <main className="min-h-screen overflow-x-hidden bg-[#F4F8FF] text-[#0B1F3A]">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#061A3A]/95 text-white shadow-[0_14px_40px_rgba(6,26,58,0.22)] backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-4 py-3 sm:px-6 lg:px-8">
+          <Link aria-label="Znojemský šipkařský spolek" className="flex items-center gap-3" href="/">
+            <Image
+              alt="Logo Znojemského šipkařského spolku"
+              className="h-14 w-14 rounded-2xl object-contain shadow-lg shadow-black/25 sm:h-16 sm:w-16"
+              height={256}
+              priority
+              src="/brand/zss-logo-official.png"
+              width={256}
+            />
+            <div className="hidden leading-tight sm:block">
+              <p className="text-sm font-black uppercase tracking-[0.14em]">Znojemský</p>
+              <p className="text-lg font-black uppercase tracking-[0.08em] text-[#3B82F6]">Šipkařský spolek</p>
+            </div>
           </Link>
-          <div className="flex min-w-0 items-center gap-4">
-            <nav className="hidden items-center gap-5 lg:flex">
+          <div className="flex min-w-0 items-center gap-3">
+            <nav className="hidden items-center gap-5 xl:flex">
               {navigationItems.map((item) => (
-                <Link className="text-sm font-bold text-[#4e6075] transition-colors hover:text-[var(--brand-navy)]" href={item.href} key={item.href}>
+                <Link className="text-sm font-extrabold text-blue-100 transition hover:text-white" href={item.href} key={item.href}>
                   {item.label}
                 </Link>
               ))}
             </nav>
-            <Link className="shrink-0 rounded-xl border border-[rgba(107,143,191,0.35)] bg-white px-3 py-2 text-xs font-extrabold text-[var(--brand-navy)] shadow-sm transition hover:-translate-y-px hover:bg-[#eef5fc] sm:px-4 sm:text-sm" href="/admin">
+            <Link className="shrink-0 rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-950/25 transition hover:-translate-y-0.5 hover:bg-red-500" href="/admin">
               Administrace
             </Link>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-7xl gap-5 overflow-x-auto px-4 pb-3 lg:hidden">
+        <nav className="mx-auto flex max-w-7xl gap-4 overflow-x-auto px-4 pb-3 sm:px-6 xl:hidden">
           {navigationItems.map((item) => (
-            <Link className="whitespace-nowrap text-sm font-bold text-[#4e6075]" href={item.href} key={item.href}>
+            <Link className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold text-blue-100" href={item.href} key={item.href}>
               {item.label}
             </Link>
           ))}
         </nav>
       </header>
 
-      <section className="relative isolate overflow-hidden border-b border-[rgba(107,143,191,0.18)] bg-[#edf5fc]">
-        <Image
-          alt=""
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-16 top-10 -z-10 h-[390px] w-auto opacity-[0.11] sm:right-4 sm:h-[520px] lg:right-[7%] lg:top-5 lg:h-[600px]"
-          height={1121}
-          priority
-          src="/brand/zss-logo-stacked.png"
-          width={884}
-        />
-        <div className="mx-auto flex min-h-[500px] max-w-7xl flex-col justify-center px-4 py-12 sm:min-h-[560px] sm:px-6 lg:px-8">
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--brand-coral)]">Znojemský šipkařský spolek</p>
-          <h1 className="mt-5 max-w-4xl text-4xl font-black leading-[1.05] text-[var(--brand-navy)] sm:text-6xl lg:text-7xl">
-            Oficiální systém týmové ligy a turnajů
-          </h1>
-          <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-[#51657d] sm:text-lg">
-            Výsledky, tabulky, rozpisy a dění z regionální šipkařské scény na jednom místě.
-          </p>
-          <div className="mt-8 inline-flex w-fit items-center gap-2 rounded-full border border-[rgba(107,143,191,0.3)] bg-white/80 px-4 py-2 text-sm font-extrabold shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-[var(--brand-coral)]" />
-            {isLoading ? "Načítám aktuální sezónu..." : payload.activeSeason?.name ?? "Aktivní sezóna zatím není vybraná"}
+      <section className="relative isolate overflow-hidden bg-[#061A3A] text-white">
+        <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.36),transparent_34%),radial-gradient(circle_at_85%_35%,rgba(239,35,60,0.26),transparent_30%),linear-gradient(135deg,#061A3A_0%,#0B2F6B_48%,#061A3A_100%)]" />
+        <div className="absolute -left-24 top-20 -z-10 h-64 w-64 rounded-full border-[34px] border-white/5" />
+        <div className="absolute right-[-90px] top-10 -z-10 h-[420px] w-[420px] rounded-full border-[42px] border-[#EF233C]/10" />
+        <div className="mx-auto grid min-h-[650px] max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-20">
+          <div>
+            <p className="inline-flex rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-blue-100">
+              {payload.homepageSettings.kicker}
+            </p>
+            <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.96] tracking-tight sm:text-6xl lg:text-7xl">
+              {payload.homepageSettings.title}
+            </h1>
+            <p className="mt-6 max-w-2xl text-xl font-bold leading-8 text-blue-100">
+              {payload.homepageSettings.subtitle}
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              {quickLinks.map((item) => (
+                <Link
+                  className={`rounded-full px-6 py-3 text-base font-black shadow-xl transition hover:-translate-y-0.5 ${
+                    item.primary
+                      ? "bg-[#EF233C] text-white shadow-red-950/25 hover:bg-red-500"
+                      : "bg-white text-[#061A3A] shadow-black/15 hover:bg-blue-50"
+                  }`}
+                  href={item.href}
+                  key={item.href}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+            <div className="mt-8 inline-flex max-w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 font-bold text-blue-50">
+              <span className="h-3 w-3 rounded-full bg-[#EF233C] shadow-[0_0_0_5px_rgba(239,35,60,0.18)]" />
+              {isLoading ? "Načítám aktuální sezónu..." : payload.activeSeason?.name ?? "Aktivní sezóna zatím není vybraná"}
+            </div>
+            <div className="mt-10 grid max-w-2xl grid-cols-3 gap-3 sm:gap-5">
+              {[
+                ["Týmů", payload.counts.teams],
+                ["Hráčů", payload.counts.players],
+                ["Zápasů", payload.counts.playedMatches],
+              ].map(([label, value]) => (
+                <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur" key={label}>
+                  <p className="text-3xl font-black sm:text-4xl">{isLoading ? "-" : value}</p>
+                  <p className="mt-1 text-xs font-black uppercase tracking-[0.12em] text-blue-100">{label}</p>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="mt-10 grid max-w-2xl grid-cols-3 gap-3 sm:gap-5">
-            {[
-              ["Týmů", payload.counts.teams],
-              ["Hráčů", payload.counts.players],
-              ["Odehraných zápasů", payload.counts.playedMatches],
-            ].map(([label, value]) => (
-              <div className="border-l-2 border-[var(--brand-gold)] pl-3 sm:pl-4" key={label}>
-                <p className="text-2xl font-black sm:text-4xl">{isLoading ? "–" : value}</p>
-                <p className="mt-1 text-[0.68rem] font-bold leading-4 text-[#61738a] sm:text-xs">{label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
-        <SectionHeader eyebrow="Rozcestník" title="Vše podstatné pro šipkařskou sezónu" />
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {featureTiles.map((tile) => (
-            <Link className={`public-feature-card public-feature-card-${tile.tone}`} href={tile.href} key={tile.href}>
-              <p className="text-xs font-black text-[var(--brand-coral)]">{tile.index}</p>
-              <h3 className="mt-7 text-xl font-extrabold">{tile.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-[#607289]">{tile.text}</p>
-              <span className="mt-7 inline-block text-lg font-black text-[var(--brand-blue)]" aria-hidden="true">→</span>
-            </Link>
-          ))}
+          <div className="relative mx-auto flex w-full max-w-[520px] items-center justify-center lg:max-w-none">
+            <div className="absolute inset-0 rounded-full bg-[#3B82F6]/20 blur-3xl" />
+            <Image
+              alt="Logo Znojemského šipkařského spolku"
+              className="relative z-10 h-auto w-[78%] max-w-[430px] drop-shadow-[0_35px_50px_rgba(0,0,0,0.45)]"
+              height={900}
+              priority
+              src="/brand/zss-logo-official.png"
+              width={700}
+            />
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 m-auto h-auto w-[95%] max-w-[560px] opacity-[0.08]"
+              height={900}
+              src="/brand/zss-logo-official.png"
+              width={700}
+            />
+          </div>
         </div>
       </section>
 
       {error ? (
-        <section className="mx-auto max-w-7xl px-4 pb-6 sm:px-6 lg:px-8">
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">{error}</div>
+        <section className="mx-auto max-w-7xl px-4 pt-8 sm:px-6 lg:px-8">
+          <div className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{error}</div>
         </section>
       ) : null}
 
-      <section className="border-y border-[rgba(107,143,191,0.16)] bg-white">
-        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:px-8">
-          <div>
-            <SectionHeader eyebrow="Liga" title="Poslední výsledky" link={{ href: "/zapasy", label: "Všechny zápasy" }} />
-            <div className="mt-6 divide-y divide-[rgba(107,143,191,0.17)]">
-              {isLoading ? <p className="py-5 text-sm text-[#607289]">Načítám výsledky...</p> : null}
-              {!isLoading && payload.latestResults.length === 0 ? <p className="py-5 text-sm text-[#607289]">Zatím nejsou zadané žádné výsledky.</p> : null}
-              {payload.latestResults.map((match) => (
-                <div className="py-4" key={match.id}>
-                  <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#7b8ba0]">{formatDate(match.playedAt ?? match.scheduledAt)}</p>
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <TeamLogo team={match.homeTeam} size={38} />
-                      <p className="text-sm font-extrabold leading-5">{match.homeTeam.name}</p>
-                    </div>
-                    <p className="rounded-lg bg-[#eef5fc] px-3 py-2 text-lg font-black">
-                      {match.result?.homePoints}:{match.result?.awayPoints}
-                    </p>
-                    <div className="flex min-w-0 items-center justify-end gap-2 text-right">
-                      <p className="text-sm font-extrabold leading-5">{match.awayTeam.name}</p>
-                      <TeamLogo team={match.awayTeam} size={38} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <SectionHeader eyebrow="Program" title="Nejbližší zápasy" link={{ href: "/zapasy", label: "Celý rozpis" }} />
-            <div className="mt-6 divide-y divide-[rgba(107,143,191,0.17)]">
-              {isLoading ? <p className="py-5 text-sm text-[#607289]">Načítám rozpis...</p> : null}
-              {!isLoading && payload.upcomingMatches.length === 0 ? <p className="py-5 text-sm text-[#607289]">Nejsou naplánované žádné zápasy.</p> : null}
-              {payload.upcomingMatches.map((match) => (
-                <div className="grid grid-cols-[auto_1fr] gap-4 py-4" key={match.id}>
-                  <p className="w-20 text-xs font-extrabold leading-5 text-[var(--brand-coral)]">{formatDateTime(match.scheduledAt)}</p>
-                  <div className="space-y-2">
-                    {[match.homeTeam, match.awayTeam].map((team) => (
-                      <div className="flex items-center gap-2" key={team.name}>
-                        <TeamLogo team={team} size={30} />
-                        <p className="text-sm font-extrabold">{team.name}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow={payload.activeCompetition ? `${payload.activeCompetition.leagueName} · ${payload.activeCompetition.groupName}` : "Týmová liga"} title="Čelo tabulky" link={{ href: "/tabulky", label: "Zobrazit celou tabulku" }} />
-        <div className="mt-7 overflow-hidden rounded-2xl border border-[rgba(107,143,191,0.2)] bg-white shadow-[0_16px_40px_rgba(35,54,77,0.06)]">
-          {isLoading ? <p className="px-5 py-6 text-sm text-[#607289]">Načítám tabulku...</p> : null}
-          {!isLoading && payload.standings.length === 0 ? <p className="px-5 py-6 text-sm text-[#607289]">Tabulka zatím není dostupná.</p> : null}
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:py-14">
+        <PortalCard>
+          <CardHeader
+            action="Celá tabulka"
+            href="/tabulky"
+            kicker={payload.activeCompetition?.leagueName ?? "Liga"}
+            title={tableTitle}
+          />
+          {isLoading ? <EmptyState>Načítám tabulku...</EmptyState> : null}
+          {!isLoading && payload.standings.length === 0 ? <EmptyState>Tabulka zatím není dostupná.</EmptyState> : null}
           {payload.standings.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[620px] text-left text-sm">
-                <thead className="bg-[#eef5fc] text-xs font-extrabold text-[#61738a]">
-                  <tr><th className="px-5 py-4">Pořadí</th><th className="px-5 py-4">Tým</th><th className="px-5 py-4 text-right">Zápasy</th><th className="px-5 py-4 text-right">Výhry</th><th className="px-5 py-4 text-right">Skóre</th><th className="px-5 py-4 text-right">Body</th></tr>
+                <thead className="bg-[#F4F8FF] text-xs font-black uppercase tracking-[0.1em] text-[#64748b]">
+                  <tr>
+                    <th className="px-5 py-4">#</th>
+                    <th className="px-5 py-4">Tým</th>
+                    <th className="px-5 py-4 text-right">Z</th>
+                    <th className="px-5 py-4 text-right">V</th>
+                    <th className="px-5 py-4 text-right">Skóre</th>
+                    <th className="px-5 py-4 text-right">Body</th>
+                  </tr>
                 </thead>
-                <tbody className="divide-y divide-[rgba(107,143,191,0.15)]">
+                <tbody className="divide-y divide-[#D8E4F2]">
                   {payload.standings.map((row, index) => (
-                    <tr key={row.teamSeasonId}>
-                      <td className="px-5 py-4 text-base font-black text-[var(--brand-coral)]">{index + 1}.</td>
+                    <tr className="transition hover:bg-[#F4F8FF]" key={row.teamSeasonId}>
+                      <td className="px-5 py-4 text-lg font-black text-[#EF233C]">{index + 1}.</td>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <TeamLogo team={{ name: row.teamName, logoUrl: row.logoUrl }} size={34} />
-                          <span className="font-extrabold">{row.teamName}</span>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <TeamLogo team={{ name: row.teamName, logoUrl: row.logoUrl }} size={40} />
+                          <span className="font-black text-[#061A3A]">{row.teamName}</span>
                         </div>
                       </td>
                       <td className="px-5 py-4 text-right font-bold">{row.played}</td>
                       <td className="px-5 py-4 text-right font-bold">{row.wins}</td>
                       <td className="px-5 py-4 text-right font-bold">{row.scoreFor}:{row.scoreAgainst}</td>
-                      <td className="px-5 py-4 text-right text-base font-black">{row.points}</td>
+                      <td className="px-5 py-4 text-right text-lg font-black text-[#061A3A]">{row.points}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : null}
+        </PortalCard>
+
+        <div className="grid gap-6">
+          <PortalCard>
+            <CardHeader action="Všechny zápasy" href="/zapasy" kicker="Výsledky" title="Poslední zápasy" />
+            <div className="divide-y divide-[#D8E4F2]">
+              {isLoading ? <EmptyState>Načítám výsledky...</EmptyState> : null}
+              {!isLoading && payload.latestResults.length === 0 ? <EmptyState>Zatím nejsou zadané žádné výsledky.</EmptyState> : null}
+              {payload.latestResults.slice(0, 4).map((match) => (
+                <div className="px-5 py-4 sm:px-6" key={match.id}>
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-[#EF233C]">{formatDate(match.playedAt ?? match.scheduledAt)}</p>
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <TeamLogo team={match.homeTeam} size={34} />
+                      <p className="min-w-0 truncate text-sm font-black">{match.homeTeam.name}</p>
+                    </div>
+                    <p className="rounded-xl bg-[#061A3A] px-3 py-2 text-lg font-black text-white">
+                      {match.result?.homePoints}:{match.result?.awayPoints}
+                    </p>
+                    <div className="flex min-w-0 items-center justify-end gap-2 text-right">
+                      <p className="min-w-0 truncate text-sm font-black">{match.awayTeam.name}</p>
+                      <TeamLogo team={match.awayTeam} size={34} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </PortalCard>
+
+          <PortalCard>
+            <CardHeader action="Všichni hráči" href="/hraci" kicker="Statistiky" title="Nejlepší hráči sezóny" />
+            <EmptyState>Individuální žebříčky budou dostupné po doplnění hráčských statistik.</EmptyState>
+          </PortalCard>
         </div>
       </section>
 
-      <footer className="border-t border-[rgba(107,143,191,0.18)] bg-[var(--brand-navy)] text-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 text-sm sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <p className="font-bold">Znojemský šipkařský spolek</p>
-          <p className="text-[#b7cce8]">Výsledky, tabulky a dění ze znojemských šipek.</p>
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-14 sm:px-6 lg:grid-cols-3 lg:px-8">
+        <PortalCard className="lg:col-span-2">
+          <CardHeader action="Zobrazit všechny týmy" href="/tymy" kicker="Kluby" title="Týmy" />
+          <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+            {isLoading ? <p className="text-sm font-semibold text-[#64748b]">Načítám týmy...</p> : null}
+            {!isLoading && featuredTeams.length === 0 ? <p className="text-sm font-semibold text-[#64748b]">Týmy zatím nejsou dostupné.</p> : null}
+            {featuredTeams.map((team) => (
+              <div className="flex min-w-0 items-center gap-3 rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-3" key={team.name}>
+                <TeamLogo team={team} size={44} />
+                <p className="min-w-0 truncate font-black text-[#061A3A]">{team.name}</p>
+              </div>
+            ))}
+          </div>
+        </PortalCard>
+
+        <PortalCard>
+          <CardHeader action="Celý rozpis" href="/zapasy" kicker="Program" title="Nejbližší zápasy" />
+          <div className="divide-y divide-[#D8E4F2]">
+            {isLoading ? <EmptyState>Načítám rozpis...</EmptyState> : null}
+            {!isLoading && payload.upcomingMatches.length === 0 ? <EmptyState>Nejsou naplánované žádné zápasy.</EmptyState> : null}
+            {payload.upcomingMatches.slice(0, 4).map((match) => (
+              <div className="px-5 py-4 sm:px-6" key={match.id}>
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-[#EF233C]">{formatDateTime(match.scheduledAt)}</p>
+                <div className="mt-3 space-y-2">
+                  {[match.homeTeam, match.awayTeam].map((team) => (
+                    <div className="flex min-w-0 items-center gap-2" key={`${match.id}:${team.name}`}>
+                      <TeamLogo team={team} size={30} />
+                      <p className="min-w-0 truncate text-sm font-black">{team.name}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </PortalCard>
+      </section>
+
+      <section className="border-y border-[#D8E4F2] bg-white">
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-14 sm:px-6 lg:grid-cols-3 lg:px-8">
+          <PortalCard>
+            <CardHeader action="Všechny turnaje" href="/turnaje" kicker="Turnaje" title="Nejbližší turnaje" />
+            <EmptyState>Turnajový modul připravujeme. Brzy zde najdeš mini, major, ženy i dvojice.</EmptyState>
+          </PortalCard>
+
+          <PortalCard>
+            <CardHeader action="Zobrazit galerii" href="/galerie" kicker="Galerie" title="Z galerie" />
+            <div className="grid grid-cols-3 gap-3 p-5 sm:p-6">
+              {galleryPlaceholders.map((gradient, index) => (
+                <div className={`aspect-square rounded-3xl bg-gradient-to-br ${gradient} shadow-inner`} key={gradient}>
+                  <span className="flex h-full items-end p-3 text-xl font-black text-white/90">{index + 1}</span>
+                </div>
+              ))}
+            </div>
+          </PortalCard>
+
+          <section className="relative overflow-hidden rounded-[28px] bg-[#0B2F6B] p-6 text-white shadow-[0_20px_60px_rgba(6,26,58,0.18)]">
+            <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-[#3B82F6]/30 blur-2xl" />
+            <div className="relative">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-200">Volná hra</p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight">ScoreBoard</h2>
+              <p className="mt-4 text-base font-bold leading-7 text-blue-100">
+                Rychlé zadávání skóre pro neoficiální zápasy, trénink nebo hospodskou hru.
+              </p>
+              <Link className="mt-7 inline-flex rounded-full bg-white px-5 py-3 font-black text-[#061A3A] transition hover:-translate-y-0.5 hover:bg-blue-50" href="/scoreboard">
+                Otevřít ScoreBoard
+              </Link>
+            </div>
+          </section>
+
+          <section className="relative overflow-hidden rounded-[28px] bg-[#061A3A] p-6 text-white shadow-[0_20px_60px_rgba(6,26,58,0.18)]">
+            <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-[#EF233C]/25 blur-2xl" />
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute -bottom-16 -right-10 h-auto w-48 opacity-10"
+              height={700}
+              src="/brand/zss-logo-official.png"
+              width={560}
+            />
+            <div className="relative">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#3B82F6]">Spolek</p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight">Přidej se k nám!</h2>
+              <p className="mt-4 text-lg font-bold text-blue-100">Šipky baví. Hraj s námi.</p>
+              <Link className="mt-7 inline-flex rounded-full bg-[#EF233C] px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500" href="/kontakt">
+                Více informací
+              </Link>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <footer className="bg-[#061A3A] text-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+          <div className="flex items-center gap-4">
+            <Image
+              alt="Logo Znojemského šipkařského spolku"
+              className="h-14 w-14 rounded-2xl object-contain"
+              height={256}
+              src="/brand/zss-logo-official.png"
+              width={256}
+            />
+            <div>
+              <p className="font-black">Znojemský šipkařský spolek</p>
+              <p className="text-sm text-blue-200">Výsledky, tabulky a dění ze znojemských šipek.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4 text-sm font-bold text-blue-100">
+            <Link href="/tabulky">Tabulky</Link>
+            <Link href="/zapasy">Zápasy</Link>
+            <Link href="/turnaje">Turnaje</Link>
+            <Link href="/admin">Administrace</Link>
+          </div>
         </div>
       </footer>
     </main>
