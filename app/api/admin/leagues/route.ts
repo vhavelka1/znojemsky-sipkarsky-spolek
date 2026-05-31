@@ -24,13 +24,16 @@ type AssignTeamBody = {
 type LeagueRequestBody = CreateLeagueBody | CreateGroupBody | AssignTeamBody;
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
+    { error: "Administrace lig není povolena." },
+    { status: 403 },
   );
 }
 
@@ -39,7 +42,10 @@ function mockAdminResponse() {
     return null;
   }
 
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
+  return NextResponse.json(
+    { error: "Pro tuto akci je potřeba role administrátora." },
+    { status: 403 },
+  );
 }
 
 function requiredString(value: unknown) {
@@ -58,7 +64,12 @@ function getAdminClientOrError() {
     return {
       supabase: null,
       response: NextResponse.json(
-        { error: error instanceof Error ? error.message : "Server configuration error." },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Nepodařilo se načíst serverové nastavení.",
+        },
         { status: 500 },
       ),
     };
@@ -85,37 +96,38 @@ export async function GET() {
     return response;
   }
 
-  const [seasons, teams, teamSeasons, leagues, groups, assignments] = await Promise.all([
-    supabase
-      .from("seasons")
-      .select("id, name, is_active, starts_on")
-      .is("deleted_at", null)
-      .order("starts_on", { ascending: false }),
-    supabase
-      .from("teams")
-      .select("id, name")
-      .is("deleted_at", null)
-      .order("name", { ascending: true }),
-    supabase
-      .from("team_seasons")
-      .select("id, team_id, season_id, display_name")
-      .is("deleted_at", null),
-    supabase
-      .from("leagues")
-      .select("id, season_id, name, created_at")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("league_groups")
-      .select("id, league_id, name, sort_order")
-      .is("deleted_at", null)
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true }),
-    supabase
-      .from("league_group_teams")
-      .select("id, league_group_id, team_season_id")
-      .is("deleted_at", null),
-  ]);
+  const [seasons, teams, teamSeasons, leagues, groups, assignments] =
+    await Promise.all([
+      supabase
+        .from("seasons")
+        .select("id, name, is_active, starts_on")
+        .is("deleted_at", null)
+        .order("starts_on", { ascending: false }),
+      supabase
+        .from("teams")
+        .select("id, name")
+        .is("deleted_at", null)
+        .order("name", { ascending: true }),
+      supabase
+        .from("team_seasons")
+        .select("id, team_id, season_id, display_name")
+        .is("deleted_at", null),
+      supabase
+        .from("leagues")
+        .select("id, season_id, name, created_at")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("league_groups")
+        .select("id, league_id, name, sort_order")
+        .is("deleted_at", null)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
+      supabase
+        .from("league_group_teams")
+        .select("id, league_group_id, team_season_id")
+        .is("deleted_at", null),
+    ]);
 
   const error =
     seasons.error ??
@@ -169,7 +181,10 @@ export async function POST(request: Request) {
     const seasonId = requiredString(body.season_id);
 
     if (!name || !seasonId) {
-      return NextResponse.json({ error: "name and season_id are required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Vyplňte název ligy a sezónu." },
+        { status: 400 },
+      );
     }
 
     const { data, error } = await supabase
@@ -190,7 +205,10 @@ export async function POST(request: Request) {
     const leagueId = requiredString(body.league_id);
 
     if (!name || !leagueId) {
-      return NextResponse.json({ error: "name and league_id are required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Vyplňte název skupiny a ligu." },
+        { status: 400 },
+      );
     }
 
     const { count, error: countError } = await supabase
@@ -222,7 +240,7 @@ export async function POST(request: Request) {
 
     if (!leagueGroupId || !teamSeasonId) {
       return NextResponse.json(
-        { error: "league_group_id and team_season_id are required." },
+        { error: "Vyberte skupinu a tým." },
         { status: 400 },
       );
     }
@@ -249,25 +267,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: teamSeasonError.message }, { status: 500 });
     }
 
-    const groupLeague = Array.isArray(group.leagues) ? group.leagues[0] : group.leagues;
+    const groupLeague = Array.isArray(group.leagues)
+      ? group.leagues[0]
+      : group.leagues;
 
     if (!groupLeague || groupLeague.season_id !== teamSeason.season_id) {
       return NextResponse.json(
-        { error: "Team season must belong to the league season." },
+        { error: "Tým musí patřit do stejné sezóny jako liga." },
         { status: 400 },
       );
     }
 
-    const { data: existingAssignment, error: existingAssignmentError } = await supabase
-      .from("league_group_teams")
-      .select("id, league_group_id, team_season_id")
-      .eq("league_group_id", leagueGroupId)
-      .eq("team_season_id", teamSeasonId)
-      .is("deleted_at", null)
-      .maybeSingle();
+    const { data: existingAssignment, error: existingAssignmentError } =
+      await supabase
+        .from("league_group_teams")
+        .select("id, league_group_id, team_season_id")
+        .eq("league_group_id", leagueGroupId)
+        .eq("team_season_id", teamSeasonId)
+        .is("deleted_at", null)
+        .maybeSingle();
 
     if (existingAssignmentError) {
-      return NextResponse.json({ error: existingAssignmentError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: existingAssignmentError.message },
+        { status: 500 },
+      );
     }
 
     if (existingAssignment) {
@@ -290,5 +314,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ assignment: data }, { status: 201 });
   }
 
-  return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
+  return NextResponse.json(
+    { error: "Nepodporovaná akce." },
+    { status: 400 },
+  );
 }
