@@ -710,28 +710,28 @@ export default function MatchScoreboardPage() {
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-[#061A3A] text-white">
-      <div className="mx-auto flex h-screen w-full max-w-[1500px] flex-col gap-3 px-4 py-3">
-        <header className="rounded-[26px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/30 backdrop-blur">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <main className="min-h-[100svh] bg-[#061A3A] text-white md:h-screen md:overflow-hidden">
+      <div className="mx-auto flex min-h-[100svh] w-full max-w-[1500px] flex-col gap-2 px-2 py-2 md:h-screen md:gap-3 md:px-4 md:py-3">
+        <header className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:rounded-[26px] sm:p-4">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <Link className="text-sm font-bold text-sky-200 hover:text-white" href={`/admin/matches/${matchId}`}>
+              <Link className="text-xs font-bold text-sky-200 hover:text-white sm:text-sm" href={`/admin/matches/${matchId}`}>
                 Zpět na zápis utkání
               </Link>
-              <h1 className="mt-1 text-3xl font-black tracking-tight md:text-5xl">Skórování zápasu</h1>
-              <p className="mt-1 text-sm text-slate-300">
+              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl md:text-5xl">Skórování zápasu</h1>
+              <p className="mt-1 text-xs text-slate-300 sm:text-sm">
                 {payload.season?.name ?? "Sezóna"} / {payload.league?.name ?? "Liga"} / {payload.group?.name ?? "Skupina"}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                className="rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white/20"
+                className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-black text-white transition hover:bg-white/20 sm:px-5 sm:py-3 sm:text-sm"
                 onClick={() => void requestFullscreen()}
                 type="button"
               >
                 {isFullscreen ? "Ukončit celou obrazovku" : "Celá obrazovka"}
               </button>
-              <div className="rounded-2xl bg-emerald-400/15 px-4 py-3 text-sm font-bold text-emerald-200">
+              <div className="rounded-2xl bg-emerald-400/15 px-3 py-2 text-xs font-bold text-emerald-200 sm:px-4 sm:py-3 sm:text-sm">
                 {wakeLockStatus}
               </div>
             </div>
@@ -744,14 +744,14 @@ export default function MatchScoreboardPage() {
           </div>
         ) : null}
 
-        <section className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[330px_1fr_320px]">
-          <aside className="flex min-h-0 flex-col gap-3">
-            <div className="rounded-[26px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
+        <section className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[300px_1fr_300px] 2xl:grid-cols-[330px_1fr_320px]">
+          <aside className="flex flex-col gap-2 md:min-h-0 md:gap-3">
+            <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
               <label className="text-sm font-bold text-slate-300" htmlFor="scoreboard-game">
                 Hra v zápisu
               </label>
               <select
-                className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0B2F6B] px-4 py-4 text-base font-black text-white outline-none focus:border-emerald-300"
+                className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0B2F6B] px-3 py-3 text-sm font-black text-white outline-none focus:border-emerald-300 sm:px-4 sm:py-4 sm:text-base"
                 id="scoreboard-game"
                 onChange={(event) => handleGameChange(Number(event.target.value))}
                 value={selectedOrder}
@@ -779,9 +779,9 @@ export default function MatchScoreboardPage() {
               </dl>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-hidden rounded-[26px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
+            <div className="order-last overflow-hidden rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4 xl:order-none xl:min-h-0 xl:flex-1">
               <h2 className="text-lg font-black">Historie náhozů</h2>
-              <div className="mt-3 flex max-h-full flex-col gap-2 overflow-y-auto pr-1">
+              <div className="mt-3 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1 xl:max-h-full">
                 {scoreboard.lastVisits.length === 0 ? (
                   <p className="rounded-2xl bg-black/20 p-4 text-sm text-slate-300">
                     Zatím není zadaný žádný nához.
@@ -802,13 +802,13 @@ export default function MatchScoreboardPage() {
             </div>
           </aside>
 
-          <section className="flex min-h-0 flex-col gap-3">
-            <div className="grid gap-3 md:grid-cols-2">
+          <section className="flex flex-col gap-2 md:min-h-0 md:gap-3">
+            <div className="grid grid-cols-2 gap-2 md:gap-3">
               {(["home", "away"] as MatchSide[]).map((side) => {
                 const isActive = scoreboard.activeSide === side;
                 return (
                   <div
-                    className={`rounded-[30px] border p-4 shadow-2xl shadow-black/30 transition ${
+                    className={`rounded-[20px] border p-2 shadow-2xl shadow-black/30 transition sm:rounded-[30px] sm:p-4 ${
                       isActive
                         ? "border-emerald-300 bg-emerald-400/15 ring-2 ring-emerald-300/40"
                         : "border-white/10 bg-white/8 opacity-70"
@@ -817,24 +817,24 @@ export default function MatchScoreboardPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-300">{sideLabels[side]}</p>
-                        <h2 className="mt-1 line-clamp-2 text-xl font-black md:text-2xl">{gameSideNames(side)}</h2>
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 sm:text-xs sm:tracking-[0.18em]">{sideLabels[side]}</p>
+                        <h2 className="mt-1 line-clamp-2 text-sm font-black sm:text-xl md:text-2xl">{gameSideNames(side)}</h2>
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         {isActive ? (
-                          <span className="rounded-full bg-emerald-300 px-3 py-1 text-xs font-black text-[#061A3A]">
+                          <span className="rounded-full bg-emerald-300 px-2 py-1 text-[10px] font-black text-[#061A3A] sm:px-3 sm:text-xs">
                             Na tahu
                           </span>
                         ) : null}
-                        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#061A3A]">
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#061A3A] sm:px-3 sm:text-xs">
                           Legy {scoreboard.sides[side].legs}
                         </span>
                       </div>
                     </div>
-                    <p className="mt-3 text-[5.5rem] font-black leading-none tracking-tight md:text-[7rem]">
+                    <p className="mt-2 text-5xl font-black leading-none tracking-tight sm:mt-3 sm:text-[5.5rem] md:text-[7rem]">
                       {scoreboard.sides[side].score}
                     </p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-300">
+                    <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-bold text-slate-300 sm:mt-3 sm:gap-2 sm:text-xs">
                       <span>Průměr: {average(scoreboard.sides[side])}</span>
                       <span>
                         Poslední: {scoreboard.sides[side].visits.slice(0, 4).join(", ") || "0"}
@@ -859,19 +859,19 @@ export default function MatchScoreboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="min-h-0 flex-1 rounded-[30px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
-                <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex-1 rounded-[22px] border border-white/10 bg-white/8 p-2 shadow-2xl shadow-black/25 sm:rounded-[30px] sm:p-4 md:min-h-0">
+                <div className="mb-2 flex flex-col gap-2 sm:mb-3 sm:gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-sm font-bold text-blue-100">Na tahu</p>
-                    <h2 className="text-2xl font-black text-emerald-200">{gameSideNames(scoreboard.activeSide)}</h2>
-                    <p className="mt-1 text-sm font-bold text-slate-300">
+                    <h2 className="text-xl font-black text-emerald-200 sm:text-2xl">{gameSideNames(scoreboard.activeSide)}</h2>
+                    <p className="mt-1 text-xs font-bold text-slate-300 sm:text-sm">
                       Šipka {Math.min(scoreboard.currentThrows.length + 1, 3)}/3 · {currentThrowText}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {([1, 2, 3] as Multiplier[]).map((item) => (
                       <button
-                        className={`rounded-2xl px-5 py-3 text-base font-black transition ${
+                        className={`rounded-2xl px-3 py-2.5 text-xs font-black transition sm:px-5 sm:py-3 sm:text-base ${
                           multiplier === item
                             ? "bg-orange-400 text-[#061A3A]"
                             : "bg-orange-500/20 text-orange-100 hover:bg-orange-500/30"
@@ -884,7 +884,7 @@ export default function MatchScoreboardPage() {
                       </button>
                     ))}
                     <button
-                      className="rounded-2xl bg-white/10 px-5 py-3 text-base font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-2xl bg-white/10 px-3 py-2.5 text-xs font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-3 sm:text-base"
                       disabled={scoreboard.currentThrows.length === 0}
                       onClick={endVisit}
                       type="button"
@@ -894,9 +894,9 @@ export default function MatchScoreboardPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-7 gap-2 lg:grid-cols-11">
+                <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 lg:grid-cols-11">
                   <button
-                    className="min-h-14 rounded-2xl bg-slate-200 text-xl font-black text-[#061A3A] shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-12 rounded-2xl bg-slate-200 text-base font-black text-[#061A3A] shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:text-xl"
                     disabled={scoreboard.gameFinished || isSaving}
                     onClick={() => handleDart(0)}
                     type="button"
@@ -905,7 +905,7 @@ export default function MatchScoreboardPage() {
                   </button>
                   {keypadValues.filter((value) => value !== 0).map((value) => (
                     <button
-                      className="min-h-14 rounded-2xl bg-white text-2xl font-black text-[#061A3A] shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-sky-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300"
+                      className="min-h-12 rounded-2xl bg-white text-lg font-black text-[#061A3A] shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-sky-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300 sm:min-h-14 sm:text-2xl"
                       disabled={scoreboard.gameFinished || isSaving || (value === 25 && multiplier === 3)}
                       key={value}
                       onClick={() => handleDart(value)}
@@ -919,16 +919,16 @@ export default function MatchScoreboardPage() {
             )}
           </section>
 
-          <aside className="flex min-h-0 flex-col gap-3">
-            <div className="rounded-[26px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
-              <h2 className="text-xl font-black">Doporučené zavření</h2>
-              <div className="mt-3 rounded-2xl bg-black/25 p-4">
+          <aside className="flex flex-col gap-2 md:min-h-0 md:gap-3">
+            <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
+              <h2 className="text-lg font-black sm:text-xl">Doporučené zavření</h2>
+              <div className="mt-3 rounded-2xl bg-black/25 p-3 sm:p-4">
                 {isCricket ? (
                   <p className="text-sm font-bold text-slate-300">Pro kriket není zavření dostupné.</p>
                 ) : checkout ? (
                   <div>
                     <p className="text-sm font-bold text-slate-300">Primární cesta</p>
-                    <p className="mt-2 text-2xl font-black text-emerald-200">{checkout.primary.join("  ")}</p>
+                    <p className="mt-2 text-xl font-black text-emerald-200 sm:text-2xl">{checkout.primary.join("  ")}</p>
                     {checkout.alternatives?.length ? (
                       <div className="mt-3 space-y-1 text-sm font-bold text-slate-300">
                         {checkout.alternatives.slice(0, 2).map((route) => (
@@ -945,11 +945,11 @@ export default function MatchScoreboardPage() {
               </div>
             </div>
 
-            <div className="rounded-[26px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
-              <h2 className="text-xl font-black">Ovládání</h2>
-              <div className="mt-3 grid gap-2">
+            <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
+              <h2 className="text-lg font-black sm:text-xl">Ovládání</h2>
+              <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-1">
                 <button
-                  className="rounded-2xl bg-red-500 px-5 py-4 text-base font-black text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-2xl bg-red-500 px-3 py-3 text-xs font-black text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base"
                   disabled={dartSnapshots.length === 0}
                   onClick={undoLastDart}
                   type="button"
@@ -957,7 +957,7 @@ export default function MatchScoreboardPage() {
                   Vrátit šipku
                 </button>
                 <button
-                  className="rounded-2xl bg-red-500/80 px-5 py-4 text-base font-black text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-2xl bg-red-500/80 px-3 py-3 text-xs font-black text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base"
                   disabled={visitSnapshots.length === 0}
                   onClick={undoLastVisit}
                   type="button"
@@ -965,7 +965,7 @@ export default function MatchScoreboardPage() {
                   Vrátit nához
                 </button>
                 <button
-                  className="rounded-2xl bg-emerald-400 px-5 py-4 text-base font-black text-[#061A3A] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="col-span-2 rounded-2xl bg-emerald-400 px-3 py-3 text-xs font-black text-[#061A3A] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base xl:col-span-1"
                   disabled={isSaving || !selectedGame}
                   onClick={() => void saveGame()}
                   type="button"

@@ -411,23 +411,23 @@ export default function PublicScoreboardPage() {
 
   if (scoreboard) {
     return (
-      <main className="h-screen overflow-hidden bg-[#061A3A] text-white">
-        <div className="mx-auto flex h-screen max-w-[1500px] flex-col gap-3 px-3 py-3 lg:px-5">
-          <header className="flex shrink-0 flex-col gap-3 rounded-[24px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 md:flex-row md:items-center md:justify-between">
+      <main className="min-h-[100svh] bg-[#061A3A] text-white md:h-screen md:overflow-hidden">
+        <div className="mx-auto flex min-h-[100svh] max-w-[1500px] flex-col gap-2 px-2 py-2 md:h-screen md:gap-3 md:px-3 md:py-3 lg:px-5">
+          <header className="flex shrink-0 flex-col gap-2 rounded-[20px] border border-white/10 bg-white/8 p-2 shadow-2xl shadow-black/25 sm:rounded-[24px] sm:p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <button className="text-xs font-black text-blue-200 hover:text-white" onClick={() => setScoreboard(null)} type="button">
                 Zpět na nastavení
               </button>
-              <h1 className="mt-1 text-2xl font-black tracking-tight md:text-4xl">ScoreBoard</h1>
-              <p className="mt-1 text-xs font-bold text-blue-100">
+              <h1 className="mt-1 text-xl font-black tracking-tight sm:text-2xl md:text-4xl">ScoreBoard</h1>
+              <p className="mt-1 text-[11px] font-bold text-blue-100 sm:text-xs">
                 {settings.gameType === "cricket" ? "Kriket" : `${settings.gameType} bodů`} / {settings.startMode === "double_in" ? "double in" : "straight in"} / {settings.finishMode === "double_out" ? "double out" : "straight out"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className="rounded-2xl bg-white px-4 py-2.5 text-sm font-black text-[#061A3A]" onClick={startGame} type="button">
+              <button className="rounded-2xl bg-white px-3 py-2 text-xs font-black text-[#061A3A] sm:px-4 sm:py-2.5 sm:text-sm" onClick={startGame} type="button">
                 Nová hra
               </button>
-              <Link className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-black text-white" href="/">
+              <Link className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-black text-white sm:px-4 sm:py-2.5 sm:text-sm" href="/">
                 Úvodní stránka
               </Link>
             </div>
@@ -443,14 +443,14 @@ export default function PublicScoreboardPage() {
               </div>
             </section>
           ) : (
-            <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <section className="flex min-h-0 flex-col gap-3">
-                <div className="grid shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <section className="flex flex-col gap-2 md:min-h-0 md:gap-3">
+                <div className="grid shrink-0 grid-cols-2 gap-2 md:gap-3 xl:grid-cols-4">
                   {scoreboard.players.map((player, index) => {
                     const isActive = index === scoreboard.activePlayerIndex;
                     return (
                       <div
-                        className={`relative rounded-[24px] border p-4 shadow-2xl shadow-black/25 transition ${
+                        className={`relative rounded-[20px] border p-2 shadow-2xl shadow-black/25 transition sm:rounded-[24px] sm:p-4 ${
                           isActive
                             ? "border-emerald-300 bg-emerald-400/18 ring-4 ring-emerald-300/20"
                             : "border-white/10 bg-white/7 opacity-70"
@@ -458,19 +458,19 @@ export default function PublicScoreboardPage() {
                         key={player.id}
                       >
                         {isActive ? (
-                          <span className="absolute right-3 top-3 rounded-full bg-emerald-300 px-3 py-1 text-xs font-black text-[#061A3A]">
+                          <span className="absolute right-2 top-2 rounded-full bg-emerald-300 px-2 py-1 text-[10px] font-black text-[#061A3A] sm:right-3 sm:top-3 sm:px-3 sm:text-xs">
                             Na tahu
                           </span>
                         ) : null}
-                        <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-100">Hráč</p>
-                        <h2 className="mt-1 max-w-[12rem] truncate text-xl font-black">{player.name}</h2>
-                        <p className="mt-4 text-5xl font-black leading-none tracking-tight md:text-6xl">{player.score}</p>
-                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs font-black text-blue-100">
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-blue-100 sm:text-xs">Hráč</p>
+                        <h2 className="mt-1 max-w-[8rem] truncate text-base font-black sm:max-w-[12rem] sm:text-xl">{player.name}</h2>
+                        <p className="mt-2 text-4xl font-black leading-none tracking-tight sm:mt-4 sm:text-5xl md:text-6xl">{player.score}</p>
+                        <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] font-black text-blue-100 sm:mt-3 sm:gap-2 sm:text-xs">
                           <span>Sety {player.sets}</span>
                           <span>Legy {player.legs}</span>
                           <span>Ø {average(player)}</span>
                         </div>
-                        <p className="mt-2 truncate text-xs font-bold text-blue-100/80">Náhozy: {visitsText(player)}</p>
+                        <p className="mt-1 truncate text-[10px] font-bold text-blue-100/80 sm:mt-2 sm:text-xs">Náhozy: {visitsText(player)}</p>
                       </div>
                     );
                   })}
@@ -484,20 +484,20 @@ export default function PublicScoreboardPage() {
                   </div>
                 ) : null}
 
-                <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
-                  <section className="min-h-0 rounded-[28px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25">
-                    <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="grid flex-1 gap-2 md:min-h-0 md:gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+                  <section className="rounded-[22px] border border-white/10 bg-white/8 p-2 shadow-2xl shadow-black/25 sm:rounded-[28px] sm:p-3 md:min-h-0">
+                    <div className="mb-2 flex flex-col gap-2 sm:mb-3 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="text-sm font-bold text-blue-100">Na tahu</p>
-                        <h2 className="text-2xl font-black text-emerald-200">{activePlayer?.name}</h2>
-                        <p className="mt-1 text-sm font-bold text-blue-100">
+                        <h2 className="text-xl font-black text-emerald-200 sm:text-2xl">{activePlayer?.name}</h2>
+                        <p className="mt-1 text-xs font-bold text-blue-100 sm:text-sm">
                           Šipka {Math.min((scoreboard.currentThrows.length || 0) + 1, 3)}/3 · {currentThrowText}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {[1, 2, 3].map((item) => (
                           <button
-                            className={`rounded-2xl px-4 py-3 text-sm font-black transition ${
+                            className={`rounded-2xl px-3 py-2.5 text-xs font-black transition sm:px-4 sm:py-3 sm:text-sm ${
                               multiplier === item
                                 ? "bg-orange-400 text-[#061A3A]"
                                 : "bg-orange-500/20 text-orange-100"
@@ -509,15 +509,15 @@ export default function PublicScoreboardPage() {
                             {item === 1 ? "SINGLE" : item === 2 ? "DOUBLE" : "TRIPLE"}
                           </button>
                         ))}
-                        <button className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#061A3A]" onClick={endVisit} type="button">
+                        <button className="rounded-2xl bg-white px-3 py-2.5 text-xs font-black text-[#061A3A] sm:px-4 sm:py-3 sm:text-sm" onClick={endVisit} type="button">
                           Ukončit nához
                         </button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-6 gap-2 xl:grid-cols-8">
+                    <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 xl:grid-cols-8">
                       <button
-                        className="min-h-14 rounded-2xl bg-[#EF233C] text-lg font-black text-white shadow-lg shadow-black/20 transition active:scale-[0.98]"
+                        className="min-h-12 rounded-2xl bg-[#EF233C] text-base font-black text-white shadow-lg shadow-black/20 transition active:scale-[0.98] sm:min-h-14 sm:text-lg"
                         disabled={Boolean(scoreboard.matchWinnerName)}
                         onClick={() => handleThrow(0, 1)}
                         type="button"
@@ -526,7 +526,7 @@ export default function PublicScoreboardPage() {
                       </button>
                       {numberButtons.map((value) => (
                         <button
-                          className="min-h-14 rounded-2xl bg-white text-xl font-black text-[#061A3A] shadow-lg shadow-black/20 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300 md:min-h-16 md:text-2xl"
+                          className="min-h-12 rounded-2xl bg-white text-lg font-black text-[#061A3A] shadow-lg shadow-black/20 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300 sm:min-h-14 sm:text-xl md:min-h-16 md:text-2xl"
                           disabled={Boolean(scoreboard.matchWinnerName) || (value === 25 && multiplier === 3)}
                           key={value}
                           onClick={() => handleThrow(value)}
@@ -538,11 +538,11 @@ export default function PublicScoreboardPage() {
                     </div>
                   </section>
 
-                  <aside className="min-h-0 rounded-[28px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
-                    <h2 className="text-xl font-black">Doporučené zavření</h2>
+                  <aside className="rounded-[22px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[28px] sm:p-4 md:min-h-0">
+                    <h2 className="text-lg font-black sm:text-xl">Doporučené zavření</h2>
                     {checkout ? (
-                      <div className="mt-4 space-y-3">
-                        <p className="rounded-2xl bg-emerald-400/15 px-4 py-3 text-lg font-black text-emerald-100">
+                      <div className="mt-3 space-y-2 sm:mt-4 sm:space-y-3">
+                        <p className="rounded-2xl bg-emerald-400/15 px-3 py-2 text-base font-black text-emerald-100 sm:px-4 sm:py-3 sm:text-lg">
                           {checkout.primary.join(" ")}
                         </p>
                         {checkout.alternatives?.map((route) => (
@@ -559,9 +559,9 @@ export default function PublicScoreboardPage() {
                       </p>
                     )}
 
-                    <div className="mt-4 grid gap-2">
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 lg:grid-cols-1">
                       <button
-                        className="rounded-2xl bg-[#EF233C] px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-2xl bg-[#EF233C] px-3 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm"
                         disabled={dartSnapshots.length === 0}
                         onClick={undoLastDart}
                         type="button"
@@ -569,7 +569,7 @@ export default function PublicScoreboardPage() {
                         Vrátit šipku
                       </button>
                       <button
-                        className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-2xl border border-white/15 bg-white/10 px-3 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm"
                         disabled={visitSnapshots.length === 0}
                         onClick={undoLastVisit}
                         type="button"
@@ -581,9 +581,9 @@ export default function PublicScoreboardPage() {
                 </div>
               </section>
 
-              <aside className="min-h-0 overflow-hidden rounded-[28px] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-black/25">
-                <h2 className="text-xl font-black">Historie náhozů</h2>
-                <div className="mt-4 flex max-h-[calc(100vh-12rem)] flex-col gap-2 overflow-y-auto pr-1">
+              <aside className="overflow-hidden rounded-[22px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[28px] sm:p-4 md:min-h-0">
+                <h2 className="text-lg font-black sm:text-xl">Historie náhozů</h2>
+                <div className="mt-3 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1 sm:mt-4 md:max-h-[calc(100vh-12rem)]">
                   {scoreboard.lastVisits.length === 0 ? (
                     <p className="rounded-2xl bg-black/20 p-4 text-sm font-bold text-blue-100">Zatím není zadaný žádný nához.</p>
                   ) : (
