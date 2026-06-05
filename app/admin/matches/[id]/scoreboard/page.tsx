@@ -28,7 +28,7 @@ type MatchDetail = {
 type NamedEntity = { id: string; name: string };
 type TeamSeason = { id: string; team_id: string; display_name: string | null };
 type Team = { id: string; name: string };
-type Player = { id: string; display_name: string; nickname: string | null };
+type Player = { id: string; display_name: string };
 type SheetGame = {
   id: string | null;
   game_type: MatchGameType;
@@ -186,7 +186,7 @@ function calculateCoreScore(games: SheetGame[]) {
 }
 
 function playerLabel(player: Player) {
-  return player.nickname ? `${player.display_name} (${player.nickname})` : player.display_name;
+  return player.display_name;
 }
 
 function throwLabel(value: number, multiplier: Multiplier) {

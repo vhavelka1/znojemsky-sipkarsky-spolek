@@ -128,6 +128,8 @@ export async function GET() {
     .is("deleted_at", null)
     .order("name", { ascending: true });
 
+  let teams: Array<Record<string, unknown> & { slug: string; logo_url?: string | null }> = [];
+
   if (error?.message.includes("logo_url")) {
     const fallback = await supabase
       .from("teams")
@@ -139,16 +141,95 @@ export async function GET() {
       return NextResponse.json({ error: fallback.error.message }, { status: 500 });
     }
 
-    return NextResponse.json({
-      teams: (fallback.data ?? []).map(withBundledLogo),
-    });
-  }
-
-  if (error) {
+    teams = (fallback.data ?? []).map(withBundledLogo);
+  } else if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  } else {
+    teams = (data ?? []).map(withBundledLogo);
   }
 
-  return NextResponse.json({ teams: (data ?? []).map(withBundledLogo) });
+  const { data: activeSeason, error: activeSeasonError } = await supabase
+    .from("seasons")
+    .select("id, name, is_active")
+    .eq("is_active", true)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (activeSeasonError) {
+    return NextResponse.json({ error: activeSeasonError.message }, { status: 500 });
+  }
+
+  let teamSeasons: Array<{
+    id: string;
+    team_id: string;
+    season_id: string;
+    display_name: string | null;
+  }> = [];
+  let memberships: Array<{
+    id: string;
+    team_season_id: string;
+    player_id: string;
+    member_role: string;
+    left_on: string | null;
+  }> = [];
+  let players: Array<{
+    id: string;
+    display_name: string;
+  }> = [];
+
+  if (activeSeason) {
+    const { data: teamSeasonData, error: teamSeasonError } = await supabase
+      .from("team_seasons")
+      .select("id, team_id, season_id, display_name")
+      .eq("season_id", activeSeason.id)
+      .is("deleted_at", null);
+
+    if (teamSeasonError) {
+      return NextResponse.json({ error: teamSeasonError.message }, { status: 500 });
+    }
+
+    teamSeasons = teamSeasonData ?? [];
+    const teamSeasonIds = teamSeasons.map((teamSeason) => teamSeason.id);
+
+    if (teamSeasonIds.length > 0) {
+      const { data: membershipData, error: membershipError } = await supabase
+        .from("team_memberships")
+        .select("id, team_season_id, player_id, member_role, left_on")
+        .in("team_season_id", teamSeasonIds)
+        .is("left_on", null)
+        .is("deleted_at", null);
+
+      if (membershipError) {
+        return NextResponse.json({ error: membershipError.message }, { status: 500 });
+      }
+
+      memberships = membershipData ?? [];
+      const playerIds = Array.from(new Set(memberships.map((membership) => membership.player_id)));
+
+      if (playerIds.length > 0) {
+        const { data: playerData, error: playerError } = await supabase
+          .from("players")
+          .select("id, display_name")
+          .in("id", playerIds)
+          .is("deleted_at", null)
+          .order("display_name", { ascending: true });
+
+        if (playerError) {
+          return NextResponse.json({ error: playerError.message }, { status: 500 });
+        }
+
+        players = playerData ?? [];
+      }
+    }
+  }
+
+  return NextResponse.json({
+    activeSeason,
+    memberships,
+    players,
+    teams,
+    teamSeasons,
+  });
 }
 
 export async function POST(request: Request) {

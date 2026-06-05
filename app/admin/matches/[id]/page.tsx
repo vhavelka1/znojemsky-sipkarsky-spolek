@@ -28,8 +28,12 @@ type MatchDetail = {
 type NamedEntity = { id: string; name: string };
 type TeamSeason = { id: string; team_id: string; display_name: string | null };
 type Team = { id: string; name: string };
-type Membership = { team_season_id: string; player_id: string; member_role: "player" | "captain" };
-type Player = { id: string; display_name: string; nickname: string | null };
+type Membership = {
+  team_season_id: string;
+  player_id: string;
+  member_role: "player" | "captain" | "assistant_captain";
+};
+type Player = { id: string; display_name: string };
 type SheetGame = {
   id: string | null;
   game_type: MatchGameType;
@@ -190,7 +194,7 @@ function formatDateTime(value: string) {
 }
 
 function playerLabel(player: Player) {
-  return player.nickname ? `${player.display_name} (${player.nickname})` : player.display_name;
+  return player.display_name;
 }
 
 function Info({ label, children }: { label: string; children: ReactNode }) {

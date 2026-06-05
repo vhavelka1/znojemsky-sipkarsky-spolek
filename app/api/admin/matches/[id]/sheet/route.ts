@@ -80,13 +80,12 @@ type PlayerRow = {
   display_name: string;
   first_name: string | null;
   last_name: string | null;
-  nickname: string | null;
 };
 
 type MembershipRow = {
   team_season_id: string;
   player_id: string;
-  member_role: "player" | "captain";
+  member_role: "player" | "captain" | "assistant_captain";
 };
 
 type MatchGameRow = {
@@ -459,7 +458,7 @@ async function loadSheetData(matchId: string) {
         .returns<MembershipRow[]>(),
       supabase
         .from("players")
-        .select("id, display_name, first_name, last_name, nickname")
+        .select("id, display_name, first_name, last_name")
         .is("deleted_at", null)
         .order("display_name", { ascending: true })
         .returns<PlayerRow[]>(),

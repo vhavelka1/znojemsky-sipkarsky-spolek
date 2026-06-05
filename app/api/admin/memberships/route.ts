@@ -45,7 +45,15 @@ function requiredString(value: unknown) {
 }
 
 function membershipRole(value: unknown) {
-  return value === "captain" ? "captain" : "player";
+  if (value === "captain") {
+    return "captain";
+  }
+
+  if (value === "assistant_captain") {
+    return "assistant_captain";
+  }
+
+  return "player";
 }
 
 function todayIsoDate() {
@@ -100,7 +108,7 @@ export async function GET() {
   ] = await Promise.all([
     supabase
       .from("players")
-      .select("id, display_name, nickname")
+      .select("id, display_name")
       .is("deleted_at", null)
       .order("display_name", { ascending: true }),
 

@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 
 const navigationItems = [
   { href: "/admin", label: "Přehled" },
-  { href: "/admin/players", label: "Hráči" },
   { href: "/admin/teams", label: "Týmy" },
-  { href: "/admin/seasons", label: "Sezóny" },
+  { href: "/admin/rosters", label: "Soupisky" },
+  { href: "/admin/players", label: "Hráči" },
   { href: "/admin/memberships", label: "Členství" },
+  { href: "/admin/seasons", label: "Sezóny" },
   { href: "/admin/leagues", label: "Ligy" },
   { href: "/admin/matches", label: "Zápasy" },
   { href: "/admin/tables", label: "Tabulky" },

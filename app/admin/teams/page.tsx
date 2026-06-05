@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
 
@@ -15,8 +15,41 @@ type Team = {
   deleted_at: string | null;
 };
 
+type Season = {
+  id: string;
+  name: string;
+  is_active: boolean;
+};
+
+type TeamSeason = {
+  id: string;
+  team_id: string;
+  season_id: string;
+  display_name: string | null;
+};
+
+type Player = {
+  id: string;
+  display_name: string;
+};
+
+type MemberRole = "player" | "captain" | "assistant_captain";
+
+type Membership = {
+  id: string;
+  team_season_id: string;
+  player_id: string;
+  member_role: MemberRole;
+  left_on: string | null;
+};
+
 type TeamForm = {
   name: string;
+};
+
+type LeadershipDraft = {
+  captain_player_id: string;
+  assistant_player_ids: string[];
 };
 
 const emptyForm: TeamForm = {
@@ -25,9 +58,13 @@ const emptyForm: TeamForm = {
 
 async function readJson(response: Response) {
   return (await response.json().catch(() => ({}))) as {
+    activeSeason?: Season | null;
     error?: string;
+    memberships?: Membership[];
+    players?: Player[];
     teams?: Team[];
     team?: Team;
+    teamSeasons?: TeamSeason[];
   };
 }
 
@@ -39,16 +76,42 @@ async function fetchTeams() {
     throw new Error(
       body.error?.includes("logo_url")
         ? "Nejprve spusťte SQL soubor supabase/apply_team_logos_in_dashboard.sql v Supabase SQL Editoru."
-        : "Nepodařilo se načíst týmy.",
+        : body.error ?? "Nepodařilo se načíst týmy.",
     );
   }
 
-  return body.teams ?? [];
+  return {
+    activeSeason: body.activeSeason ?? null,
+    memberships: body.memberships ?? [],
+    players: body.players ?? [],
+    teams: body.teams ?? [],
+    teamSeasons: body.teamSeasons ?? [],
+  };
+}
+
+function playerName(players: Player[], playerId: string) {
+  return players.find((player) => player.id === playerId)?.display_name ?? "Neznámý hráč";
+}
+
+function createLeadershipDraft(memberships: Membership[]): LeadershipDraft {
+  return {
+    assistant_player_ids: memberships
+      .filter((membership) => membership.member_role === "assistant_captain")
+      .map((membership) => membership.player_id),
+    captain_player_id:
+      memberships.find((membership) => membership.member_role === "captain")?.player_id ?? "",
+  };
 }
 
 export default function AdminTeamsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
+  const [activeSeason, setActiveSeason] = useState<Season | null>(null);
+  const [teamSeasons, setTeamSeasons] = useState<TeamSeason[]>([]);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [leadershipDrafts, setLeadershipDrafts] = useState<Record<string, LeadershipDraft>>({});
   const [form, setForm] = useState<TeamForm>(emptyForm);
+  const [teamFilter, setTeamFilter] = useState("");
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -57,6 +120,44 @@ export default function AdminTeamsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const canManageTeams = mockRole === "admin";
+  const filteredTeams = useMemo(() => {
+    const normalizedFilter = teamFilter.trim().toLocaleLowerCase("cs-CZ");
+
+    if (!normalizedFilter) {
+      return teams;
+    }
+
+    return teams.filter((team) => {
+      const name = team.name.toLocaleLowerCase("cs-CZ");
+      const slug = team.slug.toLocaleLowerCase("cs-CZ");
+
+      return name.includes(normalizedFilter) || slug.includes(normalizedFilter);
+    });
+  }, [teamFilter, teams]);
+
+  function teamSeasonForTeam(teamId: string) {
+    return teamSeasons.find((teamSeason) => teamSeason.team_id === teamId) ?? null;
+  }
+
+  function membershipsForTeam(teamId: string) {
+    const teamSeason = teamSeasonForTeam(teamId);
+    if (!teamSeason) {
+      return [];
+    }
+
+    return memberships.filter((membership) => membership.team_season_id === teamSeason.id);
+  }
+
+  function draftForTeam(teamId: string) {
+    return leadershipDrafts[teamId] ?? createLeadershipDraft(membershipsForTeam(teamId));
+  }
+
+  function updateLeadershipDraft(teamId: string, draft: LeadershipDraft) {
+    setLeadershipDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [teamId]: draft,
+    }));
+  }
 
   async function loadTeams(showLoading = true) {
     if (showLoading) {
@@ -66,10 +167,21 @@ export default function AdminTeamsPage() {
     setError(null);
 
     try {
-      setTeams(await fetchTeams());
+      const data = await fetchTeams();
+      setTeams(data.teams);
+      setActiveSeason(data.activeSeason);
+      setTeamSeasons(data.teamSeasons);
+      setMemberships(data.memberships);
+      setPlayers(data.players);
+      setLeadershipDrafts({});
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Nepodařilo se načíst týmy.");
       setTeams([]);
+      setActiveSeason(null);
+      setTeamSeasons([]);
+      setMemberships([]);
+      setPlayers([]);
+      setLeadershipDrafts({});
     }
 
     setIsLoading(false);
@@ -79,12 +191,17 @@ export default function AdminTeamsPage() {
     let isMounted = true;
 
     fetchTeams()
-      .then((loadedTeams) => {
+      .then((data) => {
         if (!isMounted) {
           return;
         }
 
-        setTeams(loadedTeams);
+        setTeams(data.teams);
+        setActiveSeason(data.activeSeason);
+        setTeamSeasons(data.teamSeasons);
+        setMemberships(data.memberships);
+        setPlayers(data.players);
+        setLeadershipDrafts({});
         setIsLoading(false);
       })
       .catch((loadError) => {
@@ -94,6 +211,11 @@ export default function AdminTeamsPage() {
 
         setError(loadError instanceof Error ? loadError.message : "Nepodařilo se načíst týmy.");
         setTeams([]);
+        setActiveSeason(null);
+        setTeamSeasons([]);
+        setMemberships([]);
+        setPlayers([]);
+        setLeadershipDrafts({});
         setIsLoading(false);
       });
 
@@ -122,10 +244,10 @@ export default function AdminTeamsPage() {
       }),
     });
 
-    await readJson(response);
+    const body = await readJson(response);
 
     if (!response.ok) {
-      setError("Nepodařilo se vytvořit tým.");
+      setError(body.error ?? "Nepodařilo se vytvořit tým.");
     } else {
       setForm(emptyForm);
       await loadTeams();
@@ -152,10 +274,10 @@ export default function AdminTeamsPage() {
       }),
     });
 
-    await readJson(response);
+    const body = await readJson(response);
 
     if (!response.ok) {
-      setError("Nepodařilo se upravit tým.");
+      setError(body.error ?? "Nepodařilo se upravit tým.");
     } else {
       setEditingTeamId(null);
       setEditingName("");
@@ -173,10 +295,10 @@ export default function AdminTeamsPage() {
       method: "DELETE",
     });
 
-    await readJson(response);
+    const body = await readJson(response);
 
     if (!response.ok) {
-      setError("Nepodařilo se odstranit tým.");
+      setError(body.error ?? "Nepodařilo se odstranit tým.");
     } else {
       await loadTeams(false);
     }
@@ -209,6 +331,42 @@ export default function AdminTeamsPage() {
     setBusyTeamId(null);
   }
 
+  async function handleLeadershipSave(team: Team) {
+    if (!activeSeason) {
+      setError("Nejdřív nastavte aktivní sezónu.");
+      return;
+    }
+
+    setBusyTeamId(team.id);
+    setError(null);
+
+    const draft = draftForTeam(team.id);
+    const response = await fetch(`/api/admin/teams/${team.id}/leadership`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assistant_player_ids: draft.assistant_player_ids,
+        captain_player_id: draft.captain_player_id || null,
+        season_id: activeSeason.id,
+      }),
+    });
+    const body = await readJson(response);
+
+    if (!response.ok) {
+      setError(
+        body.error?.includes("assistant_captain")
+          ? "Nejprve spusťte SQL soubor supabase/apply_assistant_captains_in_dashboard.sql v Supabase SQL Editoru."
+          : body.error ?? "Nepodařilo se uložit vedení týmu.",
+      );
+    } else {
+      await loadTeams(false);
+    }
+
+    setBusyTeamId(null);
+  }
+
   function startEditing(team: Team) {
     setEditingTeamId(team.id);
     setEditingName(team.name);
@@ -221,137 +379,162 @@ export default function AdminTeamsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-        <header>
-          <p className="text-sm font-medium text-slate-500">Administrace</p>
-          <h2 className="mt-2 text-3xl font-bold">Týmy</h2>
-        </header>
+      <header>
+        <p className="text-sm font-medium text-slate-500">Administrace</p>
+        <h2 className="mt-2 text-3xl font-bold">Týmy</h2>
+      </header>
 
-        {!canManageTeams ? (
-          <section className="rounded-lg bg-white p-6 shadow-sm">
-            <p className="text-sm text-slate-600">
-              Aktuální testovací role neumožňuje správu týmů.
-            </p>
+      {!canManageTeams ? (
+        <section className="rounded-[20px] border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-600">
+            Aktuální testovací role neumožňuje správu týmů.
+          </p>
+        </section>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+          <section className="rounded-[20px] border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold">Vytvořit tým</h3>
+
+            <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreate}>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Název týmu
+                <input
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                  required
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm({ ...form, name: event.target.value })
+                  }
+                />
+              </label>
+
+              <button
+                className="mt-2 rounded-xl bg-[#23364D] px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#1A2A3E] disabled:cursor-not-allowed disabled:bg-slate-400"
+                disabled={isSaving}
+                type="submit"
+              >
+                {isSaving ? "Ukládám..." : "Vytvořit tým"}
+              </button>
+              <p className="text-xs text-slate-500">
+                Logo lze nahrát po vytvoření týmu v seznamu.
+              </p>
+            </form>
           </section>
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-            <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Vytvořit tým</h3>
 
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreate}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Název týmu
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={form.name}
-                    onChange={(event) =>
-                      setForm({ ...form, name: event.target.value })
-                    }
-                  />
-                </label>
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : "Vytvořit tým"}
-                </button>
-                <p className="text-xs text-slate-500">
-                  Logo lze nahrát po vytvoření týmu v seznamu.
-                </p>
-              </form>
-            </section>
-
-            <section className="rounded-lg bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-6 py-4">
+          <section className="rounded-[20px] border border-slate-200 bg-white shadow-sm">
+            <div className="grid gap-4 border-b border-slate-200 px-6 py-4 lg:grid-cols-[1fr_280px] lg:items-end">
+              <div>
                 <h3 className="text-lg font-semibold">Seznam týmů</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Vedení týmu se nastavuje pro aktivní sezónu
+                  {activeSeason ? ` ${activeSeason.name}.` : "."}
+                </p>
               </div>
 
-              {error ? (
-                <div className="px-6 py-5 text-sm text-red-700">{error}</div>
-              ) : null}
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Filtrovat tým
+                <input
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                  placeholder="Název týmu"
+                  value={teamFilter}
+                  onChange={(event) => setTeamFilter(event.target.value)}
+                />
+              </label>
+            </div>
 
-              {isLoading ? (
-                <div className="px-6 py-5 text-sm text-slate-500">
-                  Načítám týmy...
-                </div>
-              ) : teams.length === 0 ? (
-                <div className="px-6 py-5 text-sm text-slate-500">
-                  Nebyly nalezeny žádné týmy.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                      <tr>
-                        <th className="px-6 py-3 font-semibold">Logo</th>
-                        <th className="px-6 py-3 font-semibold">Název</th>
-                        <th className="px-6 py-3 font-semibold">URL název</th>
-                        <th className="px-6 py-3 font-semibold">Vytvořeno</th>
-                        <th className="px-6 py-3 font-semibold">Akce</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {teams.map((team) => {
-                        const isEditing = editingTeamId === team.id;
-                        const isBusy = busyTeamId === team.id;
+            {error ? (
+              <div className="px-6 py-5 text-sm text-red-700">{error}</div>
+            ) : null}
 
-                        return (
-                          <tr key={team.id}>
-                            <td className="px-6 py-4">
-                              <div className="flex min-w-28 items-center gap-3">
-                                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-1">
-                                  {team.logo_url ? (
-                                    <Image
-                                      alt={`Logo ${team.name}`}
-                                      className="h-full w-full object-contain"
-                                      height={56}
-                                      src={team.logo_url}
-                                      unoptimized
-                                      width={56}
-                                    />
-                                  ) : (
-                                    <span className="text-lg font-bold text-slate-500">
-                                      {team.name.charAt(0)}
-                                    </span>
-                                  )}
-                                </div>
-                                <label className={`cursor-pointer rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 ${isBusy ? "pointer-events-none opacity-60" : ""}`}>
-                                  {team.logo_url ? "Změnit logo" : "Nahrát logo"}
-                                  <input
-                                    accept="image/jpeg,image/png,image/webp"
-                                    className="hidden"
-                                    disabled={isBusy}
-                                    onChange={(event) => {
-                                      void handleLogoUpload(team.id, event.target.files?.[0]);
-                                      event.target.value = "";
-                                    }}
-                                    type="file"
-                                  />
-                                </label>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 font-medium">
-                              {isEditing ? (
+            {isLoading ? (
+              <div className="px-6 py-5 text-sm text-slate-500">
+                Načítám týmy...
+              </div>
+            ) : teams.length === 0 ? (
+              <div className="px-6 py-5 text-sm text-slate-500">
+                Nebyly nalezeny žádné týmy.
+              </div>
+            ) : filteredTeams.length === 0 ? (
+              <div className="px-6 py-5 text-sm text-slate-500">
+                Pro zadaný filtr nebyl nalezen žádný tým.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {filteredTeams.map((team) => {
+                  const isEditing = editingTeamId === team.id;
+                  const isBusy = busyTeamId === team.id;
+                  const teamMemberships = membershipsForTeam(team.id);
+                  const teamDraft = draftForTeam(team.id);
+                  const selectedCaptainId = teamDraft.captain_player_id;
+                  const teamPlayers = teamMemberships
+                    .map((membership) => players.find((player) => player.id === membership.player_id))
+                    .filter((player): player is Player => Boolean(player))
+                    .sort((first, second) =>
+                      first.display_name.localeCompare(second.display_name, "cs"),
+                    );
+                  const teamSeason = teamSeasonForTeam(team.id);
+
+                  return (
+                    <article className="p-6" key={team.id}>
+                      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-1">
+                            {team.logo_url ? (
+                              <Image
+                                alt={`Logo ${team.name}`}
+                                className="h-full w-full object-contain"
+                                height={64}
+                                src={team.logo_url}
+                                unoptimized
+                                width={64}
+                              />
+                            ) : (
+                              <span className="text-lg font-bold text-slate-500">
+                                {team.name.charAt(0)}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            {isEditing ? (
+                              <input
+                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                                value={editingName}
+                                onChange={(event) => setEditingName(event.target.value)}
+                              />
+                            ) : (
+                              <h4 className="text-lg font-semibold text-slate-950">
+                                {team.name}
+                              </h4>
+                            )}
+                            <p className="mt-1 text-sm text-slate-500">{team.slug}</p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              Vytvořeno {new Date(team.created_at).toLocaleDateString("cs-CZ")}
+                            </p>
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <label
+                                className={`cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-[#0F4FA8] ${
+                                  isBusy ? "pointer-events-none opacity-60" : ""
+                                }`}
+                              >
+                                {team.logo_url ? "Změnit logo" : "Nahrát logo"}
                                 <input
-                                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                                  value={editingName}
-                                  onChange={(event) => setEditingName(event.target.value)}
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  disabled={isBusy}
+                                  onChange={(event) => {
+                                    void handleLogoUpload(team.id, event.target.files?.[0]);
+                                    event.target.value = "";
+                                  }}
+                                  type="file"
                                 />
-                              ) : (
-                                team.name
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-slate-600">{team.slug}</td>
-                            <td className="px-6 py-4 text-slate-600">
-                              {new Date(team.created_at).toLocaleDateString()}
-                            </td>
-                            <td className="px-6 py-4">
+                              </label>
+
                               {isEditing ? (
-                                <div className="flex gap-2">
+                                <>
                                   <button
-                                    className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                                    className="rounded-xl bg-[#23364D] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
                                     disabled={isBusy}
                                     onClick={() => handleUpdate(team.id)}
                                     type="button"
@@ -359,18 +542,18 @@ export default function AdminTeamsPage() {
                                     Uložit
                                   </button>
                                   <button
-                                    className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+                                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
                                     disabled={isBusy}
                                     onClick={cancelEditing}
                                     type="button"
                                   >
                                     Zrušit
                                   </button>
-                                </div>
+                                </>
                               ) : (
-                                <div className="flex gap-2">
+                                <>
                                   <button
-                                    className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
                                     disabled={isBusy}
                                     onClick={() => startEditing(team)}
                                     type="button"
@@ -378,26 +561,161 @@ export default function AdminTeamsPage() {
                                     Upravit
                                   </button>
                                   <button
-                                    className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:text-red-300"
+                                    className="rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:text-red-300"
                                     disabled={isBusy}
                                     onClick={() => handleDelete(team.id)}
                                     type="button"
                                   >
                                     Odstranit
                                   </button>
-                                </div>
+                                </>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          </div>
-        )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h5 className="font-semibold text-slate-950">Vedení týmu</h5>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Kapitán je jen jeden, zástupců může být více.
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                              {teamPlayers.length} hráčů
+                            </span>
+                          </div>
+
+                          {!activeSeason ? (
+                            <p className="mt-4 text-sm text-slate-500">
+                              Nejdřív nastavte aktivní sezónu.
+                            </p>
+                          ) : !teamSeason ? (
+                            <p className="mt-4 text-sm text-slate-500">
+                              Tým v aktivní sezóně nemá soupisku.
+                            </p>
+                          ) : teamPlayers.length === 0 ? (
+                            <p className="mt-4 text-sm text-slate-500">
+                              Tým zatím nemá aktivní hráče.
+                            </p>
+                          ) : (
+                            <div className="mt-4 flex flex-col gap-4">
+                              <label className="flex flex-col gap-1 text-sm font-medium">
+                                Kapitán
+                                <select
+                                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                                  disabled={isBusy}
+                                  value={selectedCaptainId}
+                                  onChange={(event) => {
+                                    const captainPlayerId = event.target.value;
+                                    updateLeadershipDraft(team.id, {
+                                      assistant_player_ids:
+                                        teamDraft.assistant_player_ids.filter(
+                                          (playerId) => playerId !== captainPlayerId,
+                                        ),
+                                      captain_player_id: captainPlayerId,
+                                    });
+                                  }}
+                                >
+                                  <option value="">Bez kapitána</option>
+                                  {teamPlayers.map((player) => (
+                                    <option key={player.id} value={player.id}>
+                                      {player.display_name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <div>
+                                <p className="text-sm font-medium">Zástupci kapitána</p>
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                  {teamPlayers.map((player) => {
+                                    const isCaptain = player.id === selectedCaptainId;
+                                    const isAssistant =
+                                      teamDraft.assistant_player_ids.includes(player.id);
+
+                                    return (
+                                      <label
+                                        className={`flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-sm ${
+                                          isCaptain
+                                            ? "border-slate-200 text-slate-400"
+                                            : "border-slate-200 text-slate-700"
+                                        }`}
+                                        key={player.id}
+                                      >
+                                        <input
+                                          checked={isAssistant}
+                                          className="h-4 w-4 accent-[#0F4FA8]"
+                                          disabled={isBusy || isCaptain}
+                                          onChange={(event) => {
+                                            const assistantPlayerIds = event.target.checked
+                                              ? [
+                                                  ...teamDraft.assistant_player_ids,
+                                                  player.id,
+                                                ]
+                                              : teamDraft.assistant_player_ids.filter(
+                                                  (playerId) => playerId !== player.id,
+                                                );
+
+                                            updateLeadershipDraft(team.id, {
+                                              ...teamDraft,
+                                              assistant_player_ids: assistantPlayerIds,
+                                            });
+                                          }}
+                                          type="checkbox"
+                                        />
+                                        <span className="truncate">
+                                          {player.display_name}
+                                          {isCaptain ? " (kapitán)" : ""}
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl bg-white px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+                                <p>
+                                  Kapitán:{" "}
+                                  <strong>
+                                    {teamDraft.captain_player_id
+                                      ? playerName(players, teamDraft.captain_player_id)
+                                      : "není nastavený"}
+                                  </strong>
+                                </p>
+                                <p className="mt-1">
+                                  Zástupci:{" "}
+                                  <strong>
+                                    {teamDraft.assistant_player_ids.length > 0
+                                      ? teamDraft.assistant_player_ids
+                                          .map((playerId) => playerName(players, playerId))
+                                          .join(", ")
+                                      : "nejsou nastavení"}
+                                  </strong>
+                                </p>
+                              </div>
+
+                              <button
+                                className="rounded-xl bg-[#23364D] px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#1A2A3E] disabled:cursor-not-allowed disabled:bg-slate-400"
+                                disabled={isBusy}
+                                onClick={() => handleLeadershipSave(team)}
+                                type="button"
+                              >
+                                {isBusy ? "Ukládám..." : "Uložit vedení"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

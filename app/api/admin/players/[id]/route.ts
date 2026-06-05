@@ -3,7 +3,13 @@ import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const mockRole = "admin";
 
-type CreatePlayerBody = {
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+type UpdatePlayerBody = {
   display_name?: unknown;
   first_name?: unknown;
   last_name?: unknown;
@@ -79,7 +85,7 @@ function getAdminClientOrError() {
   }
 }
 
-export async function GET() {
+export async function PATCH(request: Request, context: RouteContext) {
   const developmentResponse = developmentOnlyResponse();
   if (developmentResponse) {
     return developmentResponse;
@@ -90,36 +96,7 @@ export async function GET() {
     return adminResponse;
   }
 
-  const { supabase, response } = getAdminClientOrError();
-  if (response) {
-    return response;
-  }
-
-  const { data, error } = await supabase
-    .from("players")
-    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, created_at")
-    .is("deleted_at", null)
-    .order("display_name", { ascending: true });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ players: data ?? [] });
-}
-
-export async function POST(request: Request) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
-  }
-
-  const body = (await request.json().catch(() => null)) as CreatePlayerBody | null;
+  const body = (await request.json().catch(() => null)) as UpdatePlayerBody | null;
   const displayName = optionalString(body?.display_name);
 
   if (!displayName) {
@@ -129,6 +106,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const { id } = await context.params;
   const { supabase, response } = getAdminClientOrError();
   if (response) {
     return response;
@@ -136,7 +114,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("players")
-    .insert({
+    .update({
       display_name: displayName,
       first_name: optionalString(body?.first_name),
       last_name: optionalString(body?.last_name),
@@ -144,6 +122,8 @@ export async function POST(request: Request) {
       residence: optionalString(body?.residence),
       email: optionalEmail(body?.email),
     })
+    .eq("id", id)
+    .is("deleted_at", null)
     .select("id, display_name, first_name, last_name, date_of_birth, residence, email, created_at")
     .single();
 
@@ -151,5 +131,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ player: data }, { status: 201 });
+  return NextResponse.json({ player: data });
 }
