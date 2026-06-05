@@ -16,10 +16,13 @@ type ConfirmBody = {
 };
 
 function guardRequest() {
-  if (process.env.NODE_ENV !== "development") {
+  if (
+    process.env.NODE_ENV !== "development" &&
+    process.env.ENABLE_DEV_ADMIN !== "true"
+  ) {
     return NextResponse.json(
-      { error: "Potvrzení zápisu je dostupné pouze ve vývojovém režimu." },
-      { status: 404 },
+      { error: "Potvrzení zápisu není povoleno." },
+      { status: 403 },
     );
   }
 
@@ -148,4 +151,3 @@ export async function POST(request: Request, context: RouteContext) {
 
   return NextResponse.json({ status: isConfirmed ? "confirmed" : "awaiting_confirmation" });
 }
-

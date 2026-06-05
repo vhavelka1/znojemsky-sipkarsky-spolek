@@ -710,7 +710,7 @@ export default function AdminMatchSheetPage() {
           className="inline-flex w-fit items-center justify-center rounded-2xl bg-[var(--brand-navy)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1A2A3E]"
           href={`/admin/matches/${matchId}/scoreboard`}
         >
-          Otevřít skórování
+          Otevřít počítadlo
         </Link>
       </div>
       <Card>

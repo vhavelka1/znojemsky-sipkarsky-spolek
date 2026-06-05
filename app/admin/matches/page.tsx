@@ -752,7 +752,7 @@ export default function AdminMatchesPage() {
                               className="inline-flex rounded-md bg-[#061A3A] px-3 py-2 text-sm font-semibold text-white hover:bg-[#0B2F6B]"
                               href={`/admin/matches/${match.id}/scoreboard`}
                             >
-                              Skórovat
+                              Počítadlo
                             </Link>
                             <button
                               className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"

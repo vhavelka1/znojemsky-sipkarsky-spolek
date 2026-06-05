@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCheckout, isValidDoubleOutFinish } from "@/lib/dartsCheckout";
 import type { MultiplierName } from "@/lib/dartsCheckout";
@@ -131,7 +131,7 @@ const multiplierLabels: Record<Multiplier, MultiplierName> = {
   2: "double",
   3: "triple",
 };
-const keypadValues = Array.from({ length: 21 }, (_, index) => index).concat(25);
+const keypadValues = Array.from({ length: 20 }, (_, index) => index + 1).concat(25);
 const emptyPayload = {
   match: null as MatchDetail | null,
   season: null as NamedEntity | null,
@@ -266,6 +266,7 @@ function updateVisitSide(
 }
 
 export default function MatchScoreboardPage() {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const matchId = params.id;
   const [payload, setPayload] = useState(emptyPayload);
@@ -661,12 +662,10 @@ export default function MatchScoreboardPage() {
     setScoreboard(nextState);
   }
 
-  function endVisit() {
-    if (scoreboard.currentThrows.length === 0 || scoreboard.gameFinished) return;
-    setVisitSnapshots((current) => [...current, scoreboard].slice(-30));
-    setScoreboard(finishVisit(scoreboard, scoreboard.currentThrows));
-    setDartSnapshots([]);
-    setMultiplier(1);
+  function exitScoreboard() {
+    if (window.confirm("Skutečně chcete Počítadlo ukončit?")) {
+      router.push("/");
+    }
   }
 
   function undoLastDart() {
@@ -691,7 +690,7 @@ export default function MatchScoreboardPage() {
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#061A3A] px-6 text-white">
-        <p className="text-xl font-black">Načítám skórování...</p>
+        <p className="text-xl font-black">Načítám počítadlo...</p>
       </main>
     );
   }
@@ -718,7 +717,7 @@ export default function MatchScoreboardPage() {
               <Link className="text-xs font-bold text-sky-200 hover:text-white sm:text-sm" href={`/admin/matches/${matchId}`}>
                 Zpět na zápis utkání
               </Link>
-              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl md:text-5xl">Skórování zápasu</h1>
+              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl md:text-5xl">Počítadlo zápasu</h1>
               <p className="mt-1 text-xs text-slate-300 sm:text-sm">
                 {payload.season?.name ?? "Sezóna"} / {payload.league?.name ?? "Liga"} / {payload.group?.name ?? "Skupina"}
               </p>
@@ -808,7 +807,7 @@ export default function MatchScoreboardPage() {
                 const isActive = scoreboard.activeSide === side;
                 return (
                   <div
-                    className={`rounded-[20px] border p-2 shadow-2xl shadow-black/30 transition sm:rounded-[30px] sm:p-4 ${
+                    className={`rounded-[22px] border p-3 shadow-2xl shadow-black/30 transition sm:rounded-[32px] sm:p-5 ${
                       isActive
                         ? "border-emerald-300 bg-emerald-400/15 ring-2 ring-emerald-300/40"
                         : "border-white/10 bg-white/8 opacity-70"
@@ -826,12 +825,17 @@ export default function MatchScoreboardPage() {
                             Na tahu
                           </span>
                         ) : null}
+                        {isActive && scoreboard.sides[side].score <= 170 ? (
+                          <span className="max-w-[10rem] rounded-2xl bg-black/25 px-2 py-1 text-right text-xs font-black text-emerald-100 sm:max-w-[13rem] sm:px-3 sm:text-sm">
+                            {checkout ? checkout.primary.join(" ") : "Nelze zavřít"}
+                          </span>
+                        ) : null}
                         <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[#061A3A] sm:px-3 sm:text-xs">
                           Legy {scoreboard.sides[side].legs}
                         </span>
                       </div>
                     </div>
-                    <p className="mt-2 text-5xl font-black leading-none tracking-tight sm:mt-3 sm:text-[5.5rem] md:text-[7rem]">
+                    <p className="mt-3 text-6xl font-black leading-none tracking-tight sm:mt-4 sm:text-[6rem] md:text-[7.5rem]">
                       {scoreboard.sides[side].score}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-bold text-slate-300 sm:mt-3 sm:gap-2 sm:text-xs">
@@ -884,12 +888,11 @@ export default function MatchScoreboardPage() {
                       </button>
                     ))}
                     <button
-                      className="rounded-2xl bg-white/10 px-3 py-2.5 text-xs font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-3 sm:text-base"
-                      disabled={scoreboard.currentThrows.length === 0}
-                      onClick={endVisit}
+                      className="rounded-2xl bg-white/10 px-3 py-2.5 text-xs font-black text-white transition hover:bg-white/20 sm:px-5 sm:py-3 sm:text-base"
+                      onClick={exitScoreboard}
                       type="button"
                     >
-                      Ukončit nához
+                      Ukončit
                     </button>
                   </div>
                 </div>
@@ -903,7 +906,7 @@ export default function MatchScoreboardPage() {
                   >
                     MISS
                   </button>
-                  {keypadValues.filter((value) => value !== 0).map((value) => (
+                  {keypadValues.map((value) => (
                     <button
                       className="min-h-12 rounded-2xl bg-white text-lg font-black text-[#061A3A] shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-sky-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300 sm:min-h-14 sm:text-2xl"
                       disabled={scoreboard.gameFinished || isSaving || (value === 25 && multiplier === 3)}
@@ -920,31 +923,6 @@ export default function MatchScoreboardPage() {
           </section>
 
           <aside className="flex flex-col gap-2 md:min-h-0 md:gap-3">
-            <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
-              <h2 className="text-lg font-black sm:text-xl">Doporučené zavření</h2>
-              <div className="mt-3 rounded-2xl bg-black/25 p-3 sm:p-4">
-                {isCricket ? (
-                  <p className="text-sm font-bold text-slate-300">Pro kriket není zavření dostupné.</p>
-                ) : checkout ? (
-                  <div>
-                    <p className="text-sm font-bold text-slate-300">Primární cesta</p>
-                    <p className="mt-2 text-xl font-black text-emerald-200 sm:text-2xl">{checkout.primary.join("  ")}</p>
-                    {checkout.alternatives?.length ? (
-                      <div className="mt-3 space-y-1 text-sm font-bold text-slate-300">
-                        {checkout.alternatives.slice(0, 2).map((route) => (
-                          <p key={route.join("-")}>{route.join("  ")}</p>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : activeScore <= 170 ? (
-                  <p className="text-sm font-bold text-slate-300">Zavření není možné na 3 šipky.</p>
-                ) : (
-                  <p className="text-sm font-bold text-slate-300">Zobrazí se při skóre 170 a méně.</p>
-                )}
-              </div>
-            </div>
-
             <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
               <h2 className="text-lg font-black sm:text-xl">Ovládání</h2>
               <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-1">

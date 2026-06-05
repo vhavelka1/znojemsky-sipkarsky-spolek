@@ -69,7 +69,7 @@ const navigationItems = [
   { href: "/hraci", label: "Hráči" },
   { href: "/tymy", label: "Týmy" },
   { href: "/galerie", label: "Galerie" },
-  { href: "/scoreboard", label: "ScoreBoard" },
+  { href: "/scoreboard", label: "Počítadlo" },
   { href: "/diskuze", label: "Diskuze" },
   { href: "/kontakt", label: "Kontakt" },
 ];

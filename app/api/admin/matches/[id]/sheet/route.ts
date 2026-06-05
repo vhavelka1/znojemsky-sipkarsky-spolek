@@ -179,13 +179,16 @@ const singlesSlotPairs = new Map<number, [HomeSlotCode, AwaySlotCode]>([
 ]);
 
 function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.ENABLE_DEV_ADMIN === "true"
+  ) {
     return null;
   }
 
   return NextResponse.json(
-    { error: "Administrace zápisů je dostupná pouze ve vývojovém režimu." },
-    { status: 404 },
+    { error: "Administrace zápisů není povolena." },
+    { status: 403 },
   );
 }
 

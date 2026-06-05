@@ -10,10 +10,13 @@ type RouteContext = {
 };
 
 function guardRequest() {
-  if (process.env.NODE_ENV !== "development") {
+  if (
+    process.env.NODE_ENV !== "development" &&
+    process.env.ENABLE_DEV_ADMIN !== "true"
+  ) {
     return NextResponse.json(
-      { error: "Administrace zápasů je dostupná pouze ve vývojovém režimu." },
-      { status: 404 },
+      { error: "Administrace zápasů není povolena." },
+      { status: 403 },
     );
   }
 
@@ -49,4 +52,3 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   return NextResponse.json({ match: data });
 }
-

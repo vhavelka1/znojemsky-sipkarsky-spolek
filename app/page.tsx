@@ -61,7 +61,7 @@ const navigationItems = [
   { href: "/hraci", label: "Hráči" },
   { href: "/tymy", label: "Týmy" },
   { href: "/galerie", label: "Galerie" },
-  { href: "/scoreboard", label: "ScoreBoard" },
+  { href: "/scoreboard", label: "Počítadlo" },
   { href: "/diskuze", label: "Diskuze" },
   { href: "/kontakt", label: "Kontakt" },
 ];
@@ -69,7 +69,7 @@ const navigationItems = [
 const quickLinks = [
   { href: "/tabulky", label: "Tabulky", primary: true },
   { href: "/zapasy", label: "Zápasy", primary: false },
-  { href: "/scoreboard", label: "ScoreBoard", primary: false },
+  { href: "/scoreboard", label: "Počítadlo", primary: false },
   { href: "/turnaje", label: "Turnaje", primary: false },
 ];
 
@@ -480,12 +480,12 @@ export default function Home() {
             <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-[#3B82F6]/30 blur-2xl" />
             <div className="relative">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-200">Volná hra</p>
-              <h2 className="mt-2 text-3xl font-black tracking-tight">ScoreBoard</h2>
+              <h2 className="mt-2 text-3xl font-black tracking-tight">Počítadlo</h2>
               <p className="mt-4 text-base font-bold leading-7 text-blue-100">
                 Rychlé zadávání skóre pro neoficiální zápasy, trénink nebo hospodskou hru.
               </p>
               <Link className="mt-7 inline-flex rounded-full bg-white px-5 py-3 font-black text-[#061A3A] transition hover:-translate-y-0.5 hover:bg-blue-50" href="/scoreboard">
-                Otevřít ScoreBoard
+                Otevřít Počítadlo
               </Link>
             </div>
           </section>
