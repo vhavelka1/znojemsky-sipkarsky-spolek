@@ -10,6 +10,7 @@ type Team = {
   name: string;
   slug: string;
   logo_url: string | null;
+  playing_venue_address: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -45,6 +46,7 @@ type Membership = {
 
 type TeamForm = {
   name: string;
+  playing_venue_address: string;
 };
 
 type LeadershipDraft = {
@@ -54,6 +56,7 @@ type LeadershipDraft = {
 
 const emptyForm: TeamForm = {
   name: "",
+  playing_venue_address: "",
 };
 
 async function readJson(response: Response) {
@@ -111,9 +114,11 @@ export default function AdminTeamsPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [leadershipDrafts, setLeadershipDrafts] = useState<Record<string, LeadershipDraft>>({});
   const [form, setForm] = useState<TeamForm>(emptyForm);
-  const [teamFilter, setTeamFilter] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState("");
+  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [editingPlayingVenueAddress, setEditingPlayingVenueAddress] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [busyTeamId, setBusyTeamId] = useState<string | null>(null);
@@ -121,19 +126,12 @@ export default function AdminTeamsPage() {
 
   const canManageTeams = mockRole === "admin";
   const filteredTeams = useMemo(() => {
-    const normalizedFilter = teamFilter.trim().toLocaleLowerCase("cs-CZ");
-
-    if (!normalizedFilter) {
+    if (!selectedTeamId) {
       return teams;
     }
 
-    return teams.filter((team) => {
-      const name = team.name.toLocaleLowerCase("cs-CZ");
-      const slug = team.slug.toLocaleLowerCase("cs-CZ");
-
-      return name.includes(normalizedFilter) || slug.includes(normalizedFilter);
-    });
-  }, [teamFilter, teams]);
+    return teams.filter((team) => team.id === selectedTeamId);
+  }, [selectedTeamId, teams]);
 
   function teamSeasonForTeam(teamId: string) {
     return teamSeasons.find((teamSeason) => teamSeason.team_id === teamId) ?? null;
@@ -241,15 +239,21 @@ export default function AdminTeamsPage() {
       },
       body: JSON.stringify({
         name: form.name.trim(),
+        playing_venue_address: form.playing_venue_address.trim(),
       }),
     });
 
     const body = await readJson(response);
 
     if (!response.ok) {
-      setError(body.error ?? "Nepodařilo se vytvořit tým.");
+      setError(
+        body.error?.includes("playing_venue_address")
+          ? "Nejprve spusťte SQL soubor supabase/apply_team_venue_and_player_phone_in_dashboard.sql v Supabase SQL Editoru."
+          : body.error ?? "Nepodařilo se vytvořit tým.",
+      );
     } else {
       setForm(emptyForm);
+      setIsCreateFormOpen(false);
       await loadTeams();
     }
 
@@ -271,16 +275,22 @@ export default function AdminTeamsPage() {
       },
       body: JSON.stringify({
         name: editingName.trim(),
+        playing_venue_address: editingPlayingVenueAddress.trim(),
       }),
     });
 
     const body = await readJson(response);
 
     if (!response.ok) {
-      setError(body.error ?? "Nepodařilo se upravit tým.");
+      setError(
+        body.error?.includes("playing_venue_address")
+          ? "Nejprve spusťte SQL soubor supabase/apply_team_venue_and_player_phone_in_dashboard.sql v Supabase SQL Editoru."
+          : body.error ?? "Nepodařilo se upravit tým.",
+      );
     } else {
       setEditingTeamId(null);
       setEditingName("");
+      setEditingPlayingVenueAddress("");
       await loadTeams(false);
     }
 
@@ -370,18 +380,31 @@ export default function AdminTeamsPage() {
   function startEditing(team: Team) {
     setEditingTeamId(team.id);
     setEditingName(team.name);
+    setEditingPlayingVenueAddress(team.playing_venue_address ?? "");
   }
 
   function cancelEditing() {
     setEditingTeamId(null);
     setEditingName("");
+    setEditingPlayingVenueAddress("");
   }
 
   return (
     <div className="flex flex-col gap-8">
-      <header>
-        <p className="text-sm font-medium text-slate-500">Administrace</p>
-        <h2 className="mt-2 text-3xl font-bold">Týmy</h2>
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">Administrace</p>
+          <h2 className="mt-2 text-3xl font-bold">Týmy</h2>
+        </div>
+        {canManageTeams ? (
+          <button
+            className="rounded-xl bg-[#EF233C] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+            onClick={() => setIsCreateFormOpen((isOpen) => !isOpen)}
+            type="button"
+          >
+            {isCreateFormOpen ? "Zavřít vytvoření týmu" : "Vytvořit tým"}
+          </button>
+        ) : null}
       </header>
 
       {!canManageTeams ? (
@@ -391,55 +414,73 @@ export default function AdminTeamsPage() {
           </p>
         </section>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+        <>
           <section className="rounded-[20px] border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-semibold">Vytvořit tým</h3>
-
-            <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreate}>
-              <label className="flex flex-col gap-1 text-sm font-medium">
-                Název týmu
-                <input
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
-                  required
-                  value={form.name}
-                  onChange={(event) =>
-                    setForm({ ...form, name: event.target.value })
-                  }
-                />
-              </label>
-
-              <button
-                className="mt-2 rounded-xl bg-[#23364D] px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#1A2A3E] disabled:cursor-not-allowed disabled:bg-slate-400"
-                disabled={isSaving}
-                type="submit"
+            <label className="flex flex-col gap-1 text-sm font-medium md:max-w-sm">
+              Filtrovat tým
+              <select
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                value={selectedTeamId}
+                onChange={(event) => setSelectedTeamId(event.target.value)}
               >
-                {isSaving ? "Ukládám..." : "Vytvořit tým"}
-              </button>
-              <p className="text-xs text-slate-500">
-                Logo lze nahrát po vytvoření týmu v seznamu.
-              </p>
-            </form>
+                <option value="">Všechny týmy</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </section>
 
-          <section className="rounded-[20px] border border-slate-200 bg-white shadow-sm">
-            <div className="grid gap-4 border-b border-slate-200 px-6 py-4 lg:grid-cols-[1fr_280px] lg:items-end">
-              <div>
-                <h3 className="text-lg font-semibold">Seznam týmů</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Vedení týmu se nastavuje pro aktivní sezónu
-                  {activeSeason ? ` ${activeSeason.name}.` : "."}
-                </p>
-              </div>
+          {isCreateFormOpen ? (
+            <section className="rounded-[20px] border border-slate-200 bg-white p-6 shadow-sm">
+              <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto] xl:items-end" onSubmit={handleCreate}>
+                  <label className="flex flex-col gap-1 text-sm font-medium">
+                    Název týmu
+                    <input
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                      required
+                      value={form.name}
+                      onChange={(event) =>
+                        setForm({ ...form, name: event.target.value })
+                      }
+                    />
+                  </label>
 
-              <label className="flex flex-col gap-1 text-sm font-medium">
-                Filtrovat tým
-                <input
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
-                  placeholder="Název týmu"
-                  value={teamFilter}
-                  onChange={(event) => setTeamFilter(event.target.value)}
-                />
-              </label>
+                  <label className="flex flex-col gap-1 text-sm font-medium">
+                    Hrací místo
+                    <input
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
+                      placeholder="Adresa hracího místa"
+                      value={form.playing_venue_address}
+                      onChange={(event) =>
+                        setForm({ ...form, playing_venue_address: event.target.value })
+                      }
+                    />
+                  </label>
+
+                  <button
+                    className="rounded-xl bg-[#23364D] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#1A2A3E] disabled:cursor-not-allowed disabled:bg-slate-400"
+                    disabled={isSaving}
+                    type="submit"
+                  >
+                    {isSaving ? "Ukládám..." : "Uložit tým"}
+                  </button>
+                </form>
+              <p className="mt-3 text-xs text-slate-500">
+                Logo lze nahrát po vytvoření týmu v seznamu.
+              </p>
+            </section>
+          ) : null}
+
+          <section className="rounded-[20px] border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <h3 className="text-lg font-semibold">Seznam týmů</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Vedení týmu se nastavuje pro aktivní sezónu
+                {activeSeason ? ` ${activeSeason.name}.` : "."}
+              </p>
             </div>
 
             {error ? (
@@ -456,7 +497,7 @@ export default function AdminTeamsPage() {
               </div>
             ) : filteredTeams.length === 0 ? (
               <div className="px-6 py-5 text-sm text-slate-500">
-                Pro zadaný filtr nebyl nalezen žádný tým.
+                Pro zvolený filtr nebyl nalezen žádný tým.
               </div>
             ) : (
               <div className="divide-y divide-slate-200">
@@ -497,17 +538,36 @@ export default function AdminTeamsPage() {
 
                           <div className="min-w-0 flex-1">
                             {isEditing ? (
-                              <input
-                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
-                                value={editingName}
-                                onChange={(event) => setEditingName(event.target.value)}
-                              />
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                                  Název týmu
+                                  <input
+                                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-950 outline-none focus:border-[#0F4FA8]"
+                                    value={editingName}
+                                    onChange={(event) => setEditingName(event.target.value)}
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                                  Hrací místo
+                                  <input
+                                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-950 outline-none focus:border-[#0F4FA8]"
+                                    placeholder="Adresa hracího místa"
+                                    value={editingPlayingVenueAddress}
+                                    onChange={(event) =>
+                                      setEditingPlayingVenueAddress(event.target.value)
+                                    }
+                                  />
+                                </label>
+                              </div>
                             ) : (
                               <h4 className="text-lg font-semibold text-slate-950">
                                 {team.name}
                               </h4>
                             )}
                             <p className="mt-1 text-sm text-slate-500">{team.slug}</p>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Hrací místo: {team.playing_venue_address?.trim() || "-"}
+                            </p>
                             <p className="mt-1 text-xs text-slate-400">
                               Vytvořeno {new Date(team.created_at).toLocaleDateString("cs-CZ")}
                             </p>
@@ -714,7 +774,7 @@ export default function AdminTeamsPage() {
               </div>
             )}
           </section>
-        </div>
+        </>
       )}
     </div>
   );

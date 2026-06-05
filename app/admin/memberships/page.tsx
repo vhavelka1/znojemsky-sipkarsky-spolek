@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
 
@@ -50,26 +50,12 @@ type MembershipPayload = {
   error?: string;
 };
 
-type MembershipForm = {
-  player_id: string;
-  team_id: string;
-  season_id: string;
-  member_role: "player" | "captain" | "assistant_captain";
-};
-
 type MembershipEditForm = {
   team_id: string;
   season_id: string;
   member_role: Membership["member_role"];
   joined_on: string;
   left_on: string;
-};
-
-const emptyForm: MembershipForm = {
-  player_id: "",
-  team_id: "",
-  season_id: "",
-  member_role: "player",
 };
 
 async function readJson(response: Response) {
@@ -105,19 +91,26 @@ function memberRoleLabel(role: Membership["member_role"]) {
   return "Hráč";
 }
 
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("cs-CZ")
+    .trim();
+}
+
 export default function AdminMembershipsPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [teamSeasons, setTeamSeasons] = useState<TeamSeason[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [form, setForm] = useState<MembershipForm>(emptyForm);
+  const [playerFilter, setPlayerFilter] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [selectedSeasonId, setSelectedSeasonId] = useState("");
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<MembershipEditForm | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [busyMembershipId, setBusyMembershipId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,6 +132,16 @@ export default function AdminMembershipsPage() {
   const filteredMemberships = useMemo(
     () =>
       memberships.filter((membership) => {
+        if (playerFilter) {
+          const player = playerById.get(membership.player_id);
+          const normalizedFilter = normalizeSearch(playerFilter);
+          const normalizedPlayer = normalizeSearch(player?.display_name ?? "");
+
+          if (!normalizedPlayer.includes(normalizedFilter)) {
+            return false;
+          }
+        }
+
         if (selectedSeasonId && membership.season_id !== selectedSeasonId) {
           return false;
         }
@@ -152,7 +155,7 @@ export default function AdminMembershipsPage() {
 
         return true;
       }),
-    [memberships, selectedSeasonId, selectedTeamId, teamSeasonById],
+    [memberships, playerById, playerFilter, selectedSeasonId, selectedTeamId, teamSeasonById],
   );
 
   async function loadMembershipData(showLoading = true) {
@@ -172,16 +175,6 @@ export default function AdminMembershipsPage() {
       setEditingMembershipId(null);
       setEditForm(null);
 
-      setForm((currentForm) => ({
-        player_id: currentForm.player_id || loadedData.players[0]?.id || "",
-        team_id: currentForm.team_id || loadedData.teams[0]?.id || "",
-        season_id:
-          currentForm.season_id ||
-          loadedData.seasons.find((season) => season.is_active)?.id ||
-          loadedData.seasons[0]?.id ||
-          "",
-        member_role: currentForm.member_role,
-      }));
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : "Nepodařilo se načíst členství.",
@@ -206,15 +199,6 @@ export default function AdminMembershipsPage() {
         setSeasons(loadedData.seasons);
         setTeamSeasons(loadedData.teamSeasons);
         setMemberships(loadedData.memberships);
-        setForm({
-          player_id: loadedData.players[0]?.id || "",
-          team_id: loadedData.teams[0]?.id || "",
-          season_id:
-            loadedData.seasons.find((season) => season.is_active)?.id ||
-            loadedData.seasons[0]?.id ||
-            "",
-          member_role: "player",
-        });
         setSelectedSeasonId(
           loadedData.seasons.find((season) => season.is_active)?.id ||
             loadedData.seasons[0]?.id ||
@@ -239,35 +223,6 @@ export default function AdminMembershipsPage() {
       isMounted = false;
     };
   }, []);
-
-  async function handleAssign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!canManageMemberships || !form.player_id || !form.team_id || !form.season_id) {
-      return;
-    }
-
-    setIsSaving(true);
-    setError(null);
-
-    const response = await fetch("/api/admin/memberships", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(form),
-    });
-
-    await readJson(response);
-
-    if (!response.ok) {
-      setError("Nepodařilo se přiřadit hráče.");
-    } else {
-      await loadMembershipData(false);
-    }
-
-    setIsSaving(false);
-  }
 
   function startEditingMembership(membership: Membership) {
     const teamSeason = teamSeasonById.get(membership.team_season_id);
@@ -343,9 +298,11 @@ export default function AdminMembershipsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-        <header>
-          <p className="text-sm font-medium text-slate-500">Administrace</p>
-          <h2 className="mt-2 text-3xl font-bold">Členství</h2>
+        <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">Administrace</p>
+            <h2 className="mt-2 text-3xl font-bold">Členství</h2>
+          </div>
         </header>
 
         {!canManageMemberships ? (
@@ -357,7 +314,20 @@ export default function AdminMembershipsPage() {
         ) : (
           <>
           <section className="rounded-lg bg-white p-6 shadow-sm">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Hledat hráče
+                <input
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  placeholder="Zadejte jméno hráče"
+                  value={playerFilter}
+                  onChange={(event) => {
+                    setPlayerFilter(event.target.value);
+                    cancelEditingMembership();
+                  }}
+                />
+              </label>
+
               <label className="flex flex-col gap-1 text-sm font-medium">
                 Filtrovat podle týmu
                 <select
@@ -398,95 +368,6 @@ export default function AdminMembershipsPage() {
               </label>
             </div>
           </section>
-
-          <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-            <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Přiřadit hráče</h3>
-
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleAssign}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Hráč
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={form.player_id}
-                    onChange={(event) =>
-                      setForm({ ...form, player_id: event.target.value })
-                    }
-                  >
-                    <option value="">Vyberte hráče</option>
-                    {players.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Tým
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={form.team_id}
-                    onChange={(event) => setForm({ ...form, team_id: event.target.value })}
-                  >
-                    <option value="">Vyberte tým</option>
-                    {teams.map((team) => (
-                      <option key={team.id} value={team.id}>
-                        {team.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Sezóna
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={form.season_id}
-                    onChange={(event) =>
-                      setForm({ ...form, season_id: event.target.value })
-                    }
-                  >
-                    <option value="">Vyberte sezónu</option>
-                    {seasons.map((season) => (
-                      <option key={season.id} value={season.id}>
-                        {season.name}
-                        {season.is_active ? " - aktivní" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Role v týmu
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    value={form.member_role}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        member_role: event.target.value as MembershipForm["member_role"],
-                      })
-                    }
-                  >
-                    <option value="player">Hráč</option>
-                    <option value="captain">Kapitán</option>
-                    <option value="assistant_captain">Zástupce kapitána</option>
-                  </select>
-                </label>
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving || players.length === 0 || teams.length === 0 || seasons.length === 0}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : "Přiřadit nebo přestoupit"}
-                </button>
-              </form>
-            </section>
 
             <section className="rounded-lg bg-white shadow-sm">
               <div className="border-b border-slate-200 px-6 py-4">
@@ -678,7 +559,6 @@ export default function AdminMembershipsPage() {
                 </div>
               )}
             </section>
-          </div>
           </>
         )}
     </div>

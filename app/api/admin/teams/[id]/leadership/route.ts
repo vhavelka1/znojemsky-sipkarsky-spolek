@@ -150,6 +150,45 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  if (selectedPlayerIds.length > 0) {
+    const { data: selectedPlayers, error: selectedPlayersError } = await supabase
+      .from("players")
+      .select("id, display_name, email")
+      .in("id", selectedPlayerIds)
+      .is("deleted_at", null);
+
+    if (selectedPlayersError) {
+      return NextResponse.json(
+        { error: selectedPlayersError.message },
+        { status: 500 },
+      );
+    }
+
+    const playersById = new Map(
+      (selectedPlayers ?? []).map((player) => [player.id, player]),
+    );
+    const playersWithoutEmail = selectedPlayerIds
+      .map((playerId) => playersById.get(playerId))
+      .filter((player): player is { id: string; display_name: string; email: string | null } => {
+        if (!player) {
+          return false;
+        }
+
+        return !player.email?.trim();
+      });
+
+    if (playersWithoutEmail.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Kapitán nebo zástupce musí mít vyplněný email. Doplňte email hráči: ${playersWithoutEmail
+            .map((player) => player.display_name)
+            .join(", ")}.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const { error: resetError } = await supabase
     .from("team_memberships")
     .update({ member_role: "player" })

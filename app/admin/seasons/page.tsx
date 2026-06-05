@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
 
@@ -68,6 +68,9 @@ function formFromSeason(season: Season): SeasonForm {
 export default function AdminSeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [form, setForm] = useState<SeasonForm>(emptyForm);
+  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
+  const [seasonFilter, setSeasonFilter] = useState("");
+  const [seasonStatusFilter, setSeasonStatusFilter] = useState("");
   const [editingSeasonId, setEditingSeasonId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<SeasonForm>(emptyForm);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,6 +79,28 @@ export default function AdminSeasonsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const canManageSeasons = mockRole === "admin";
+  const filteredSeasons = useMemo(
+    () =>
+      seasons.filter((season) => {
+        if (seasonFilter.trim()) {
+          const filter = seasonFilter.trim().toLocaleLowerCase("cs-CZ");
+          if (!season.name.toLocaleLowerCase("cs-CZ").includes(filter)) {
+            return false;
+          }
+        }
+
+        if (seasonStatusFilter === "active" && !season.is_active) {
+          return false;
+        }
+
+        if (seasonStatusFilter === "inactive" && season.is_active) {
+          return false;
+        }
+
+        return true;
+      }),
+    [seasonFilter, seasonStatusFilter, seasons],
+  );
 
   async function loadSeasons(showLoading = true) {
     if (showLoading) {
@@ -157,6 +182,7 @@ export default function AdminSeasonsPage() {
     try {
       await submitSeason("/api/admin/seasons", "POST", form);
       setForm(emptyForm);
+      setIsCreateFormOpen(false);
       await loadSeasons();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Nepodařilo se vytvořit sezónu.");
@@ -326,9 +352,20 @@ export default function AdminSeasonsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-        <header>
-          <p className="text-sm font-medium text-slate-500">Administrace</p>
-          <h2 className="mt-2 text-3xl font-bold">Sezóny</h2>
+        <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">Administrace</p>
+            <h2 className="mt-2 text-3xl font-bold">Sezóny</h2>
+          </div>
+          {canManageSeasons ? (
+            <button
+              className="rounded-xl bg-[#EF233C] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+              onClick={() => setIsCreateFormOpen(true)}
+              type="button"
+            >
+              Vytvořit sezónu
+            </button>
+          ) : null}
         </header>
 
         {!canManageSeasons ? (
@@ -338,22 +375,67 @@ export default function AdminSeasonsPage() {
             </p>
           </section>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+          <>
             <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Vytvořit sezónu</h3>
-
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreate}>
-                {renderSeasonFields(form, setForm, true)}
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : "Vytvořit sezónu"}
-                </button>
-              </form>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Hledat sezónu
+                  <input
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                    placeholder="Název sezóny"
+                    value={seasonFilter}
+                    onChange={(event) => setSeasonFilter(event.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Stav
+                  <select
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                    value={seasonStatusFilter}
+                    onChange={(event) => setSeasonStatusFilter(event.target.value)}
+                  >
+                    <option value="">Všechny stavy</option>
+                    <option value="active">Aktivní</option>
+                    <option value="inactive">Neaktivní</option>
+                  </select>
+                </label>
+              </div>
             </section>
+
+          {isCreateFormOpen ? (
+            <section className="rounded-lg bg-white p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold">Vytvořit sezónu</h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Nastavte termíny, přestupy a případně aktivní sezónu.
+                      </p>
+                    </div>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setForm(emptyForm);
+                        setIsCreateFormOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
+
+                  <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreate}>
+                    {renderSeasonFields(form, setForm, true)}
+
+                    <button
+                      className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={isSaving}
+                      type="submit"
+                    >
+                      {isSaving ? "Ukládám..." : "Uložit sezónu"}
+                    </button>
+                  </form>
+            </section>
+          ) : null}
 
             <section className="rounded-lg bg-white shadow-sm">
               <div className="border-b border-slate-200 px-6 py-4">
@@ -372,6 +454,10 @@ export default function AdminSeasonsPage() {
                 <div className="px-6 py-5 text-sm text-slate-500">
                   Nebyly nalezeny žádné sezóny.
                 </div>
+              ) : filteredSeasons.length === 0 ? (
+                <div className="px-6 py-5 text-sm text-slate-500">
+                  Pro zvolený filtr nebyla nalezena žádná sezóna.
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
@@ -385,7 +471,7 @@ export default function AdminSeasonsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {seasons.map((season) => {
+                      {filteredSeasons.map((season) => {
                         const isEditing = editingSeasonId === season.id;
                         const isBusy = busySeasonId === season.id;
 
@@ -477,7 +563,7 @@ export default function AdminSeasonsPage() {
                 </div>
               )}
             </section>
-          </div>
+          </>
         )}
     </div>
   );

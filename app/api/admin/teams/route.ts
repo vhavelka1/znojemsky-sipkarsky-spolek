@@ -5,6 +5,7 @@ const mockRole = "admin";
 
 type CreateTeamBody = {
   name?: unknown;
+  playing_venue_address?: unknown;
 };
 
 const bundledLogoUrls: Record<string, string> = {
@@ -72,6 +73,15 @@ function requiredString(value: unknown) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function optionalString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function createSlug(name: string) {
   return (
     name
@@ -124,13 +134,13 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("teams")
-    .select("id, name, slug, logo_url, created_at, updated_at, deleted_at")
+    .select("id, name, slug, logo_url, playing_venue_address, created_at, updated_at, deleted_at")
     .is("deleted_at", null)
     .order("name", { ascending: true });
 
   let teams: Array<Record<string, unknown> & { slug: string; logo_url?: string | null }> = [];
 
-  if (error?.message.includes("logo_url")) {
+  if (error?.message.includes("logo_url") || error?.message.includes("playing_venue_address")) {
     const fallback = await supabase
       .from("teams")
       .select("id, name, slug, created_at, updated_at, deleted_at")
@@ -263,8 +273,9 @@ export async function POST(request: Request) {
     .insert({
       name,
       slug: createSlug(name),
+      playing_venue_address: optionalString(body?.playing_venue_address),
     })
-    .select("id, name, slug, created_at, updated_at, deleted_at")
+    .select("id, name, slug, playing_venue_address, created_at, updated_at, deleted_at")
     .single();
 
   if (error) {

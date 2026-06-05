@@ -16,6 +16,7 @@ type UpdatePlayerBody = {
   date_of_birth?: unknown;
   residence?: unknown;
   email?: unknown;
+  phone?: unknown;
 };
 
 function developmentOnlyResponse() {
@@ -121,10 +122,11 @@ export async function PATCH(request: Request, context: RouteContext) {
       date_of_birth: optionalDate(body?.date_of_birth),
       residence: optionalString(body?.residence),
       email: optionalEmail(body?.email),
+      phone: optionalString(body?.phone),
     })
     .eq("id", id)
     .is("deleted_at", null)
-    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, created_at")
+    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, phone, created_at")
     .single();
 
   if (error) {

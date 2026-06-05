@@ -10,6 +10,7 @@ type CreatePlayerBody = {
   date_of_birth?: unknown;
   residence?: unknown;
   email?: unknown;
+  phone?: unknown;
 };
 
 function developmentOnlyResponse() {
@@ -97,7 +98,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("players")
-    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, created_at")
+    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, phone, created_at")
     .is("deleted_at", null)
     .order("display_name", { ascending: true });
 
@@ -143,8 +144,9 @@ export async function POST(request: Request) {
       date_of_birth: optionalDate(body?.date_of_birth),
       residence: optionalString(body?.residence),
       email: optionalEmail(body?.email),
+      phone: optionalString(body?.phone),
     })
-    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, created_at")
+    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, phone, created_at")
     .single();
 
   if (error) {

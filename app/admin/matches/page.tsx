@@ -86,12 +86,6 @@ type MatchForm = {
   scheduled_at: string;
 };
 
-type ResultForm = {
-  match_id: string;
-  home_points: string;
-  away_points: string;
-};
-
 const emptyMatchForm: MatchForm = {
   season_id: "",
   league_id: "",
@@ -99,12 +93,6 @@ const emptyMatchForm: MatchForm = {
   home_team_id: "",
   away_team_id: "",
   scheduled_at: "",
-};
-
-const emptyResultForm: ResultForm = {
-  match_id: "",
-  home_points: "",
-  away_points: "",
 };
 
 const statusLabels: Record<MatchStatus, string> = {
@@ -156,7 +144,10 @@ export default function AdminMatchesPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [results, setResults] = useState<MatchResult[]>([]);
   const [matchForm, setMatchForm] = useState<MatchForm>(emptyMatchForm);
-  const [resultForm, setResultForm] = useState<ResultForm>(emptyResultForm);
+  const [isMatchFormOpen, setIsMatchFormOpen] = useState(false);
+  const [matchFilterSeasonId, setMatchFilterSeasonId] = useState("");
+  const [matchFilterLeagueId, setMatchFilterLeagueId] = useState("");
+  const [matchFilterGroupId, setMatchFilterGroupId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingTeams, setIsPreparingTeams] = useState(false);
@@ -186,6 +177,18 @@ export default function AdminMatchesPage() {
     () => new Map(results.map((result) => [result.match_id, result])),
     [results],
   );
+  const listLeagueOptions = matchFilterSeasonId
+    ? leagues.filter((league) => league.season_id === matchFilterSeasonId)
+    : leagues;
+  const listGroupOptions = matchFilterLeagueId
+    ? groups.filter((group) => group.league_id === matchFilterLeagueId)
+    : groups;
+  const visibleMatches = matches.filter((match) => {
+    if (matchFilterSeasonId && match.season_id !== matchFilterSeasonId) return false;
+    if (matchFilterLeagueId && match.league_id !== matchFilterLeagueId) return false;
+    if (matchFilterGroupId && match.group_id !== matchFilterGroupId) return false;
+    return true;
+  });
 
   const filteredLeagues = leagues.filter(
     (league) => league.season_id === matchForm.season_id,
@@ -241,10 +244,6 @@ export default function AdminMatchesPage() {
         league_id: currentForm.league_id || defaultLeague?.id || "",
         group_id: currentForm.group_id || defaultGroup?.id || "",
       }));
-      setResultForm((currentForm) => ({
-        ...currentForm,
-        match_id: currentForm.match_id || loadedData.matches[0]?.id || "",
-      }));
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : "Nepodařilo se načíst zápasy.",
@@ -289,10 +288,9 @@ export default function AdminMatchesPage() {
           league_id: defaultLeague?.id || "",
           group_id: defaultGroup?.id || "",
         });
-        setResultForm({
-          ...emptyResultForm,
-          match_id: loadedData.matches[0]?.id || "",
-        });
+        setMatchFilterSeasonId(defaultSeasonId);
+        setMatchFilterLeagueId("");
+        setMatchFilterGroupId("");
         setIsLoading(false);
       })
       .catch((loadError) => {
@@ -391,43 +389,11 @@ export default function AdminMatchesPage() {
         scheduled_at: new Date(matchForm.scheduled_at).toISOString(),
       });
       setMatchForm({ ...matchForm, home_team_id: "", away_team_id: "", scheduled_at: "" });
+      setIsMatchFormOpen(false);
       await loadMatchData(false);
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : "Zápas se nepodařilo vytvořit.",
-      );
-    }
-
-    setIsSaving(false);
-  }
-
-  async function handleSaveResult(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (
-      !canManageMatches ||
-      !resultForm.match_id ||
-      resultForm.home_points === "" ||
-      resultForm.away_points === ""
-    ) {
-      return;
-    }
-
-    setIsSaving(true);
-    setError(null);
-
-    try {
-      await submitAdminAction({
-        action: "save_result",
-        match_id: resultForm.match_id,
-        home_points: resultForm.home_points,
-        away_points: resultForm.away_points,
-      });
-      setResultForm(emptyResultForm);
-      await loadMatchData(false);
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : "Výsledek se nepodařilo uložit.",
       );
     }
 
@@ -449,7 +415,6 @@ export default function AdminMatchesPage() {
     if (!response.ok) {
       setError(body.error ?? "Zápas se nepodařilo smazat.");
     } else {
-      setResultForm((current) => current.match_id === matchId ? emptyResultForm : current);
       await loadMatchData(false);
     }
 
@@ -458,9 +423,22 @@ export default function AdminMatchesPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <header>
-        <p className="text-sm font-medium text-slate-500">Administrace</p>
-        <h2 className="mt-2 text-3xl font-bold">Zápasy</h2>
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">Administrace</p>
+          <h2 className="mt-2 text-3xl font-bold">Zápasy</h2>
+        </div>
+        {canManageMatches ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="rounded-xl bg-[#EF233C] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+              onClick={() => setIsMatchFormOpen(true)}
+              type="button"
+            >
+              Vytvořit zápas
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {!canManageMatches ? (
@@ -470,39 +448,106 @@ export default function AdminMatchesPage() {
           </p>
         </section>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-          <div className="flex flex-col gap-6">
-            <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Vytvořit zápas</h3>
+        <>
+          <section className="rounded-lg bg-white p-6 shadow-sm">
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Sezóna
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  value={matchFilterSeasonId}
+                  onChange={(event) => {
+                    setMatchFilterSeasonId(event.target.value);
+                    setMatchFilterLeagueId("");
+                    setMatchFilterGroupId("");
+                  }}
+                >
+                  <option value="">Všechny sezóny</option>
+                  {seasons.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                      {season.is_active ? " - aktivní" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Liga
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  value={matchFilterLeagueId}
+                  onChange={(event) => {
+                    setMatchFilterLeagueId(event.target.value);
+                    setMatchFilterGroupId("");
+                  }}
+                >
+                  <option value="">Všechny ligy</option>
+                  {listLeagueOptions.map((league) => (
+                    <option key={league.id} value={league.id}>
+                      {league.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Skupina
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  value={matchFilterGroupId}
+                  onChange={(event) => setMatchFilterGroupId(event.target.value)}
+                >
+                  <option value="">Všechny skupiny</option>
+                  {listGroupOptions.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
 
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreateMatch}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Sezóna
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={matchForm.season_id}
-                    onChange={(event) => {
-                      const seasonId = event.target.value;
-                      setMatchForm({
-                        ...matchForm,
-                        season_id: seasonId,
-                        league_id: "",
-                        group_id: "",
-                        home_team_id: "",
-                        away_team_id: "",
-                      });
-                    }}
-                  >
-                    <option value="">Vyberte sezónu</option>
-                    {seasons.map((season) => (
-                      <option key={season.id} value={season.id}>
-                        {season.name}
-                        {season.is_active ? " - aktivní" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+          {isMatchFormOpen ? (
+            <section className="rounded-lg bg-white p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-lg font-semibold">Vytvořit zápas</h3>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => setIsMatchFormOpen(false)}
+                      type="button"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
+
+                  <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreateMatch}>
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Sezóna
+                      <select
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={matchForm.season_id}
+                        onChange={(event) => {
+                          const seasonId = event.target.value;
+                          setMatchForm({
+                            ...matchForm,
+                            season_id: seasonId,
+                            league_id: "",
+                            group_id: "",
+                            home_team_id: "",
+                            away_team_id: "",
+                          });
+                        }}
+                      >
+                        <option value="">Vyberte sezónu</option>
+                        {seasons.map((season) => (
+                          <option key={season.id} value={season.id}>
+                            {season.name}
+                            {season.is_active ? " - aktivní" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
                 <label className="flex flex-col gap-1 text-sm font-medium">
                   Liga
@@ -631,81 +676,16 @@ export default function AdminMatchesPage() {
                   />
                 </label>
 
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving || availableTeamSeasons.length < 2}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : "Vytvořit zápas"}
-                </button>
-              </form>
+                    <button
+                      className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={isSaving || availableTeamSeasons.length < 2}
+                      type="submit"
+                    >
+                      {isSaving ? "Ukládám..." : "Uložit zápas"}
+                    </button>
+                  </form>
             </section>
-
-            <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Zadat výsledek</h3>
-
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleSaveResult}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Zápas
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={resultForm.match_id}
-                    onChange={(event) =>
-                      setResultForm({ ...resultForm, match_id: event.target.value })
-                    }
-                  >
-                    <option value="">Vyberte zápas</option>
-                    {matches.map((match) => (
-                      <option key={match.id} value={match.id}>
-                        {getTeamSeasonLabel(match.home_team_id)} vs.{" "}
-                        {getTeamSeasonLabel(match.away_team_id)} -{" "}
-                        {formatDateTime(match.scheduled_at)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="flex flex-col gap-1 text-sm font-medium">
-                    Domácí
-                    <input
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                      min="0"
-                      required
-                      type="number"
-                      value={resultForm.home_points}
-                      onChange={(event) =>
-                        setResultForm({ ...resultForm, home_points: event.target.value })
-                      }
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1 text-sm font-medium">
-                    Hosté
-                    <input
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                      min="0"
-                      required
-                      type="number"
-                      value={resultForm.away_points}
-                      onChange={(event) =>
-                        setResultForm({ ...resultForm, away_points: event.target.value })
-                      }
-                    />
-                  </label>
-                </div>
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving || matches.length === 0}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : "Uložit výsledek"}
-                </button>
-              </form>
-            </section>
-          </div>
+          ) : null}
 
           <section className="rounded-lg bg-white shadow-sm">
             <div className="border-b border-slate-200 px-6 py-4">
@@ -720,9 +700,13 @@ export default function AdminMatchesPage() {
               <div className="px-6 py-5 text-sm text-slate-500">
                 Nebyly nalezeny žádné zápasy.
               </div>
+            ) : visibleMatches.length === 0 ? (
+              <div className="px-6 py-5 text-sm text-slate-500">
+                Pro zvolený filtr nebyl nalezen žádný zápas.
+              </div>
             ) : (
               <div className="divide-y divide-slate-200">
-                {matches.map((match) => {
+                {visibleMatches.map((match) => {
                   const result = resultByMatchId.get(match.id);
 
                   return (
@@ -784,7 +768,7 @@ export default function AdminMatchesPage() {
               </div>
             )}
           </section>
-        </div>
+        </>
       )}
     </div>
   );

@@ -116,6 +116,11 @@ export default function AdminLeaguesPage() {
   const [groupForm, setGroupForm] = useState<GroupForm>(emptyGroupForm);
   const [assignmentForm, setAssignmentForm] =
     useState<AssignmentForm>(emptyAssignmentForm);
+  const [isLeagueFormOpen, setIsLeagueFormOpen] = useState(false);
+  const [isGroupFormOpen, setIsGroupFormOpen] = useState(false);
+  const [isAssignmentFormOpen, setIsAssignmentFormOpen] = useState(false);
+  const [leagueFilterSeasonId, setLeagueFilterSeasonId] = useState("");
+  const [leagueFilterId, setLeagueFilterId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +151,12 @@ export default function AdminLeaguesPage() {
         (teamSeason) => teamSeason.season_id === selectedAssignmentLeague.season_id,
       )
     : teamSeasons;
+  const listLeagueOptions = leagueFilterSeasonId
+    ? leagues.filter((league) => league.season_id === leagueFilterSeasonId)
+    : leagues;
+  const visibleLeagues = listLeagueOptions.filter(
+    (league) => !leagueFilterId || league.id === leagueFilterId,
+  );
 
   async function loadLeagueData(showLoading = true) {
     if (showLoading) {
@@ -217,6 +228,12 @@ export default function AdminLeaguesPage() {
           league_group_id: loadedData.groups[0]?.id || "",
           team_season_id: loadedData.teamSeasons[0]?.id || "",
         });
+        setLeagueFilterSeasonId(
+          loadedData.seasons.find((season) => season.is_active)?.id ||
+            loadedData.seasons[0]?.id ||
+            "",
+        );
+        setLeagueFilterId("");
         setIsLoading(false);
       })
       .catch((loadError) => {
@@ -266,6 +283,7 @@ export default function AdminLeaguesPage() {
         season_id: leagueForm.season_id,
       });
       setLeagueForm({ ...leagueForm, name: "" });
+      setIsLeagueFormOpen(false);
       await loadLeagueData(false);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Ligu se nepodařilo vytvořit.");
@@ -291,6 +309,7 @@ export default function AdminLeaguesPage() {
         league_id: groupForm.league_id,
       });
       setGroupForm({ ...groupForm, name: "" });
+      setIsGroupFormOpen(false);
       await loadLeagueData(false);
     } catch (saveError) {
       setError(
@@ -317,6 +336,7 @@ export default function AdminLeaguesPage() {
         league_group_id: assignmentForm.league_group_id,
         team_season_id: assignmentForm.team_season_id,
       });
+      setIsAssignmentFormOpen(false);
       await loadLeagueData(false);
     } catch (saveError) {
       setError(
@@ -338,9 +358,36 @@ export default function AdminLeaguesPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <header>
-        <p className="text-sm font-medium text-slate-500">Administrace</p>
-        <h2 className="mt-2 text-3xl font-bold">Ligy</h2>
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">Administrace</p>
+          <h2 className="mt-2 text-3xl font-bold">Ligy</h2>
+        </div>
+        {canManageLeagues ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="rounded-xl bg-[#EF233C] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+              onClick={() => setIsLeagueFormOpen(true)}
+              type="button"
+            >
+              Vytvořit ligu
+            </button>
+            <button
+              className="rounded-xl bg-[#EF233C] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+              onClick={() => setIsGroupFormOpen(true)}
+              type="button"
+            >
+              Vytvořit skupinu
+            </button>
+            <button
+              className="rounded-xl bg-[#EF233C] px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+              onClick={() => setIsAssignmentFormOpen(true)}
+              type="button"
+            >
+              Přiřadit tým
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {!canManageLeagues ? (
@@ -350,161 +397,237 @@ export default function AdminLeaguesPage() {
           </p>
         </section>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-          <div className="flex flex-col gap-6">
-            <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Vytvořit ligu</h3>
-
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreateLeague}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Název ligy
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={leagueForm.name}
-                    onChange={(event) =>
-                      setLeagueForm({ ...leagueForm, name: event.target.value })
-                    }
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Sezóna
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={leagueForm.season_id}
-                    onChange={(event) =>
-                      setLeagueForm({ ...leagueForm, season_id: event.target.value })
-                    }
-                  >
-                    <option value="">Vyberte sezónu</option>
-                    {seasons.map((season) => (
-                      <option key={season.id} value={season.id}>
-                        {season.name}
-                        {season.is_active ? " - aktivní" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving || seasons.length === 0}
-                  type="submit"
+        <>
+          <section className="rounded-lg bg-white p-6 shadow-sm">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Filtrovat podle sezóny
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  value={leagueFilterSeasonId}
+                  onChange={(event) => {
+                    setLeagueFilterSeasonId(event.target.value);
+                    setLeagueFilterId("");
+                  }}
                 >
-                  {isSaving ? "Ukládám..." : "Vytvořit ligu"}
-                </button>
-              </form>
-            </section>
-
-            <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Vytvořit skupinu</h3>
-
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreateGroup}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Liga
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={groupForm.league_id}
-                    onChange={(event) =>
-                      setGroupForm({ ...groupForm, league_id: event.target.value })
-                    }
-                  >
-                    <option value="">Vyberte ligu</option>
-                    {leagues.map((league) => (
-                      <option key={league.id} value={league.id}>
-                        {league.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Název skupiny
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    placeholder="Skupina A"
-                    required
-                    value={groupForm.name}
-                    onChange={(event) =>
-                      setGroupForm({ ...groupForm, name: event.target.value })
-                    }
-                  />
-                </label>
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving || leagues.length === 0}
-                  type="submit"
+                  <option value="">Všechny sezóny</option>
+                  {seasons.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                      {season.is_active ? " - aktivní" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Filtrovat podle ligy
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  value={leagueFilterId}
+                  onChange={(event) => setLeagueFilterId(event.target.value)}
                 >
-                  {isSaving ? "Ukládám..." : "Vytvořit skupinu"}
-                </button>
-              </form>
-            </section>
+                  <option value="">Všechny ligy</option>
+                  {listLeagueOptions.map((league) => (
+                    <option key={league.id} value={league.id}>
+                      {league.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
 
+          {isLeagueFormOpen ? (
             <section className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">Přiřadit tým</h3>
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-lg font-semibold">Vytvořit ligu</h3>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setLeagueForm({ ...leagueForm, name: "" });
+                        setIsLeagueFormOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
 
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleAssignTeam}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Skupina
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={assignmentForm.league_group_id}
-                    onChange={(event) =>
-                      setAssignmentForm({
-                        league_group_id: event.target.value,
-                        team_season_id: "",
-                      })
-                    }
-                  >
-                    <option value="">Vyberte skupinu</option>
-                    {groups.map((group) => {
-                      const league = leagues.find((item) => item.id === group.league_id);
-                      return (
-                        <option key={group.id} value={group.id}>
-                          {league?.name || "Neznámá liga"} - {group.name}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
+                  <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreateLeague}>
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Název ligy
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={leagueForm.name}
+                        onChange={(event) =>
+                          setLeagueForm({ ...leagueForm, name: event.target.value })
+                        }
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Tým v sezóně
-                  <select
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={assignmentForm.team_season_id}
-                    onChange={(event) =>
-                      setAssignmentForm({
-                        ...assignmentForm,
-                        team_season_id: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Vyberte tým</option>
-                    {availableTeamSeasons.map((teamSeason) => (
-                      <option key={teamSeason.id} value={teamSeason.id}>
-                        {getTeamSeasonLabel(teamSeason.id)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Sezóna
+                      <select
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={leagueForm.season_id}
+                        onChange={(event) =>
+                          setLeagueForm({ ...leagueForm, season_id: event.target.value })
+                        }
+                      >
+                        <option value="">Vyberte sezónu</option>
+                        {seasons.map((season) => (
+                          <option key={season.id} value={season.id}>
+                            {season.name}
+                            {season.is_active ? " - aktivní" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving || groups.length === 0 || availableTeamSeasons.length === 0}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : "Přiřadit tým"}
-                </button>
-              </form>
+                    <button
+                      className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={isSaving || seasons.length === 0}
+                      type="submit"
+                    >
+                      {isSaving ? "Ukládám..." : "Uložit ligu"}
+                    </button>
+                  </form>
             </section>
-          </div>
+          ) : null}
+
+          {isGroupFormOpen ? (
+            <section className="rounded-lg bg-white p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-lg font-semibold">Vytvořit skupinu</h3>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setGroupForm({ ...groupForm, name: "" });
+                        setIsGroupFormOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
+
+                  <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreateGroup}>
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Liga
+                      <select
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={groupForm.league_id}
+                        onChange={(event) =>
+                          setGroupForm({ ...groupForm, league_id: event.target.value })
+                        }
+                      >
+                        <option value="">Vyberte ligu</option>
+                        {leagues.map((league) => (
+                          <option key={league.id} value={league.id}>
+                            {league.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Název skupiny
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        placeholder="Skupina A"
+                        required
+                        value={groupForm.name}
+                        onChange={(event) =>
+                          setGroupForm({ ...groupForm, name: event.target.value })
+                        }
+                      />
+                    </label>
+
+                    <button
+                      className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={isSaving || leagues.length === 0}
+                      type="submit"
+                    >
+                      {isSaving ? "Ukládám..." : "Uložit skupinu"}
+                    </button>
+                  </form>
+            </section>
+          ) : null}
+
+          {isAssignmentFormOpen ? (
+            <section className="rounded-lg bg-white p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-lg font-semibold">Přiřadit tým</h3>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => setIsAssignmentFormOpen(false)}
+                      type="button"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
+
+                  <form className="mt-5 flex flex-col gap-4" onSubmit={handleAssignTeam}>
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Skupina
+                      <select
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={assignmentForm.league_group_id}
+                        onChange={(event) =>
+                          setAssignmentForm({
+                            league_group_id: event.target.value,
+                            team_season_id: "",
+                          })
+                        }
+                      >
+                        <option value="">Vyberte skupinu</option>
+                        {groups.map((group) => {
+                          const league = leagues.find((item) => item.id === group.league_id);
+                          return (
+                            <option key={group.id} value={group.id}>
+                              {league?.name || "Neznámá liga"} - {group.name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Tým v sezóně
+                      <select
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={assignmentForm.team_season_id}
+                        onChange={(event) =>
+                          setAssignmentForm({
+                            ...assignmentForm,
+                            team_season_id: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Vyberte tým</option>
+                        {availableTeamSeasons.map((teamSeason) => (
+                          <option key={teamSeason.id} value={teamSeason.id}>
+                            {getTeamSeasonLabel(teamSeason.id)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <button
+                      className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={isSaving || groups.length === 0 || availableTeamSeasons.length === 0}
+                      type="submit"
+                    >
+                      {isSaving ? "Ukládám..." : "Uložit přiřazení"}
+                    </button>
+                  </form>
+            </section>
+          ) : null}
 
           <section className="rounded-lg bg-white shadow-sm">
             <div className="border-b border-slate-200 px-6 py-4">
@@ -519,9 +642,13 @@ export default function AdminLeaguesPage() {
               <div className="px-6 py-5 text-sm text-slate-500">
                 Nebyly nalezeny žádné ligy.
               </div>
+            ) : visibleLeagues.length === 0 ? (
+              <div className="px-6 py-5 text-sm text-slate-500">
+                Pro zvolený filtr nebyla nalezena žádná liga.
+              </div>
             ) : (
               <div className="divide-y divide-slate-200">
-                {leagues.map((league) => {
+                {visibleLeagues.map((league) => {
                   const leagueGroups = groups.filter((group) => group.league_id === league.id);
 
                   return (
@@ -576,7 +703,7 @@ export default function AdminLeaguesPage() {
               </div>
             )}
           </section>
-        </div>
+        </>
       )}
     </div>
   );

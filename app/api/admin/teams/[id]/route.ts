@@ -5,6 +5,7 @@ const mockRole = "admin";
 
 type UpdateTeamBody = {
   name?: unknown;
+  playing_venue_address?: unknown;
 };
 
 type RouteContext = {
@@ -39,6 +40,15 @@ function mockAdminResponse() {
 }
 
 function requiredString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalString(value: unknown) {
   if (typeof value !== "string") {
     return null;
   }
@@ -109,10 +119,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     .update({
       name,
       slug: createSlug(name),
+      playing_venue_address: optionalString(body?.playing_venue_address),
     })
     .eq("id", id)
     .is("deleted_at", null)
-    .select("id, name, slug, created_at, updated_at, deleted_at")
+    .select("id, name, slug, playing_venue_address, created_at, updated_at, deleted_at")
     .single();
 
   if (error) {
