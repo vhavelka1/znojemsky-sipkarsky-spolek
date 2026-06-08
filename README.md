@@ -23,7 +23,11 @@ The application uses Supabase Auth for passwords, sessions and password reset em
 Configure Supabase Authentication redirect URLs:
 
 - `http://localhost:3000/nastavit-heslo`
+- `http://localhost:3001/nastavit-heslo`
+- `https://znojemsky-sipkarsky-spolek.vercel.app/nastavit-heslo`
 - `https://YOUR_DOMAIN/nastavit-heslo`
+
+Admin invitations and password reset links build the redirect URL dynamically from the current request host, so the same code works on localhost, Vercel and a future custom domain. The domain still has to be allowed in Supabase Authentication redirect URLs.
 
 Run these SQL files in Supabase SQL Editor when deploying the related modules:
 

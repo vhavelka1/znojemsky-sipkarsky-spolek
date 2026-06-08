@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile } from "@/lib/appAuth";
+import { passwordSetupRedirectTo } from "@/lib/siteUrl";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const allowedRoles = new Set(["player", "captain", "moderator", "admin"]);
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function redirectTo() {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.VERCEL_URL ?? "http://localhost:3000";
-  const normalized = baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`;
-  return `${normalized}/nastavit-heslo`;
 }
 
 function schemaError(error: { message?: string } | null | undefined) {
@@ -86,7 +81,7 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const invite = await supabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: redirectTo(),
+    redirectTo: passwordSetupRedirectTo(request),
   });
 
   if (invite.error || !invite.data.user) {

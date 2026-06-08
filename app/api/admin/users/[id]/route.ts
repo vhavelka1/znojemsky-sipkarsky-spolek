@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile } from "@/lib/appAuth";
+import { passwordSetupRedirectTo } from "@/lib/siteUrl";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const allowedRoles = new Set(["player", "captain", "moderator", "admin"]);
@@ -24,12 +25,6 @@ function schemaError(error: { message?: string } | null | undefined) {
   return message.includes("user_profiles")
     ? "Nejprve spusťte SQL soubor supabase/apply_user_profiles_in_dashboard.sql v Supabase SQL Editoru."
     : message;
-}
-
-function redirectTo() {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.VERCEL_URL ?? "http://localhost:3000";
-  const normalized = baseUrl.startsWith("http") ? baseUrl : `https://${baseUrl}`;
-  return `${normalized}/nastavit-heslo`;
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -124,7 +119,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const reset = await supabase.auth.resetPasswordForEmail(userData.user.email, {
-    redirectTo: redirectTo(),
+    redirectTo: passwordSetupRedirectTo(request),
   });
 
   if (reset.error) {
