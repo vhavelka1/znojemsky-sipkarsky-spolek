@@ -1,14 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-type AppRole = "player" | "captain" | "moderator" | "admin";
-
-const roleWeight: Record<AppRole, number> = {
-  player: 1,
-  captain: 2,
-  moderator: 3,
-  admin: 4,
-};
+import { adminPageForAdminApiPath, adminRoleWeight, isAdminRole, type AdminRole } from "@/lib/adminPages";
 
 function bearerToken(request: NextRequest) {
   const authorization = request.headers.get("authorization");
@@ -74,7 +66,7 @@ export async function proxy(request: NextRequest) {
     .is("deleted_at", null)
     .maybeSingle();
 
-  let role = profile?.app_role as AppRole | undefined;
+  let role: AdminRole | undefined = isAdminRole(profile?.app_role ?? "") ? profile?.app_role : undefined;
   let isActive = Boolean(profile?.is_active);
 
   if (!role) {
@@ -85,7 +77,7 @@ export async function proxy(request: NextRequest) {
       .is("deleted_at", null)
       .maybeSingle();
 
-    role = player?.role as AppRole | undefined;
+    role = isAdminRole(player?.role ?? "") ? player?.role : undefined;
     isActive = Boolean(player);
   }
 
@@ -93,8 +85,22 @@ export async function proxy(request: NextRequest) {
     return errorResponse("Uživatelský účet není aktivní.", 403);
   }
 
-  if (roleWeight[role] < roleWeight.admin) {
-    return errorResponse("Pro tuto akci je potřeba role administrátora.", 403);
+  const adminPage = adminPageForAdminApiPath(request.nextUrl.pathname);
+  let minimumRole: AdminRole = adminPage.defaultMinimumRole;
+  const { data: permission } = await adminClient
+    .from("admin_page_permissions")
+    .select("minimum_role")
+    .eq("page_key", adminPage.key)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  const configuredMinimumRole = permission?.minimum_role;
+  if (configuredMinimumRole && isAdminRole(configuredMinimumRole)) {
+    minimumRole = configuredMinimumRole;
+  }
+
+  if (adminRoleWeight[role] < adminRoleWeight[minimumRole]) {
+    return errorResponse("Pro tuto akci nemáte oprávnění.", 403);
   }
 
   return NextResponse.next();

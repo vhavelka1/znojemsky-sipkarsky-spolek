@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AdminNavigation } from "./AdminNavigation";
+import { adminPageForPath, canAccessAdminPage, type AdminRole } from "@/lib/adminPages";
 import { supabase } from "@/lib/supabase";
 
 type AdminShellProps = {
@@ -17,6 +18,7 @@ export function AdminShell({ children }: AdminShellProps) {
   const [authState, setAuthState] = useState<"loading" | "allowed" | "blocked">("loading");
   const [displayName, setDisplayName] = useState("");
   const [blockMessage, setBlockMessage] = useState("");
+  const [navigationItems, setNavigationItems] = useState<Array<{ href: string; label: string }>>([]);
   const isScoreboard = /^\/admin\/matches\/[^/]+\/scoreboard$/.test(pathname);
 
   useEffect(() => {
@@ -71,6 +73,30 @@ export function AdminShell({ children }: AdminShellProps) {
         return;
       }
 
+      const permissionsResponse = await originalFetch("/api/auth/admin-permissions", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const permissionsBody = (await permissionsResponse.json().catch(() => ({}))) as {
+        permissions?: Array<{ href: string; label: string; minimumRole: AdminRole }>;
+      };
+      const permissions = permissionsBody.permissions ?? [];
+      const currentPage = adminPageForPath(pathname);
+      const currentPermission = permissions.find((permission) => permission.href === currentPage.href);
+      const minimumRole = currentPermission?.minimumRole ?? currentPage.defaultMinimumRole;
+
+      if (!canAccessAdminPage(body.user.role, minimumRole)) {
+        setBlockMessage("Pro přístup na tuto stránku nemáte oprávnění.");
+        setAuthState("blocked");
+        return;
+      }
+
+      setNavigationItems(
+        permissions
+          .filter((permission) => canAccessAdminPage(body.user!.role, permission.minimumRole))
+          .map((permission) => ({ href: permission.href, label: permission.label })),
+      );
       setDisplayName(body.user.displayName);
       setAuthState("allowed");
     }
@@ -148,7 +174,7 @@ export function AdminShell({ children }: AdminShellProps) {
             ) : null}
           </div>
           <div className="admin-sidebar-nav">
-            <AdminNavigation />
+            <AdminNavigation items={navigationItems} />
           </div>
         </aside>
 

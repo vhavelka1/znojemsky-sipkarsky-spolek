@@ -2,20 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { adminPages } from "@/lib/adminPages";
 
-const navigationItems = [
-  { href: "/admin", label: "Přehled" },
-  { href: "/admin/teams", label: "Týmy" },
-  { href: "/admin/rosters", label: "Soupisky" },
-  { href: "/admin/players", label: "Hráči" },
-  { href: "/admin/memberships", label: "Členství" },
-  { href: "/admin/seasons", label: "Sezóny" },
-  { href: "/admin/leagues", label: "Ligy" },
-  { href: "/admin/matches", label: "Zápasy" },
-  { href: "/admin/tables", label: "Tabulky" },
-  { href: "/admin/users", label: "Uživatelé" },
-  { href: "/admin/settings", label: "Nastavení" },
-];
+export type AdminNavigationItem = {
+  href: string;
+  label: string;
+};
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/admin") {
@@ -25,8 +17,9 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AdminNavigation() {
+export function AdminNavigation({ items }: { items?: AdminNavigationItem[] }) {
   const pathname = usePathname();
+  const navigationItems = items ?? adminPages.map((page) => ({ href: page.href, label: page.label }));
 
   return (
     <nav className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
