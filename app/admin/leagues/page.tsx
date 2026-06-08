@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
@@ -88,7 +89,7 @@ async function readJson(response: Response) {
 }
 
 async function fetchLeagueData() {
-  const response = await fetch("/api/admin/leagues");
+  const response = await adminFetch("/api/admin/leagues");
   const body = await readJson(response);
 
   if (!response.ok) {
@@ -251,7 +252,7 @@ export default function AdminLeaguesPage() {
   }, []);
 
   async function submitAdminAction(payload: Record<string, string>) {
-    const response = await fetch("/api/admin/leagues", {
+    const response = await adminFetch("/api/admin/leagues", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

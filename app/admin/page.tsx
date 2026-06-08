@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader, StatCard } from "@/components/ui/admin";
+import { adminFetch } from "@/lib/adminFetch";
 
 type DashboardCounts = {
   players: number;
@@ -25,14 +26,14 @@ const dashboardCards = [
 ] as const;
 
 async function fetchDashboardCounts() {
-  const response = await fetch("/api/admin/dashboard");
+  const response = await adminFetch("/api/admin/dashboard");
   const body = (await response.json().catch(() => ({}))) as {
     counts?: DashboardCounts;
     error?: string;
   };
 
   if (!response.ok) {
-    throw new Error("Nepodařilo se načíst přehled.");
+    throw new Error(body.error ?? "Nepodařilo se načíst přehled.");
   }
 
   return body.counts ?? emptyCounts;

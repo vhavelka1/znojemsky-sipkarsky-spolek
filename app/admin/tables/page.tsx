@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { useEffect, useMemo, useState } from "react";
 
 type Season = {
@@ -103,7 +104,7 @@ async function readJson(response: Response) {
 }
 
 async function fetchTableData() {
-  const response = await fetch("/api/admin/matches");
+  const response = await adminFetch("/api/admin/matches");
   const body = await readJson(response);
 
   if (!response.ok) {

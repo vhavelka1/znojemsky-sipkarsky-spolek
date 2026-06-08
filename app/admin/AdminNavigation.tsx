@@ -13,6 +13,7 @@ const navigationItems = [
   { href: "/admin/leagues", label: "Ligy" },
   { href: "/admin/matches", label: "Zápasy" },
   { href: "/admin/tables", label: "Tabulky" },
+  { href: "/admin/users", label: "Uživatelé" },
   { href: "/admin/settings", label: "Nastavení" },
 ];
 

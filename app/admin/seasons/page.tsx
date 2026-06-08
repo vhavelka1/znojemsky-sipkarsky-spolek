@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
@@ -44,7 +45,7 @@ async function readJson(response: Response) {
 }
 
 async function fetchSeasons() {
-  const response = await fetch("/api/admin/seasons");
+  const response = await adminFetch("/api/admin/seasons");
   const body = await readJson(response);
 
   if (!response.ok) {
@@ -147,7 +148,7 @@ export default function AdminSeasonsPage() {
   }, []);
 
   async function submitSeason(url: string, method: "POST" | "PATCH", seasonForm: SeasonForm) {
-    const response = await fetch(url, {
+    const response = await adminFetch(url, {
       method,
       headers: {
         "Content-Type": "application/json",
@@ -215,7 +216,7 @@ export default function AdminSeasonsPage() {
     setBusySeasonId(seasonId);
     setError(null);
 
-    const response = await fetch(`/api/admin/seasons/${seasonId}/activate`, {
+    const response = await adminFetch(`/api/admin/seasons/${seasonId}/activate`, {
       method: "POST",
     });
     await readJson(response);
@@ -233,7 +234,7 @@ export default function AdminSeasonsPage() {
     setBusySeasonId(seasonId);
     setError(null);
 
-    const response = await fetch(`/api/admin/seasons/${seasonId}`, {
+    const response = await adminFetch(`/api/admin/seasons/${seasonId}`, {
       method: "DELETE",
     });
     await readJson(response);

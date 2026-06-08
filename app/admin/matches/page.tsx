@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
@@ -108,7 +109,7 @@ async function readJson(response: Response) {
 }
 
 async function fetchMatchData() {
-  const response = await fetch("/api/admin/matches");
+  const response = await adminFetch("/api/admin/matches");
   const body = await readJson(response);
 
   if (!response.ok) {
@@ -319,7 +320,7 @@ export default function AdminMatchesPage() {
   }
 
   async function submitAdminAction(payload: Record<string, string>) {
-    const response = await fetch("/api/admin/matches", {
+    const response = await adminFetch("/api/admin/matches", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -407,7 +408,7 @@ export default function AdminMatchesPage() {
 
     setDeletingMatchId(matchId);
     setError(null);
-    const response = await fetch(`/api/admin/matches/${matchId}`, {
+    const response = await adminFetch(`/api/admin/matches/${matchId}`, {
       method: "DELETE",
     });
     const body = await readJson(response);

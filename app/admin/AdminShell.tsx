@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
-import { ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { ReactNode, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AdminNavigation } from "./AdminNavigation";
+import { supabase } from "@/lib/supabase";
 
 type AdminShellProps = {
   children: ReactNode;
@@ -12,10 +13,83 @@ type AdminShellProps = {
 
 export function AdminShell({ children }: AdminShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [authState, setAuthState] = useState<"loading" | "allowed" | "blocked">("loading");
+  const [displayName, setDisplayName] = useState("");
+  const [blockMessage, setBlockMessage] = useState("");
   const isScoreboard = /^\/admin\/matches\/[^/]+\/scoreboard$/.test(pathname);
+
+  useEffect(() => {
+    let isMounted = true;
+    const originalFetch = window.fetch.bind(window);
+
+    async function verifyAdminAccess() {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+
+      if (!token) {
+        router.replace(`/prihlaseni?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
+
+      window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.startsWith("/api/admin")) {
+          const headers = new Headers(init?.headers);
+          headers.set("Authorization", `Bearer ${token}`);
+          return originalFetch(input, { ...init, headers });
+        }
+
+        return originalFetch(input, init);
+      }) as typeof window.fetch;
+
+      const response = await originalFetch("/api/auth/me", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        user?: {
+          displayName: string;
+          canAccessAdmin: boolean;
+          role: string;
+          isActive: boolean;
+        } | null;
+      };
+
+      if (!isMounted) return;
+
+      if (!body.user?.isActive) {
+        setBlockMessage("Uživatelský účet je deaktivovaný.");
+        setAuthState("blocked");
+        return;
+      }
+
+      if (!body.user?.canAccessAdmin) {
+        setBlockMessage("Pro přístup do administrace nemáte oprávnění.");
+        setAuthState("blocked");
+        return;
+      }
+
+      setDisplayName(body.user.displayName);
+      setAuthState("allowed");
+    }
+
+    void verifyAdminAccess();
+
+    return () => {
+      isMounted = false;
+      window.fetch = originalFetch;
+    };
+  }, [pathname, router]);
 
   if (isScoreboard) {
     return <>{children}</>;
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/");
   }
 
   return (
@@ -51,17 +125,27 @@ export function AdminShell({ children }: AdminShellProps) {
                 </span>
               </span>
             </Link>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-[0.68rem] font-extrabold uppercase tracking-[0.14em] text-blue-100/70">
-                Sportovní správa
-              </p>
+            <div className="mt-5">
               <Link
-                className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-black text-white hover:bg-white/20"
+                className="inline-flex w-full items-center justify-center rounded-full bg-white/15 px-5 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.16)] transition hover:-translate-y-0.5 hover:bg-white/25"
                 href="/"
               >
                 Zpět na web
               </Link>
             </div>
+            {authState === "allowed" ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs font-bold text-blue-100/80">Přihlášen</p>
+                <p className="mt-1 truncate text-sm font-black text-white">{displayName}</p>
+                <button
+                  className="mt-3 rounded-full bg-[#EF233C] px-3 py-1.5 text-xs font-black text-white hover:bg-red-500"
+                  onClick={handleLogout}
+                  type="button"
+                >
+                  Odhlásit
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="admin-sidebar-nav">
             <AdminNavigation />
@@ -69,7 +153,24 @@ export function AdminShell({ children }: AdminShellProps) {
         </aside>
 
         <section className="admin-content min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-          {children}
+          {authState === "loading" ? (
+            <div className="admin-card p-6 text-sm font-bold text-slate-600">Ověřuji přístup do administrace...</div>
+          ) : null}
+          {authState === "blocked" ? (
+            <div className="admin-card p-6">
+              <h1 className="text-2xl font-black text-[var(--brand-navy)]">Přístup zamítnut</h1>
+              <p className="mt-3 text-sm font-bold text-slate-600">{blockMessage}</p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link className="rounded-full bg-[#EF233C] px-5 py-3 text-sm font-black text-white" href="/muj-ucet">
+                  Můj účet
+                </Link>
+                <button className="rounded-full border border-[var(--admin-border)] px-5 py-3 text-sm font-black" onClick={handleLogout} type="button">
+                  Odhlásit
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {authState === "allowed" ? children : null}
         </section>
       </div>
     </main>

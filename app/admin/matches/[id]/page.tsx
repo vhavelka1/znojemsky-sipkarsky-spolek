@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
@@ -251,7 +252,7 @@ export default function AdminMatchSheetPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/admin/matches/${matchId}/sheet`);
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`);
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
       if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo načíst.");
       const slots = body.slots ?? [];
@@ -284,7 +285,7 @@ export default function AdminMatchSheetPage() {
     setConfirmingSide(side);
     setError(null);
     try {
-      const response = await fetch(`/api/admin/matches/${matchId}/confirm`, {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ side }),
@@ -501,7 +502,7 @@ export default function AdminMatchSheetPage() {
               : null,
           ].filter((slot) => Boolean(slot));
         });
-      const response = await fetch(`/api/admin/matches/${matchId}/sheet`, {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ games, achievements, slots }),

@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
@@ -37,7 +38,7 @@ const emptyForm: PlayerForm = {
 };
 
 async function fetchPlayers() {
-  const response = await fetch("/api/admin/players");
+  const response = await adminFetch("/api/admin/players");
   const body = await response.json();
 
   if (!response.ok) {
@@ -191,7 +192,7 @@ export default function AdminPlayersPage() {
       email: form.email.trim(),
       phone: form.phone.trim(),
     };
-    const response = await fetch(
+    const response = await adminFetch(
       editingPlayerId ? `/api/admin/players/${editingPlayerId}` : "/api/admin/players",
       {
         method: editingPlayerId ? "PATCH" : "POST",

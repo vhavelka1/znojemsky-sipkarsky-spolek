@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { useEffect, useMemo, useState } from "react";
 
 const mockRole = "admin";
@@ -63,7 +64,7 @@ async function readJson(response: Response) {
 }
 
 async function fetchMembershipData() {
-  const response = await fetch("/api/admin/memberships");
+  const response = await adminFetch("/api/admin/memberships");
   const body = await readJson(response);
 
   if (!response.ok) {
@@ -250,7 +251,7 @@ export default function AdminMembershipsPage() {
     setBusyMembershipId(membershipId);
     setError(null);
 
-    const response = await fetch(`/api/admin/memberships/${membershipId}`, {
+    const response = await adminFetch(`/api/admin/memberships/${membershipId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",

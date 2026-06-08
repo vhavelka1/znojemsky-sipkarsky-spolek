@@ -43,20 +43,27 @@ export const AdminCard = Card;
 
 export function PageHeader({
   eyebrow = "Administrace",
+  kicker,
   title,
   description,
+  actions,
 }: {
   eyebrow?: string;
+  kicker?: string;
   title: string;
   description?: string;
+  actions?: ReactNode;
 }) {
   return (
-    <header>
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--brand-coral)]">{eyebrow}</p>
-      <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--brand-navy)]">{title}</h2>
-      {description ? (
-        <p className="mt-2 max-w-2xl text-sm text-[var(--admin-muted)]">{description}</p>
-      ) : null}
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--brand-coral)]">{kicker ?? eyebrow}</p>
+        <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--brand-navy)]">{title}</h2>
+        {description ? (
+          <p className="mt-2 max-w-2xl text-sm text-[var(--admin-muted)]">{description}</p>
+        ) : null}
+      </div>
+      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>
   );
 }

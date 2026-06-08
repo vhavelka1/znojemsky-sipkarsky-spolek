@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -287,7 +288,7 @@ export default function MatchScoreboardPage() {
     setError(null);
 
     try {
-      const response = await fetch(`/api/admin/matches/${matchId}/sheet`, { cache: "no-store" });
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, { cache: "no-store" });
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
       if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo načíst.");
 
@@ -477,7 +478,7 @@ export default function MatchScoreboardPage() {
       const achievements = payload.achievements.filter(
         (achievement) => (achievement.order_number ?? 0) <= 18,
       );
-      const response = await fetch(`/api/admin/matches/${matchId}/sheet`, {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

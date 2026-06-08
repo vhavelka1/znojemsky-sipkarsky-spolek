@@ -16,6 +16,23 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Supabase Auth
+
+The application uses Supabase Auth for passwords, sessions and password reset emails. Do not store passwords in application tables.
+
+Configure Supabase Authentication redirect URLs:
+
+- `http://localhost:3000/nastavit-heslo`
+- `https://YOUR_DOMAIN/nastavit-heslo`
+
+Run these SQL files in Supabase SQL Editor when deploying the related modules:
+
+- `supabase/apply_user_profiles_in_dashboard.sql`
+- `supabase/apply_gallery_in_dashboard.sql`
+- `supabase/apply_discussions_in_dashboard.sql`
+
+Create the first administrator manually in `public.user_profiles` after inviting or creating the Supabase Auth user. Further users can be managed from `/admin/users`.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

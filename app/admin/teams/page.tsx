@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -72,7 +73,7 @@ async function readJson(response: Response) {
 }
 
 async function fetchTeams() {
-  const response = await fetch("/api/admin/teams");
+  const response = await adminFetch("/api/admin/teams");
   const body = await readJson(response);
 
   if (!response.ok) {
@@ -232,7 +233,7 @@ export default function AdminTeamsPage() {
     setIsSaving(true);
     setError(null);
 
-    const response = await fetch("/api/admin/teams", {
+    const response = await adminFetch("/api/admin/teams", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -268,7 +269,7 @@ export default function AdminTeamsPage() {
     setBusyTeamId(teamId);
     setError(null);
 
-    const response = await fetch(`/api/admin/teams/${teamId}`, {
+    const response = await adminFetch(`/api/admin/teams/${teamId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -301,7 +302,7 @@ export default function AdminTeamsPage() {
     setBusyTeamId(teamId);
     setError(null);
 
-    const response = await fetch(`/api/admin/teams/${teamId}`, {
+    const response = await adminFetch(`/api/admin/teams/${teamId}`, {
       method: "DELETE",
     });
 
@@ -326,7 +327,7 @@ export default function AdminTeamsPage() {
 
     const formData = new FormData();
     formData.set("logo", logo);
-    const response = await fetch(`/api/admin/teams/${teamId}/logo`, {
+    const response = await adminFetch(`/api/admin/teams/${teamId}/logo`, {
       method: "POST",
       body: formData,
     });
@@ -351,7 +352,7 @@ export default function AdminTeamsPage() {
     setError(null);
 
     const draft = draftForTeam(team.id);
-    const response = await fetch(`/api/admin/teams/${team.id}/leadership`, {
+    const response = await adminFetch(`/api/admin/teams/${team.id}/leadership`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",

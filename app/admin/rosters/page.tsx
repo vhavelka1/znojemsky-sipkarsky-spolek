@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Season = {
@@ -77,8 +78,8 @@ async function readJson<T>(response: Response) {
 
 async function fetchRosterData() {
   const [membershipResponse, leagueResponse] = await Promise.all([
-    fetch("/api/admin/memberships"),
-    fetch("/api/admin/leagues"),
+    adminFetch("/api/admin/memberships"),
+    adminFetch("/api/admin/leagues"),
   ]);
   const membershipBody = await readJson<MembershipPayload>(membershipResponse);
   const leagueBody = await readJson<LeaguePayload>(leagueResponse);

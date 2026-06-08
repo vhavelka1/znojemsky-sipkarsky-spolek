@@ -1,5 +1,6 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useState } from "react";
 import { Button, Card, PageHeader } from "@/components/ui/admin";
 
@@ -34,7 +35,7 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch("/api/admin/settings")
+    adminFetch("/api/admin/settings")
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as SettingsResponse;
         if (!response.ok) {
@@ -77,7 +78,7 @@ export default function AdminSettingsPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/admin/settings", {
+      const response = await adminFetch("/api/admin/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
