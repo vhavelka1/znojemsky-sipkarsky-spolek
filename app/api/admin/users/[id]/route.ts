@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { getCurrentUserProfile } from "@/lib/appAuth";
 import { passwordSetupRedirectTo } from "@/lib/siteUrl";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
@@ -25,6 +26,22 @@ function schemaError(error: { message?: string } | null | undefined) {
   return message.includes("user_profiles")
     ? "Nejprve spusťte SQL soubor supabase/apply_user_profiles_in_dashboard.sql v Supabase SQL Editoru."
     : message;
+}
+
+function createPasswordResetClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("Chybí veřejná Supabase konfigurace pro odeslání obnovy hesla.");
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -118,12 +135,16 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Email uživatele se nepodařilo najít." }, { status: 500 });
   }
 
-  const reset = await supabase.auth.resetPasswordForEmail(userData.user.email, {
+  const resetClient = createPasswordResetClient();
+  const reset = await resetClient.auth.resetPasswordForEmail(userData.user.email, {
     redirectTo: passwordSetupRedirectTo(request),
   });
 
   if (reset.error) {
-    return NextResponse.json({ error: "Obnovu hesla se nepodařilo odeslat." }, { status: 500 });
+    return NextResponse.json(
+      { error: `Obnovu hesla se nepodařilo odeslat. ${reset.error.message}` },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ ok: true });
