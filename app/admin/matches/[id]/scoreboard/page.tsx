@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { adminFetch } from "@/lib/adminFetch";
 import Link from "next/link";
@@ -113,21 +113,21 @@ type WakeLockNavigator = Navigator & {
 };
 
 const statusLabels: Record<MatchStatus, string> = {
-  scheduled: "naplĂˇnovĂˇno",
-  played: "odehrĂˇno",
-  awaiting_confirmation: "ÄŤekĂˇ na potvrzenĂ­",
+  scheduled: "naplánováno",
+  played: "odehráno",
+  awaiting_confirmation: "čeká na potvrzení",
   confirmed: "potvrzeno",
-  cancelled: "zruĹˇeno",
+  cancelled: "zrušeno",
 };
 const gameTypeLabels: Record<MatchGameType, string> = {
   singles: "Dvouhra",
-  doubles: "ÄŚtyĹ™hra",
+  doubles: "Čtyřhra",
   cricket: "Kriket",
-  tiebreak_701: "RozstĹ™el 701 DO",
+  tiebreak_701: "Rozstřel 701 DO",
 };
 const sideLabels: Record<MatchSide, string> = {
-  home: "DomĂˇcĂ­",
-  away: "HostĂ©",
+  home: "Domácí",
+  away: "Hosté",
 };
 const multiplierLabels: Record<Multiplier, MultiplierName> = {
   1: "single",
@@ -219,7 +219,7 @@ function lastThrowsText(side: SideState, isActive: boolean, currentThrows: DartT
     return currentThrows.map((item) => item.label).join("  ");
   }
 
-  return side.lastThrows.join("  ") || "ÄŚekĂˇ se na hod";
+  return side.lastThrows.join("  ") || "Čeká se na hod";
 }
 
 function createInitialState(mode: ScoringMode, game: SheetGame | null): ScoreboardState {
@@ -294,7 +294,7 @@ export default function MatchScoreboardPage() {
   const [visitSnapshots, setVisitSnapshots] = useState<ScoreboardState[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [wakeLockStatus, setWakeLockStatus] = useState("ReĹľim bdÄ›nĂ­ nenĂ­ zapnutĂ˝.");
+  const [wakeLockStatus, setWakeLockStatus] = useState("Režim bdění není zapnutý.");
   const [error, setError] = useState<string | null>(null);
 
   const loadSheet = useCallback(async () => {
@@ -304,7 +304,7 @@ export default function MatchScoreboardPage() {
     try {
       const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, { cache: "no-store" });
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
-      if (!response.ok) throw new Error(body.error ?? "ZĂˇpis utkĂˇnĂ­ se nepodaĹ™ilo naÄŤĂ­st.");
+      if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo načíst.");
 
       const nextPayload = {
         ...emptyPayload,
@@ -332,7 +332,7 @@ export default function MatchScoreboardPage() {
         setVisitSnapshots([]);
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "ZĂˇpis utkĂˇnĂ­ se nepodaĹ™ilo naÄŤĂ­st.");
+      setError(loadError instanceof Error ? loadError.message : "Zápis utkání se nepodařilo načíst.");
     }
 
     setIsLoading(false);
@@ -346,12 +346,12 @@ export default function MatchScoreboardPage() {
   useEffect(() => {
     let sentinel: WakeLockSentinel | null = null;
     let cancelled = false;
-    const releaseListener = () => setWakeLockStatus("ReĹľim bdÄ›nĂ­ byl ukonÄŤen.");
+    const releaseListener = () => setWakeLockStatus("Režim bdění byl ukončen.");
 
     async function requestWakeLock() {
       const wakeLock = (navigator as WakeLockNavigator).wakeLock;
       if (!wakeLock) {
-        setWakeLockStatus("Wake Lock API nenĂ­ v tomto prohlĂ­ĹľeÄŤi podporovanĂ©.");
+        setWakeLockStatus("Wake Lock API není v tomto prohlížeči podporované.");
         return;
       }
 
@@ -362,9 +362,9 @@ export default function MatchScoreboardPage() {
           return;
         }
         sentinel.addEventListener("release", releaseListener);
-        setWakeLockStatus("Tablet zĹŻstane pĹ™i skĂłrovĂˇnĂ­ vzhĹŻru.");
+        setWakeLockStatus("Tablet zůstane při skórování vzhůru.");
       } catch {
-        setWakeLockStatus("ReĹľim bdÄ›nĂ­ se nepodaĹ™ilo zapnout.");
+        setWakeLockStatus("Režim bdění se nepodařilo zapnout.");
       }
     }
 
@@ -404,15 +404,15 @@ export default function MatchScoreboardPage() {
   );
 
   const homeTeamName = useMemo(() => {
-    if (!payload.match) return "DomĂˇcĂ­";
+    if (!payload.match) return "Domácí";
     const teamSeason = teamSeasonById.get(payload.match.home_team_id);
-    return teamSeason?.display_name || (teamSeason ? teamById.get(teamSeason.team_id)?.name : null) || "DomĂˇcĂ­";
+    return teamSeason?.display_name || (teamSeason ? teamById.get(teamSeason.team_id)?.name : null) || "Domácí";
   }, [payload.match, teamById, teamSeasonById]);
 
   const awayTeamName = useMemo(() => {
-    if (!payload.match) return "HostĂ©";
+    if (!payload.match) return "Hosté";
     const teamSeason = teamSeasonById.get(payload.match.away_team_id);
-    return teamSeason?.display_name || (teamSeason ? teamById.get(teamSeason.team_id)?.name : null) || "HostĂ©";
+    return teamSeason?.display_name || (teamSeason ? teamById.get(teamSeason.team_id)?.name : null) || "Hosté";
   }, [payload.match, teamById, teamSeasonById]);
 
   const winningLegs = winningLegsForGame(selectedGame);
@@ -422,7 +422,7 @@ export default function MatchScoreboardPage() {
   const currentThrowText =
     scoreboard.currentThrows.length > 0
       ? scoreboard.currentThrows.map((item) => item.label).join(" + ")
-      : "ÄŤekĂˇ se na prvnĂ­ Ĺˇipku";
+      : "čeká se na první šipku";
 
   const gameSideNames = useCallback(
     (side: MatchSide) => {
@@ -432,7 +432,7 @@ export default function MatchScoreboardPage() {
         .filter(Boolean)
         .map((playerId) => {
           const player = playerById.get(playerId);
-          return player ? playerLabel(player) : "NevybranĂ˝ hrĂˇÄŤ";
+          return player ? playerLabel(player) : "Nevybraný hráč";
         });
       return names.length > 0 ? names.join(" / ") : fallback;
     },
@@ -488,7 +488,7 @@ export default function MatchScoreboardPage() {
         }),
       });
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
-      if (!response.ok) throw new Error(body.error ?? "Hru se nepodaĹ™ilo uloĹľit.");
+      if (!response.ok) throw new Error(body.error ?? "Hru se nepodařilo uložit.");
 
       setPayload((current) => ({
         ...current,
@@ -506,7 +506,7 @@ export default function MatchScoreboardPage() {
       }));
       setScoreboard((current) => ({ ...current, isSaved: true }));
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Hru se nepodaĹ™ilo uloĹľit.");
+      setError(saveError instanceof Error ? saveError.message : "Hru se nepodařilo uložit.");
     }
 
     setIsSaving(false);
@@ -549,7 +549,7 @@ export default function MatchScoreboardPage() {
     const history = addVisit(nextState.lastVisits, {
       side: state.activeSide,
       score: 0,
-      text: `${gameSideNames(state.activeSide)}: pĹ™ehoz`,
+      text: `${gameSideNames(state.activeSide)}: přehoz`,
       bust: true,
     });
     return switchPlayer(nextState, history);
@@ -664,7 +664,7 @@ export default function MatchScoreboardPage() {
   }
 
   function exitScoreboard() {
-    if (window.confirm("SkuteÄŤnÄ› chcete PoÄŤĂ­tadlo ukonÄŤit?")) {
+    if (window.confirm("Skutečně chcete Počítadlo ukončit?")) {
       router.push("/");
     }
   }
@@ -691,7 +691,7 @@ export default function MatchScoreboardPage() {
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#061A3A] px-6 text-white">
-        <p className="text-xl font-black">NaÄŤĂ­tĂˇm poÄŤĂ­tadlo...</p>
+        <p className="text-xl font-black">Načítám počítadlo...</p>
       </main>
     );
   }
@@ -700,9 +700,9 @@ export default function MatchScoreboardPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#061A3A] px-6 text-white">
         <div className="max-w-xl rounded-3xl border border-red-400/40 bg-red-950/40 p-8 text-center">
-          <p className="text-xl font-bold">{error ?? "ZĂˇpas nebyl nalezen."}</p>
+          <p className="text-xl font-bold">{error ?? "Zápas nebyl nalezen."}</p>
           <Link className="mt-5 inline-flex rounded-full bg-white px-5 py-3 font-bold text-[#061A3A]" href="/admin/matches">
-            ZpÄ›t na zĂˇpasy
+            Zpět na zápasy
           </Link>
         </div>
       </main>
@@ -716,11 +716,11 @@ export default function MatchScoreboardPage() {
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <Link className="text-xs font-bold text-sky-200 hover:text-white sm:text-sm" href={`/admin/matches/${matchId}`}>
-                ZpÄ›t na zĂˇpis utkĂˇnĂ­
+                Zpět na zápis utkání
               </Link>
-              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl md:text-5xl">PoÄŤĂ­tadlo zĂˇpasu</h1>
+              <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl md:text-5xl">Počítadlo zápasu</h1>
               <p className="mt-1 text-xs text-slate-300 sm:text-sm">
-                {payload.season?.name ?? "SezĂłna"} / {payload.league?.name ?? "Liga"} / {payload.group?.name ?? "Skupina"}
+                {payload.season?.name ?? "Sezóna"} / {payload.league?.name ?? "Liga"} / {payload.group?.name ?? "Skupina"}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -729,7 +729,7 @@ export default function MatchScoreboardPage() {
                 onClick={() => void toggleFullscreen()}
                 type="button"
               >
-                {isFullscreen ? "UkonÄŤit celou obrazovku" : "CelĂˇ obrazovka"}
+                {isFullscreen ? "Ukončit celou obrazovku" : "Celá obrazovka"}
               </button>
               <div className="rounded-2xl bg-emerald-400/15 px-3 py-2 text-xs font-bold text-emerald-200 sm:px-4 sm:py-3 sm:text-sm">
                 {wakeLockStatus}
@@ -754,7 +754,7 @@ export default function MatchScoreboardPage() {
           <aside className="flex flex-col gap-2 md:min-h-0 md:gap-3">
             <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
               <label className="text-sm font-bold text-slate-300" htmlFor="scoreboard-game">
-                Hra v zĂˇpisu
+                Hra v zápisu
               </label>
               <select
                 className="mt-2 w-full rounded-2xl border border-white/15 bg-[#0B2F6B] px-3 py-3 text-sm font-black text-white outline-none focus:border-emerald-300 sm:px-4 sm:py-4 sm:text-base"
@@ -771,26 +771,26 @@ export default function MatchScoreboardPage() {
 
               <dl className="mt-4 grid gap-2 text-sm text-slate-300">
                 <div className="rounded-2xl bg-black/20 p-3">
-                  <dt className="font-bold text-slate-400">UtkĂˇnĂ­</dt>
+                  <dt className="font-bold text-slate-400">Utkání</dt>
                   <dd className="mt-1 font-black text-white">{homeTeamName} - {awayTeamName}</dd>
                 </div>
                 <div className="rounded-2xl bg-black/20 p-3">
-                  <dt className="font-bold text-slate-400">Stav zĂˇpasu</dt>
+                  <dt className="font-bold text-slate-400">Stav zápasu</dt>
                   <dd className="mt-1 font-black text-white">{statusLabels[payload.match.status]}</dd>
                 </div>
                 <div className="rounded-2xl bg-black/20 p-3">
-                  <dt className="font-bold text-slate-400">ReĹľim hry</dt>
+                  <dt className="font-bold text-slate-400">Režim hry</dt>
                   <dd className="mt-1 font-black text-white">{isCricket ? "Kriket" : `${mode} DO`}</dd>
                 </div>
               </dl>
             </div>
 
             <div className="order-last overflow-hidden rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4 xl:order-none xl:min-h-0 xl:flex-1">
-              <h2 className="text-lg font-black">Historie nĂˇhozĹŻ</h2>
+              <h2 className="text-lg font-black">Historie náhozů</h2>
               <div className="mt-3 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1 xl:max-h-full">
                 {scoreboard.lastVisits.length === 0 ? (
                   <p className="rounded-2xl bg-black/20 p-4 text-sm text-slate-300">
-                    ZatĂ­m nenĂ­ zadanĂ˝ ĹľĂˇdnĂ˝ nĂˇhoz.
+                    Zatím není zadaný žádný nához.
                   </p>
                 ) : (
                   scoreboard.lastVisits.map((item, index) => (
@@ -834,7 +834,7 @@ export default function MatchScoreboardPage() {
                         ) : null}
                         {isActive && scoreboard.sides[side].score <= 170 ? (
                           <span className="max-w-[10rem] rounded-2xl bg-black/25 px-2 py-1 text-right text-xs font-black text-emerald-100 sm:max-w-[13rem] sm:px-3 sm:text-sm">
-                            {checkout ? checkout.primary.join(" ") : "Nelze zavĹ™Ă­t"}
+                            {checkout ? checkout.primary.join(" ") : "Nelze zavřít"}
                           </span>
                         ) : null}
                       </div>
@@ -862,15 +862,15 @@ export default function MatchScoreboardPage() {
 
             {scoreboard.legWinnerSide ? (
               <div className="rounded-[26px] border border-emerald-300/50 bg-emerald-400/20 px-5 py-4 text-center text-xl font-black text-emerald-100">
-                Leg vyhrĂˇli {scoreboard.legWinnerSide === "home" ? "domĂˇcĂ­" : "hostĂ©"}
+                Leg vyhráli {scoreboard.legWinnerSide === "home" ? "domácí" : "hosté"}
               </div>
             ) : null}
 
             {isCricket ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-[30px] border border-amber-300/30 bg-amber-400/10 p-8 text-center">
-                <h2 className="text-3xl font-black text-amber-100">Kriket pĹ™ipravujeme</h2>
+                <h2 className="text-3xl font-black text-amber-100">Kriket připravujeme</h2>
                 <p className="mt-3 max-w-xl text-amber-50/80">
-                  Pro kriket je zatĂ­m pĹ™ipravenĂ˝ pouze zĂˇstupnĂ˝ reĹľim. VĂ˝sledek kriketu lze uloĹľit v zĂˇpisu utkĂˇnĂ­.
+                  Pro kriket je zatím připravený pouze zástupný režim. Výsledek kriketu lze uložit v zápisu utkání.
                 </p>
               </div>
             ) : (
@@ -880,7 +880,7 @@ export default function MatchScoreboardPage() {
                     <p className="text-sm font-bold text-blue-100">Na tahu</p>
                     <h2 className="text-xl font-black text-emerald-200 sm:text-2xl">{gameSideNames(scoreboard.activeSide)}</h2>
                     <p className="mt-1 text-xs font-bold text-slate-300 sm:text-sm">
-                      Ĺ ipka {Math.min(scoreboard.currentThrows.length + 1, 3)}/3 Â· {currentThrowText}
+                      Šipka {Math.min(scoreboard.currentThrows.length + 1, 3)}/3 · {currentThrowText}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -903,7 +903,7 @@ export default function MatchScoreboardPage() {
                       onClick={exitScoreboard}
                       type="button"
                     >
-                      UkonÄŤit
+                      Ukončit
                     </button>
                   </div>
                 </div>
@@ -935,7 +935,7 @@ export default function MatchScoreboardPage() {
 
           <aside className="flex flex-col gap-2 md:min-h-0 md:gap-3">
             <div className="rounded-[20px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[26px] sm:p-4">
-              <h2 className="text-lg font-black sm:text-xl">OvlĂˇdĂˇnĂ­</h2>
+              <h2 className="text-lg font-black sm:text-xl">Ovládání</h2>
               <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-1">
                 <button
                   className="rounded-2xl bg-red-500 px-3 py-3 text-xs font-black text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base"
@@ -943,7 +943,7 @@ export default function MatchScoreboardPage() {
                   onClick={undoLastDart}
                   type="button"
                 >
-                  VrĂˇtit Ĺˇipku
+                  Vrátit šipku
                 </button>
                 <button
                   className="rounded-2xl bg-red-500/80 px-3 py-3 text-xs font-black text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base"
@@ -951,7 +951,7 @@ export default function MatchScoreboardPage() {
                   onClick={undoLastVisit}
                   type="button"
                 >
-                  VrĂˇtit nĂˇhoz
+                  Vrátit nához
                 </button>
                 <button
                   className="col-span-2 rounded-2xl bg-emerald-400 px-3 py-3 text-xs font-black text-[#061A3A] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base xl:col-span-1"
@@ -959,11 +959,11 @@ export default function MatchScoreboardPage() {
                   onClick={() => void saveGame()}
                   type="button"
                 >
-                  {isSaving ? "UklĂˇdĂˇm..." : scoreboard.isSaved ? "UloĹľeno" : "UloĹľit stav hry"}
+                  {isSaving ? "Ukládám..." : scoreboard.isSaved ? "Uloženo" : "Uložit stav hry"}
                 </button>
               </div>
               <p className="mt-3 text-xs font-bold text-slate-400">
-                Hraje se na {winningLegs} {winningLegs === 1 ? "vĂ­tÄ›znĂ˝ leg" : "vĂ­tÄ›znĂ© legy"}. ZavĹ™enĂ­ musĂ­ bĂ˝t double nebo Bull.
+                Hraje se na {winningLegs} {winningLegs === 1 ? "vítězný leg" : "vítězné legy"}. Zavření musí být double nebo Bull.
               </p>
             </div>
           </aside>
