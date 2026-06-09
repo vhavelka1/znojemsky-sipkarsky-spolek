@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -9,6 +9,7 @@ import {
   isValidDoubleOutFinish,
 } from "@/lib/dartsCheckout";
 import type { MultiplierName } from "@/lib/dartsCheckout";
+import { useMobileFullscreen } from "@/lib/useMobileFullscreen";
 
 type GameType = "301" | "501" | "701" | "cricket";
 type StartMode = "straight_in" | "double_in";
@@ -24,6 +25,7 @@ type PlayerState = {
   totalScored: number;
   dartsThrown: number;
   visitScores: number[];
+  lastThrows: string[];
 };
 type ThrowItem = {
   value: number;
@@ -64,7 +66,7 @@ const defaultSettings: GameSettings = {
   gameType: "501",
   startMode: "straight_in",
   finishMode: "double_out",
-  playerNames: ["Hráč 1", "Hráč 2"],
+  playerNames: ["HrĂˇÄŤ 1", "HrĂˇÄŤ 2"],
 };
 
 const numberButtons = Array.from({ length: 20 }, (_, index) => index + 1).concat(25);
@@ -99,7 +101,7 @@ function createInitialState(settings: GameSettings): ScoreboardState {
   return {
     players: Array.from({ length: settings.playerCount }, (_, index) => ({
       id: index,
-      name: settings.playerNames[index]?.trim() || `Hráč ${index + 1}`,
+      name: settings.playerNames[index]?.trim() || `HrĂˇÄŤ ${index + 1}`,
       score,
       legs: 0,
       sets: 0,
@@ -107,6 +109,7 @@ function createInitialState(settings: GameSettings): ScoreboardState {
       totalScored: 0,
       dartsThrown: 0,
       visitScores: [],
+      lastThrows: [],
     })),
     activePlayerIndex: 0,
     startingPlayerIndex: 0,
@@ -139,8 +142,17 @@ function visitsText(player: PlayerState) {
   return player.visitScores.slice(0, 4).join(" / ") || "-";
 }
 
+function lastThrowsText(player: PlayerState, isActive: boolean, currentThrows: ThrowItem[]) {
+  if (isActive && currentThrows.length > 0) {
+    return currentThrows.map((item) => item.label).join("  ");
+  }
+
+  return player.lastThrows.join("  ") || "ÄŚekĂˇ se na hod";
+}
+
 export default function PublicScoreboardPage() {
   const router = useRouter();
+  const { fullscreenMessage, isFullscreen, toggleFullscreen } = useMobileFullscreen();
   const [settings, setSettings] = useState<GameSettings>(defaultSettings);
   const [scoreboard, setScoreboard] = useState<ScoreboardState | null>(null);
   const [multiplier, setMultiplier] = useState<Multiplier>(1);
@@ -154,7 +166,7 @@ export default function PublicScoreboardPage() {
     : null;
 
   const currentThrowText = useMemo(() => {
-    if (!scoreboard || scoreboard.currentThrows.length === 0) return "Čeká se na první hod";
+    if (!scoreboard || scoreboard.currentThrows.length === 0) return "ÄŚekĂˇ se na prvnĂ­ hod";
     return scoreboard.currentThrows.map((item) => item.label).join(" + ");
   }, [scoreboard]);
 
@@ -169,7 +181,7 @@ export default function PublicScoreboardPage() {
       playerCount,
       playerNames: Array.from(
         { length: playerCount },
-        (_, index) => current.playerNames[index] ?? `Hráč ${index + 1}`,
+        (_, index) => current.playerNames[index] ?? `HrĂˇÄŤ ${index + 1}`,
       ),
     }));
   }
@@ -231,7 +243,11 @@ export default function PublicScoreboardPage() {
         ...state,
         players: state.players.map((item, index) =>
           index === state.activePlayerIndex
-            ? { ...item, visitScores: [scored, ...item.visitScores].slice(0, 8) }
+            ? {
+                ...item,
+                lastThrows: throwsForTurn.map((dart) => dart.label),
+                visitScores: [scored, ...item.visitScores].slice(0, 8),
+              }
             : item,
         ),
       },
@@ -239,17 +255,22 @@ export default function PublicScoreboardPage() {
     );
   }
 
-  function handleBust(state: ScoreboardState) {
+  function handleBust(state: ScoreboardState, throwsForTurn: ThrowItem[]) {
     const player = state.players[state.activePlayerIndex];
     const history = addVisit(state.lastVisits, {
       playerName: player.name,
       score: 0,
-      text: "přehoz",
+      text: "pĹ™ehoz",
       bust: true,
     });
     const restoredPlayers = state.players.map((item, index) =>
       index === state.activePlayerIndex
-        ? { ...item, score: state.turnStartScore, visitScores: [0, ...item.visitScores].slice(0, 8) }
+        ? {
+            ...item,
+            lastThrows: throwsForTurn.map((dart) => dart.label),
+            score: state.turnStartScore,
+            visitScores: [0, ...item.visitScores].slice(0, 8),
+          }
         : item,
     );
     return switchPlayer({ ...state, players: restoredPlayers }, history);
@@ -266,6 +287,7 @@ export default function PublicScoreboardPage() {
         ...item,
         legs: wonSet ? 0 : nextLegs,
         sets: wonSet ? item.sets + 1 : item.sets,
+        lastThrows: throwsForTurn.map((dart) => dart.label),
         visitScores: [scored, ...item.visitScores].slice(0, 8),
       };
     });
@@ -338,7 +360,7 @@ export default function PublicScoreboardPage() {
       };
       if (throwsForTurn.length >= 3) {
         setVisitSnapshots((current) => [...current, scoreboard].slice(-30));
-        setScoreboard(finishVisit(nextState, throwsForTurn, "čeká na double in"));
+        setScoreboard(finishVisit(nextState, throwsForTurn, "ÄŤekĂˇ na double in"));
       } else {
         setScoreboard(nextState);
       }
@@ -356,7 +378,7 @@ export default function PublicScoreboardPage() {
 
     if (isBust) {
       setVisitSnapshots((current) => [...current, scoreboard].slice(-30));
-      setScoreboard(handleBust(scoreboard));
+      setScoreboard(handleBust(scoreboard, throwsForTurn));
       setMultiplier(1);
       return;
     }
@@ -387,7 +409,7 @@ export default function PublicScoreboardPage() {
   }
 
   function exitScoreboard() {
-    if (window.confirm("Skutečně chcete Počítadlo ukončit?")) {
+    if (window.confirm("SkuteÄŤnÄ› chcete PoÄŤĂ­tadlo ukonÄŤit?")) {
       router.push("/");
     }
   }
@@ -416,29 +438,38 @@ export default function PublicScoreboardPage() {
           <header className="flex shrink-0 flex-col gap-2 rounded-[20px] border border-white/10 bg-white/8 p-2 shadow-2xl shadow-black/25 sm:rounded-[24px] sm:p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <button className="text-xs font-black text-blue-200 hover:text-white" onClick={() => setScoreboard(null)} type="button">
-                Zpět na nastavení
+                ZpÄ›t na nastavenĂ­
               </button>
-              <h1 className="mt-1 text-xl font-black tracking-tight sm:text-2xl md:text-4xl">Počítadlo</h1>
+              <h1 className="mt-1 text-xl font-black tracking-tight sm:text-2xl md:text-4xl">PoÄŤĂ­tadlo</h1>
               <p className="mt-1 text-[11px] font-bold text-blue-100 sm:text-xs">
-                {settings.gameType === "cricket" ? "Kriket" : `${settings.gameType} bodů`} / {settings.startMode === "double_in" ? "double in" : "straight in"} / {settings.finishMode === "double_out" ? "double out" : "straight out"}
+                {settings.gameType === "cricket" ? "Kriket" : `${settings.gameType} bodĹŻ`} / {settings.startMode === "double_in" ? "double in" : "straight in"} / {settings.finishMode === "double_out" ? "double out" : "straight out"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-black text-white sm:px-4 sm:py-2.5 sm:text-sm" onClick={() => void toggleFullscreen()} type="button">
+                {isFullscreen ? "UkonÄŤit celou obrazovku" : "CelĂˇ obrazovka"}
+              </button>
               <button className="rounded-2xl bg-white px-3 py-2 text-xs font-black text-[#061A3A] sm:px-4 sm:py-2.5 sm:text-sm" onClick={startGame} type="button">
-                Nová hra
+                NovĂˇ hra
               </button>
               <Link className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-black text-white sm:px-4 sm:py-2.5 sm:text-sm" href="/">
-                Úvodní stránka
+                ĂšvodnĂ­ strĂˇnka
               </Link>
             </div>
           </header>
 
+          {fullscreenMessage ? (
+            <div className="rounded-2xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm font-bold text-amber-100">
+              {fullscreenMessage}
+            </div>
+          ) : null}
+
           {isCricket ? (
             <section className="flex min-h-0 flex-1 items-center justify-center rounded-[28px] border border-amber-300/30 bg-amber-400/10 p-8 text-center">
               <div>
-                <h2 className="text-4xl font-black text-amber-100">Kriket připravujeme</h2>
+                <h2 className="text-4xl font-black text-amber-100">Kriket pĹ™ipravujeme</h2>
                 <p className="mt-4 max-w-2xl text-lg font-bold text-amber-50/80">
-                  Nastavení kriketu už je připravené. Samotné bodování kriketu doplníme v další iteraci.
+                  NastavenĂ­ kriketu uĹľ je pĹ™ipravenĂ©. SamotnĂ© bodovĂˇnĂ­ kriketu doplnĂ­me v dalĹˇĂ­ iteraci.
                 </p>
               </div>
             </section>
@@ -464,7 +495,7 @@ export default function PublicScoreboardPage() {
                             </span>
                             {player.score <= 170 ? (
                               <span className="rounded-2xl bg-black/25 px-2 py-1 text-right text-xs font-black text-emerald-100 sm:px-3 sm:text-sm">
-                                {checkout ? checkout.primary.join(" ") : "Nelze zavřít"}
+                                {checkout ? checkout.primary.join(" ") : "Nelze zavĹ™Ă­t"}
                               </span>
                             ) : null}
                           </div>
@@ -472,10 +503,16 @@ export default function PublicScoreboardPage() {
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-blue-100 sm:text-xs">Hráč</p>
                         <h2 className="mt-1 max-w-[8rem] truncate text-lg font-black sm:max-w-[12rem] sm:text-2xl">{player.name}</h2>
                         <p className="mt-3 text-5xl font-black leading-none tracking-tight sm:mt-5 sm:text-6xl md:text-7xl">{player.score}</p>
-                        <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] font-black text-blue-100 sm:mt-3 sm:gap-2 sm:text-xs">
-                          <span>Sety {player.sets}</span>
-                          <span>Legy {player.legs}</span>
-                          <span>Ø {average(player)}</span>
+                        <div className="mt-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 sm:mt-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-blue-100/80">Poslední šipky</p>
+                          <p className="mt-1 min-h-6 text-lg font-black text-white sm:text-2xl">
+                            {lastThrowsText(player, isActive, scoreboard.currentThrows)}
+                          </p>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-black text-blue-100 sm:mt-3 sm:text-xs">
+                          <span className="rounded-full bg-white/10 px-2 py-1">Průměr {average(player)}</span>
+                          <span className="rounded-full bg-white/10 px-2 py-1">Sety {player.sets}</span>
+                          <span className="rounded-full bg-white/10 px-2 py-1">Legy {player.legs}</span>
                         </div>
                         <p className="mt-1 truncate text-[10px] font-bold text-blue-100/80 sm:mt-2 sm:text-xs">Náhozy: {visitsText(player)}</p>
                       </div>
@@ -486,7 +523,7 @@ export default function PublicScoreboardPage() {
                 {scoreboard.legWinnerName ? (
                   <div className="shrink-0 rounded-3xl border border-emerald-300/40 bg-emerald-400/15 px-5 py-4">
                     <p className="text-2xl font-black text-emerald-100">
-                      Leg vyhrál hráč {scoreboard.legWinnerName}
+                      Leg vyhrĂˇl hrĂˇÄŤ {scoreboard.legWinnerName}
                     </p>
                   </div>
                 ) : null}
@@ -498,7 +535,7 @@ export default function PublicScoreboardPage() {
                         <p className="text-sm font-bold text-blue-100">Na tahu</p>
                         <h2 className="text-xl font-black text-emerald-200 sm:text-2xl">{activePlayer?.name}</h2>
                         <p className="mt-1 text-xs font-bold text-blue-100 sm:text-sm">
-                          Šipka {Math.min((scoreboard.currentThrows.length || 0) + 1, 3)}/3 · {currentThrowText}
+                          Ĺ ipka {Math.min((scoreboard.currentThrows.length || 0) + 1, 3)}/3 Â· {currentThrowText}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -517,7 +554,7 @@ export default function PublicScoreboardPage() {
                           </button>
                         ))}
                         <button className="rounded-2xl bg-white px-3 py-2.5 text-xs font-black text-[#061A3A] sm:px-4 sm:py-3 sm:text-sm" onClick={exitScoreboard} type="button">
-                          Ukončit
+                          UkonÄŤit
                         </button>
                       </div>
                     </div>
@@ -553,7 +590,7 @@ export default function PublicScoreboardPage() {
                         onClick={undoLastDart}
                         type="button"
                       >
-                        Vrátit šipku
+                        VrĂˇtit Ĺˇipku
                       </button>
                       <button
                         className="rounded-2xl border border-white/15 bg-white/10 px-3 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm"
@@ -561,7 +598,7 @@ export default function PublicScoreboardPage() {
                         onClick={undoLastVisit}
                         type="button"
                       >
-                        Vrátit nához
+                        VrĂˇtit nĂˇhoz
                       </button>
                     </div>
                   </aside>
@@ -569,10 +606,10 @@ export default function PublicScoreboardPage() {
               </section>
 
               <aside className="overflow-hidden rounded-[22px] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-black/25 sm:rounded-[28px] sm:p-4 md:min-h-0">
-                <h2 className="text-lg font-black sm:text-xl">Historie náhozů</h2>
+                <h2 className="text-lg font-black sm:text-xl">Historie nĂˇhozĹŻ</h2>
                 <div className="mt-3 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1 sm:mt-4 md:max-h-[calc(100vh-12rem)]">
                   {scoreboard.lastVisits.length === 0 ? (
-                    <p className="rounded-2xl bg-black/20 p-4 text-sm font-bold text-blue-100">Zatím není zadaný žádný nához.</p>
+                    <p className="rounded-2xl bg-black/20 p-4 text-sm font-bold text-blue-100">ZatĂ­m nenĂ­ zadanĂ˝ ĹľĂˇdnĂ˝ nĂˇhoz.</p>
                   ) : (
                     scoreboard.lastVisits.map((item, index) => (
                       <div
@@ -598,24 +635,24 @@ export default function PublicScoreboardPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.26),transparent_30%),radial-gradient(circle_at_80%_20%,rgba(239,35,60,0.20),transparent_28%)]" />
         <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-5">
           <Link className="flex items-center gap-3" href="/">
-            <Image alt="Logo Znojemského šipkařského spolku" className="h-16 w-16 object-contain" height={256} src="/brand/zss-logo-official.png" width={256} />
+            <Image alt="Logo ZnojemskĂ©ho ĹˇipkaĹ™skĂ©ho spolku" className="h-16 w-16 object-contain" height={256} src="/brand/zss-logo-official.png" width={256} />
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-100">Neoficiální zápasy</p>
-              <h1 className="text-3xl font-black">Počítadlo</h1>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-100">NeoficiĂˇlnĂ­ zĂˇpasy</p>
+              <h1 className="text-3xl font-black">PoÄŤĂ­tadlo</h1>
             </div>
           </Link>
           <Link className="rounded-full bg-white px-5 py-3 text-sm font-black text-[#061A3A]" href="/">
-            Zpět na web
+            ZpÄ›t na web
           </Link>
         </div>
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
         <div className="rounded-[28px] bg-[#061A3A] p-6 text-white shadow-[0_20px_60px_rgba(6,26,58,0.18)]">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#3B82F6]">Rychlé počítadlo</p>
-          <h2 className="mt-3 text-4xl font-black tracking-tight">Nastavení hry</h2>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#3B82F6]">RychlĂ© poÄŤĂ­tadlo</p>
+          <h2 className="mt-3 text-4xl font-black tracking-tight">NastavenĂ­ hry</h2>
           <p className="mt-4 text-lg font-bold text-blue-100">
-            Vyber počet hráčů, legy, sety a pravidla zavírání. Po potvrzení se otevře velké tabletové počítadlo.
+            Vyber poÄŤet hrĂˇÄŤĹŻ, legy, sety a pravidla zavĂ­rĂˇnĂ­. Po potvrzenĂ­ se otevĹ™e velkĂ© tabletovĂ© poÄŤĂ­tadlo.
           </p>
         </div>
 
@@ -628,15 +665,15 @@ export default function PublicScoreboardPage() {
         >
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Počet hráčů
+              PoÄŤet hrĂˇÄŤĹŻ
               <input className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-base outline-none focus:border-[#0F4FA8]" max={8} min={1} onChange={handlePlayerCountChange} type="number" value={settings.playerCount} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Počet legů
+              PoÄŤet legĹŻ
               <input className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-base outline-none focus:border-[#0F4FA8]" max={9} min={1} onChange={(event) => updateSettings({ legsToWin: normalizeCount(event.target.value, 1, 9) })} type="number" value={settings.legsToWin} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Počet setů
+              PoÄŤet setĹŻ
               <input className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-base outline-none focus:border-[#0F4FA8]" max={9} min={1} onChange={(event) => updateSettings({ setsToWin: normalizeCount(event.target.value, 1, 9) })} type="number" value={settings.setsToWin} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
@@ -649,14 +686,14 @@ export default function PublicScoreboardPage() {
               </select>
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Začátek hry
+              ZaÄŤĂˇtek hry
               <select className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-base outline-none focus:border-[#0F4FA8]" onChange={(event) => updateSettings({ startMode: event.target.value as StartMode })} value={settings.startMode}>
                 <option value="straight_in">Straight in</option>
                 <option value="double_in">Double in</option>
               </select>
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Zavření hry
+              ZavĹ™enĂ­ hry
               <select className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-base outline-none focus:border-[#0F4FA8]" onChange={(event) => updateSettings({ finishMode: event.target.value as FinishMode })} value={settings.finishMode}>
                 <option value="straight_out">Straight out</option>
                 <option value="double_out">Double out</option>
@@ -665,11 +702,11 @@ export default function PublicScoreboardPage() {
           </div>
 
           <div className="mt-6">
-            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#EF233C]">Jména hráčů</h3>
+            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#EF233C]">JmĂ©na hrĂˇÄŤĹŻ</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {Array.from({ length: settings.playerCount }, (_, index) => (
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]" key={index}>
-                  Hráč {index + 1}
+                  HrĂˇÄŤ {index + 1}
                   <input className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-base outline-none focus:border-[#0F4FA8]" onChange={(event) => handlePlayerNameChange(index, event.target.value)} type="text" value={settings.playerNames[index] ?? ""} />
                 </label>
               ))}
@@ -677,7 +714,7 @@ export default function PublicScoreboardPage() {
           </div>
 
           <button className="mt-7 w-full rounded-2xl bg-[#EF233C] px-6 py-4 text-lg font-black text-white shadow-lg shadow-red-950/20 transition hover:-translate-y-0.5 hover:bg-red-500" type="submit">
-            Otevřít počítadlo
+            OtevĹ™Ă­t poÄŤĂ­tadlo
           </button>
         </form>
       </section>

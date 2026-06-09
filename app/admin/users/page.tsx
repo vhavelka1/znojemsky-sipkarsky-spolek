@@ -43,11 +43,21 @@ function roleLabel(role: AppRole) {
   return roleOptions.find((option) => option.value === role)?.label ?? role;
 }
 
+function Spinner() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-block size-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+    />
+  );
+}
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -140,12 +150,16 @@ export default function AdminUsersPage() {
   async function sendPasswordReset(userId: string) {
     setError(null);
     setMessage(null);
+    setResettingUserId(userId);
+
     const response = await adminFetch(`/api/admin/users/${userId}`, {
       body: JSON.stringify({ action: "password_reset" }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
     const body = (await response.json().catch(() => ({}))) as { error?: string };
+
+    setResettingUserId(null);
 
     if (!response.ok) {
       setError(body.error ?? "Obnovu hesla se nepodařilo odeslat.");
@@ -172,8 +186,16 @@ export default function AdminUsersPage() {
         }
       />
 
-      {message ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">{message}</div> : null}
-      {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div> : null}
+      {message ? (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">
+          {message}
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">
+          {error}
+        </div>
+      ) : null}
 
       {isCreateOpen ? (
         <Card className="mt-6">
@@ -210,7 +232,9 @@ export default function AdminUsersPage() {
               </label>
             </div>
             <div>
-              <Button type="submit" variant="primary">Odeslat pozvánku</Button>
+              <Button type="submit" variant="primary">
+                Odeslat pozvánku
+              </Button>
             </div>
           </form>
         </Card>
@@ -220,7 +244,7 @@ export default function AdminUsersPage() {
         {isLoading ? <p className="text-sm text-[var(--admin-muted)]">Načítám uživatele...</p> : null}
         {!isLoading && users.length === 0 ? <p className="text-sm text-[var(--admin-muted)]">Zatím nejsou vytvoření žádní uživatelé.</p> : null}
         <div className="overflow-x-auto">
-          <table className="min-w-[1100px] w-full text-left text-sm">
+          <table className="w-full min-w-[1100px] text-left text-sm">
             <thead className="bg-[var(--admin-soft-blue)] text-[var(--admin-muted)]">
               <tr>
                 <th className="px-4 py-3">Uživatel</th>
@@ -233,6 +257,7 @@ export default function AdminUsersPage() {
             <tbody className="divide-y divide-[var(--admin-border)]">
               {users.map((user) => {
                 const draft = drafts[user.id] ?? user;
+                const isResetting = resettingUserId === user.id;
                 return (
                   <tr key={user.id}>
                     <td className="px-4 py-4">
@@ -267,8 +292,15 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">
-                        <Button onClick={() => void saveUser(user.id)} variant="primary">Uložit</Button>
-                        <Button onClick={() => void sendPasswordReset(user.id)} variant="secondary">Odeslat obnovu hesla</Button>
+                        <Button onClick={() => void saveUser(user.id)} variant="primary">
+                          Uložit
+                        </Button>
+                        <Button disabled={isResetting} onClick={() => void sendPasswordReset(user.id)} variant="secondary">
+                          <span className="inline-flex items-center gap-2">
+                            {isResetting ? <Spinner /> : null}
+                            {isResetting ? "Odesílám..." : "Odeslat obnovu hesla"}
+                          </span>
+                        </Button>
                       </div>
                       <p className="mt-2 text-xs font-bold text-slate-500">{roleLabel(user.appRole)}</p>
                     </td>
