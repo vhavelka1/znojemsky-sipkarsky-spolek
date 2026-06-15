@@ -18,7 +18,7 @@ export function AdminShell({ children }: AdminShellProps) {
   const [authState, setAuthState] = useState<"loading" | "allowed" | "blocked">("loading");
   const [displayName, setDisplayName] = useState("");
   const [blockMessage, setBlockMessage] = useState("");
-  const [navigationItems, setNavigationItems] = useState<Array<{ href: string; label: string }>>([]);
+  const [navigationItems, setNavigationItems] = useState<Array<{ href: string; label: string; minimumRole: AdminRole }>>([]);
   const isScoreboard = /^\/admin\/matches\/[^/]+\/scoreboard$/.test(pathname);
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export function AdminShell({ children }: AdminShellProps) {
       setNavigationItems(
         permissions
           .filter((permission) => canAccessAdminPage(body.user!.role, permission.minimumRole))
-          .map((permission) => ({ href: permission.href, label: permission.label })),
+          .map((permission) => ({ href: permission.href, label: permission.label, minimumRole: permission.minimumRole })),
       );
       setDisplayName(body.user.displayName);
       setAuthState("allowed");

@@ -220,24 +220,33 @@ body {
 
 .admin-nav-link {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
   color: rgba(219, 234, 254, 0.86);
   border: 1px solid transparent;
-  border-left: 4px solid transparent;
+  border-left: 4px solid var(--admin-nav-role-color, transparent);
   border-radius: 16px !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--admin-nav-role-color, transparent) 18%, transparent), transparent 55%);
 }
 
 .admin-nav-link:hover {
   background-color: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.12);
-  border-left-color: rgba(239, 35, 60, 0.8);
+  border-left-color: var(--admin-nav-role-color, rgba(239, 35, 60, 0.8));
   color: #ffffff;
 }
 
 .admin-nav-link-active {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.28);
-  border-left: 4px solid var(--brand-coral);
+  border-left: 4px solid var(--admin-nav-role-color, var(--brand-coral));
   border-radius: 16px !important;
   color: var(--brand-dark-navy);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
