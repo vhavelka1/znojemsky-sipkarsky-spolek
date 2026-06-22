@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
+import { PublicHeader as SharedPublicHeader } from "@/components/public/PublicShell";
 import { useEffect, useMemo, useState } from "react";
 
 type Season = {
@@ -61,18 +62,6 @@ type Filters = {
   groupId: string;
 };
 
-const navigationItems = [
-  { href: "/", label: "Úvod" },
-  { href: "/tabulky", label: "Liga" },
-  { href: "/turnaje", label: "Turnaje" },
-  { href: "/kalendar", label: "Kalendář" },
-  { href: "/hraci", label: "Hráči" },
-  { href: "/tymy", label: "Týmy" },
-  { href: "/galerie", label: "Galerie" },
-  { href: "/scoreboard", label: "Počítadlo" },
-  { href: "/diskuze", label: "Diskuze" },
-  { href: "/kontakt", label: "Kontakt" },
-];
 
 const emptyFilters: Filters = {
   seasonId: "",
@@ -81,59 +70,7 @@ const emptyFilters: Filters = {
 };
 
 function PublicHeader() {
-  return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#061A3A]/95 text-white shadow-[0_14px_40px_rgba(6,26,58,0.22)] backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-4 py-3 sm:px-6 lg:px-8">
-        <Link aria-label="Znojemský šipkařský spolek" className="flex items-center gap-3" href="/">
-          <Image
-            alt="Logo Znojemského šipkařského spolku"
-            className="h-14 w-14 rounded-2xl object-contain shadow-lg shadow-black/25 sm:h-16 sm:w-16"
-            height={256}
-            priority
-            src="/brand/zss-logo-official.png"
-            width={256}
-          />
-          <div className="hidden leading-tight sm:block">
-            <p className="text-sm font-black uppercase tracking-[0.14em]">Znojemský</p>
-            <p className="text-lg font-black uppercase tracking-[0.08em] text-[#3B82F6]">Šipkařský spolek</p>
-          </div>
-        </Link>
-        <div className="flex min-w-0 items-center gap-3">
-          <nav className="hidden items-center gap-5 xl:flex">
-            {navigationItems.map((item) => (
-              <Link
-                className={`text-sm font-extrabold transition ${
-                  item.href === "/tabulky" ? "text-white" : "text-blue-100 hover:text-white"
-                }`}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <Link className="shrink-0 rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-950/25 transition hover:-translate-y-0.5 hover:bg-red-500" href="/admin">
-            Administrace
-          </Link>
-        </div>
-      </div>
-      <nav className="mx-auto flex max-w-7xl gap-4 overflow-x-auto px-4 pb-3 sm:px-6 xl:hidden">
-        {navigationItems.map((item) => (
-          <Link
-            className={`whitespace-nowrap rounded-full border px-3 py-2 text-sm font-bold ${
-              item.href === "/tabulky"
-                ? "border-white bg-white text-[#061A3A]"
-                : "border-white/10 bg-white/5 text-blue-100"
-            }`}
-            href={item.href}
-            key={item.href}
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-    </header>
-  );
+  return <SharedPublicHeader activeHref="/tabulky" />;
 }
 
 function TeamLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
@@ -463,10 +400,11 @@ export default function PublicTablesPage() {
             <Link href="/tabulky">Tabulky</Link>
             <Link href="/zapasy">Zápasy</Link>
             <Link href="/turnaje">Turnaje</Link>
-            <Link href="/admin">Administrace</Link>
+            <Link href="/prihlaseni">Přihlášení</Link>
           </div>
         </div>
       </footer>
     </main>
   );
 }
+
