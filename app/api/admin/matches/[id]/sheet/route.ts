@@ -256,6 +256,10 @@ function slotKey(side: MatchSide, slotCode: SlotCode) {
   return `${side}:${slotCode}`;
 }
 
+function playerLimitForGame(gameType: MatchGameType) {
+  return gameType === "singles" ? 1 : 2;
+}
+
 function getDefaultGames() {
   return Array.from({ length: 19 }, (_, index) => {
     const orderNumber = index + 1;
@@ -548,9 +552,9 @@ async function loadSheetData(matchId: string) {
           .sort((first, second) => first.position - second.position)
           .map((player) => player.slot_code)
           .filter((slotCode): slotCode is SlotCode => Boolean(slotCode));
-    const playerIdsForSide = (side: MatchSide, slotCodes: SlotCode[]) => {
+    const playerIdsForSide = (side: MatchSide, slotCodes: SlotCode[], gameType: MatchGameType) => {
       const sidePlayers = assignedPlayers.filter((player) => player.side === side);
-      const positions = Math.max(slotCodes.length, sidePlayers.length);
+      const positions = Math.min(playerLimitForGame(gameType), Math.max(slotCodes.length, sidePlayers.length));
       return Array.from(
         { length: positions },
         (_, index) => sidePlayers.find((player) => player.position === index + 1)?.player_id ?? "",
@@ -565,8 +569,8 @@ async function loadSheetData(matchId: string) {
       home_legs: savedGame.home_legs,
       away_legs: savedGame.away_legs,
       winner_side: savedGame.winner_side,
-      home_player_ids: playerIdsForSide("home", homeSlotCodes),
-      away_player_ids: playerIdsForSide("away", awaySlotCodes),
+      home_player_ids: playerIdsForSide("home", homeSlotCodes, normalizeGameType(savedGame.game_type)),
+      away_player_ids: playerIdsForSide("away", awaySlotCodes, normalizeGameType(savedGame.game_type)),
       home_slot_codes: homeSlotCodes,
       away_slot_codes: awaySlotCodes,
     };
@@ -793,10 +797,17 @@ export async function PATCH(request: Request, context: RouteContext) {
         : [];
       const homeSlotCodes: SlotCode[] = fixedPair
         ? fixedPair.slice(0, 1)
-        : submittedHomeSlotCodes as SlotCode[];
+        : submittedHomeSlotCodes.slice(0, 2) as SlotCode[];
       const awaySlotCodes: SlotCode[] = fixedPair
         ? fixedPair.slice(1, 2)
-        : submittedAwaySlotCodes as SlotCode[];
+        : submittedAwaySlotCodes.slice(0, 2) as SlotCode[];
+      const playerLimit = playerLimitForGame(normalizedGameType);
+      const homePlayerIds = Array.isArray(game.home_player_ids)
+        ? game.home_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
+        : [];
+      const awayPlayerIds = Array.isArray(game.away_player_ids)
+        ? game.away_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
+        : [];
 
       if (!orderNumber || !gameType || !gameTypes.includes(gameType as MatchGameType)) {
         return null;
@@ -830,12 +841,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         winner_side: winnerSide,
         home_slot_codes: homeSlotCodes,
         away_slot_codes: awaySlotCodes,
-        home_player_ids: Array.isArray(game.home_player_ids)
-          ? game.home_player_ids.map((playerId) => parseString(playerId) ?? "")
-          : [],
-        away_player_ids: Array.isArray(game.away_player_ids)
-          ? game.away_player_ids.map((playerId) => parseString(playerId) ?? "")
-          : [],
+        home_player_ids: homePlayerIds,
+        away_player_ids: awayPlayerIds,
       };
     })
     .filter((game): game is NonNullable<typeof game> => Boolean(game));

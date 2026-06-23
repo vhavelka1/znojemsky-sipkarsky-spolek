@@ -90,21 +90,6 @@ type MatchAchievement = {
   achievement_count: number;
 };
 
-type ImportedPlayerStat = {
-  player_id: string;
-  team_season_id: string | null;
-  played_matches: number;
-  won_matches: number;
-  lost_matches: number;
-  played_legs: number;
-  won_legs: number;
-  lost_legs: number;
-  score_95_plus: number;
-  score_133_plus: number;
-  score_171_plus: number;
-  checkout_100_plus: number;
-};
-
 type PublicTeam = {
   teamSeasonId: string;
   name: string;
@@ -154,8 +139,8 @@ const bundledLogoUrls: Record<string, string> = {
   "octopus-kridluvky": "/team-logos/oktopus-kridluvky.png",
 };
 
-function isFinishedMatch(match: Match) {
-  return match.status === "played" || match.status === "confirmed" || match.status === "awaiting_confirmation";
+function isConfirmedMatch(match: Match) {
+  return match.status === "confirmed";
 }
 
 function normalizeSearch(value: string) {
@@ -404,7 +389,7 @@ export async function GET(request: NextRequest) {
 
     const selectedMatches = matchRows.filter(
       (match) =>
-        isFinishedMatch(match) &&
+        isConfirmedMatch(match) &&
         match.season_id === selectedSeasonId &&
         (!selectedLeague || match.league_id === selectedLeague.id) &&
         (!selectedGroup || match.group_id === selectedGroup.id) &&
@@ -428,70 +413,7 @@ export async function GET(request: NextRequest) {
     let gameRows: MatchGame[] = [];
     let gamePlayerRows: MatchGamePlayer[] = [];
     let achievementRows: MatchAchievement[] = [];
-    let importedStatisticRows: ImportedPlayerStat[] = [];
-
-    if (selectedSeasonId) {
-      let importedStatisticsQuery = supabase
-        .from("player_season_statistics")
-        .select(
-          "player_id, team_season_id, played_matches, won_matches, lost_matches, played_legs, won_legs, lost_legs, score_95_plus, score_133_plus, score_171_plus, checkout_100_plus",
-        )
-        .eq("season_id", selectedSeasonId)
-        .is("deleted_at", null);
-
-      if (selectedLeague) {
-        importedStatisticsQuery = importedStatisticsQuery.eq("league_id", selectedLeague.id);
-      }
-
-      if (selectedGroup) {
-        importedStatisticsQuery = importedStatisticsQuery.eq("group_id", selectedGroup.id);
-      }
-
-      if (selectedTeamSeasonId) {
-        importedStatisticsQuery = importedStatisticsQuery.eq("team_season_id", selectedTeamSeasonId);
-      }
-
-      const importedStatistics = await importedStatisticsQuery.returns<ImportedPlayerStat[]>();
-      importedStatisticRows = importedStatistics.error ? [] : importedStatistics.data ?? [];
-    }
-
-    if (importedStatisticRows.length > 0) {
-      const importedByPlayerId = new Map<string, ImportedPlayerStat>();
-      importedStatisticRows.forEach((importedStatistic) => {
-        const current = importedByPlayerId.get(importedStatistic.player_id);
-        if (!current) {
-          importedByPlayerId.set(importedStatistic.player_id, { ...importedStatistic });
-          return;
-        }
-
-        current.played_matches += importedStatistic.played_matches;
-        current.won_matches += importedStatistic.won_matches;
-        current.lost_matches += importedStatistic.lost_matches;
-        current.played_legs += importedStatistic.played_legs;
-        current.won_legs += importedStatistic.won_legs;
-        current.lost_legs += importedStatistic.lost_legs;
-        current.score_95_plus += importedStatistic.score_95_plus;
-        current.score_133_plus += importedStatistic.score_133_plus;
-        current.score_171_plus += importedStatistic.score_171_plus;
-        current.checkout_100_plus += importedStatistic.checkout_100_plus;
-      });
-
-      importedByPlayerId.forEach((importedStatistic) => {
-        const stat = stats.get(importedStatistic.player_id);
-        if (!stat) return;
-
-        stat.teamSeasonId = importedStatistic.team_season_id ?? stat.teamSeasonId;
-        stat.playedMatches = importedStatistic.played_matches;
-        stat.wonMatches = importedStatistic.won_matches;
-        stat.lostMatches = importedStatistic.lost_matches;
-        stat.wonLegs = importedStatistic.won_legs;
-        stat.lostLegs = importedStatistic.lost_legs;
-        stat.score95Plus = importedStatistic.score_95_plus;
-        stat.score133Plus = importedStatistic.score_133_plus;
-        stat.score171Plus = importedStatistic.score_171_plus;
-        stat.checkout100Plus = importedStatistic.checkout_100_plus;
-      });
-    } else if (selectedMatchIds.length > 0) {
+    if (selectedMatchIds.length > 0) {
       const games = await supabase
         .from("match_games")
         .select("id, match_id, game_type, home_legs, away_legs, winner_side")

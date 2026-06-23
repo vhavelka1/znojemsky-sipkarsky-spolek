@@ -734,7 +734,7 @@ export default function AdminMatchesPage() {
                               Otevřít zápis
                             </Link>
                             <Link
-                              className="inline-flex rounded-md bg-[#061A3A] px-3 py-2 text-sm font-semibold text-white hover:bg-[#0B2F6B]"
+                              className="inline-flex rounded-md bg-[#EF233C] px-3 py-2 text-sm font-semibold !text-white shadow-sm hover:bg-[#c91d32]"
                               href={`/admin/matches/${match.id}/scoreboard`}
                             >
                               Počítadlo

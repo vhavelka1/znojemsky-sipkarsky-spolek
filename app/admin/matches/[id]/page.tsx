@@ -198,6 +198,22 @@ function playerLabel(player: Player) {
   return player.display_name;
 }
 
+function playerLimitForGame(gameType: MatchGameType) {
+  return gameType === "singles" ? 1 : 2;
+}
+
+function normalizeGame(game: SheetGame): SheetGame {
+  const limit = playerLimitForGame(game.game_type);
+
+  return {
+    ...game,
+    home_player_ids: game.home_player_ids.slice(0, limit),
+    away_player_ids: game.away_player_ids.slice(0, limit),
+    home_slot_codes: game.home_slot_codes.slice(0, limit),
+    away_slot_codes: game.away_slot_codes.slice(0, limit),
+  };
+}
+
 function Info({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
@@ -256,7 +272,7 @@ export default function AdminMatchSheetPage() {
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
       if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo načíst.");
       const slots = body.slots ?? [];
-      const games = body.games ?? [];
+      const games = (body.games ?? []).map(normalizeGame);
       setPayload({
         match: body.match ?? null,
         season: body.season ?? null,
@@ -309,7 +325,9 @@ export default function AdminMatchSheetPage() {
   function updateGame(orderNumber: number, changes: Partial<SheetGame>) {
     setPayload((current) => ({
       ...current,
-      games: current.games.map((game) => game.order_number === orderNumber ? { ...game, ...changes } : game),
+      games: current.games.map((game) => (
+        game.order_number === orderNumber ? normalizeGame({ ...game, ...changes }) : game
+      )),
     }));
   }
 
