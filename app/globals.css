@@ -67,6 +67,8 @@ body {
 
 .admin-sidebar-nav {
   padding: 0.8rem 1rem 1rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .admin-brand-link {
@@ -221,6 +223,9 @@ body {
 .admin-nav-link {
   position: relative;
   display: flex;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
@@ -241,6 +246,9 @@ body {
 .admin-nav-link-active {
   position: relative;
   display: flex;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
@@ -268,6 +276,9 @@ body {
   .admin-sidebar {
     border-bottom: 0;
     border-right: 1px solid rgba(255, 255, 255, 0.12);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
   }
 
   .admin-sidebar-brand {

@@ -477,7 +477,7 @@ export default function AdminMatchSheetPage() {
         )
         .reduce((sum, achievement) => sum + achievement.achievement_count, 0);
       if (otherCheckouts + normalizedCount > 3) {
-        setError("Zavření 100+ může mít jeden hráč v zápasu nejvýše 3×.");
+        setError("Zavření 100+ může mít jeden hráč v zápasu nejvýše 3x.");
         return;
       }
     }
@@ -605,18 +605,23 @@ export default function AdminMatchSheetPage() {
             const playerIds = side === "home" ? game.home_player_ids : game.away_player_ids;
             const players = side === "home" ? homePlayers : awayPlayers;
             return (
-              <div className="grid gap-1" key={index}>
+              <div className="grid grid-cols-[18px_72px_minmax(0,1fr)] items-center gap-1" key={index}>
+                <span className="text-center text-[11px] font-bold text-[var(--admin-muted)]">
+                  {index + 1}.
+                </span>
                 <select
+                  aria-label={`${side === "home" ? "Domácí" : "Hosté"} pozice ${index + 1}`}
                   className={`${inputClass} min-w-0 px-1 py-1 text-[11px]`}
                   value={selectedCode}
                   onChange={(event) => updatePairGameSlot(game, side, index, event.target.value)}
                 >
-                  <option value="">Vyberte pozici</option>
+                  <option value="">Pozice</option>
                   {slotCodes.map((slotCode) => (
-                    <option key={slotCode} value={slotCode}>Pozice {slotCode}</option>
+                    <option key={slotCode} value={slotCode}>{slotCode}</option>
                   ))}
                 </select>
                 <select
+                  aria-label={`${side === "home" ? "Domácí" : "Hosté"} hráč ${index + 1}`}
                   className={`${inputClass} min-w-0 px-1 py-1 text-[11px]`}
                   value={playerIds[index] ?? ""}
                   onFocus={() => prefillRowPlayer(game, side, index)}
@@ -730,7 +735,7 @@ export default function AdminMatchSheetPage() {
           <div className="mt-4"><PageHeader title="Zápis utkání" description="Oficiální zápis ZŠS podle jednotlivých bloků utkání." /></div>
         </div>
         <Link
-          className="inline-flex w-fit items-center justify-center rounded-2xl bg-[var(--brand-navy)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1A2A3E]"
+          className="inline-flex w-fit items-center justify-center rounded-2xl bg-[#EF233C] px-5 py-3 text-sm font-bold !text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
           href={`/admin/matches/${matchId}/scoreboard`}
         >
           Otevřít počítadlo

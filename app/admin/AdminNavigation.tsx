@@ -23,7 +23,7 @@ export function AdminNavigation({ items }: { items?: AdminNavigationItem[] }) {
   const navigationItems = items ?? adminPages.map((page) => ({ href: page.href, label: page.label, minimumRole: page.defaultMinimumRole }));
 
   return (
-    <nav className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+    <nav className="flex w-full min-w-0 gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-hidden lg:pb-0">
       {navigationItems.map((item) => {
         const isActive = isActivePath(pathname, item.href);
 
@@ -37,7 +37,7 @@ export function AdminNavigation({ items }: { items?: AdminNavigationItem[] }) {
             href={item.href}
             key={item.href}
             style={{ ["--admin-nav-role-color" as string]: roleColor(item.minimumRole) }}
-            title={`Minimální oprávnění: ${adminRoleLabels[item.minimumRole]}`}
+            title={`MinimĂˇlnĂ­ oprĂˇvnÄ›nĂ­: ${adminRoleLabels[item.minimumRole]}`}
           >
             <span className="min-w-0 truncate">{item.label}</span>
           </Link>
