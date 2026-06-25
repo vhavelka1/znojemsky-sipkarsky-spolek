@@ -90,6 +90,19 @@ type MatchAchievement = {
   achievement_count: number;
 };
 
+type ImportedPlayerSeasonStat = {
+  player_id: string;
+  played_matches: number;
+  won_matches: number;
+  lost_matches: number;
+  won_legs: number;
+  lost_legs: number;
+  score_95_plus: number;
+  score_133_plus: number;
+  score_171_plus: number;
+  checkout_100_plus: number;
+};
+
 type PublicTeam = {
   teamSeasonId: string;
   name: string;
@@ -479,6 +492,39 @@ export async function GET(request: NextRequest) {
       const stat = stats.get(achievement.player_id);
       if (stat) addAchievement(stat, achievement);
     });
+
+    const hasDetailedSinglesStats = gameRows.some((game) => game.game_type === "singles" && game.winner_side);
+    if (!hasDetailedSinglesStats && selectedSeasonId) {
+      let importedStatsQuery = supabase
+        .from("player_season_statistics")
+        .select(
+          "player_id, played_matches, won_matches, lost_matches, won_legs, lost_legs, score_95_plus, score_133_plus, score_171_plus, checkout_100_plus",
+        )
+        .eq("season_id", selectedSeasonId)
+        .is("deleted_at", null);
+
+      if (selectedLeague) importedStatsQuery = importedStatsQuery.eq("league_id", selectedLeague.id);
+      if (selectedGroup) importedStatsQuery = importedStatsQuery.eq("group_id", selectedGroup.id);
+      if (selectedTeamSeasonId) importedStatsQuery = importedStatsQuery.eq("team_season_id", selectedTeamSeasonId);
+
+      const importedStats = await importedStatsQuery.returns<ImportedPlayerSeasonStat[]>();
+      if (!importedStats.error) {
+        (importedStats.data ?? []).forEach((importedStat) => {
+          const stat = stats.get(importedStat.player_id);
+          if (!stat) return;
+
+          stat.playedMatches += importedStat.played_matches;
+          stat.wonMatches += importedStat.won_matches;
+          stat.lostMatches += importedStat.lost_matches;
+          stat.wonLegs += importedStat.won_legs;
+          stat.lostLegs += importedStat.lost_legs;
+          stat.score95Plus += importedStat.score_95_plus;
+          stat.score133Plus += importedStat.score_133_plus;
+          stat.score171Plus += importedStat.score_171_plus;
+          stat.checkout100Plus += importedStat.checkout_100_plus;
+        });
+      }
+    }
 
     const playerStats = Array.from(stats.values()).map((stat) => {
       const playedTeamMatches = stat.teamSeasonId
