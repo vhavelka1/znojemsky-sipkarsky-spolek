@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type UpdateMembershipBody = {
   team_id?: unknown;
@@ -16,27 +15,6 @@ type RouteContext = {
     id: string;
   }>;
 };
-
-function guardRequest() {
-  if (
-    process.env.NODE_ENV !== "development" &&
-    process.env.ENABLE_DEV_ADMIN !== "true"
-  ) {
-    return NextResponse.json(
-      { error: "Administrace členství není povolena." },
-      { status: 403 },
-    );
-  }
-
-  if (mockRole !== "admin") {
-    return NextResponse.json(
-      { error: "Pro tuto akci je potřeba role administrátora." },
-      { status: 403 },
-    );
-  }
-
-  return null;
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -88,9 +66,9 @@ function getAdminClientOrError() {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) {
+    return guard.response;
   }
 
   const body = (await request.json().catch(() => null)) as UpdateMembershipBody | null;
@@ -199,4 +177,29 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   return NextResponse.json({ membership });
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) {
+    return guard.response;
+  }
+
+  const { id } = await context.params;
+  const { supabase, response } = getAdminClientOrError();
+  if (response) {
+    return response;
+  }
+
+  const { error } = await supabase
+    .from("team_memberships")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ message: "Členství bylo odstraněno." });
 }

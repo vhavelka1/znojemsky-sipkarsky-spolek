@@ -1,39 +1,14 @@
 import { NextResponse } from "next/server";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type AssignMembershipBody = {
   player_id?: unknown;
   team_id?: unknown;
   season_id?: unknown;
   member_role?: unknown;
+  joined_on?: unknown;
 };
-
-function developmentOnlyResponse() {
-  if (
-    process.env.NODE_ENV === "development" ||
-    process.env.ENABLE_DEV_ADMIN === "true"
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace členství není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -79,19 +54,10 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
-}
-
-export async function GET() {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
+export async function GET(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) {
+    return guard.response;
   }
 
   const { supabase, response } = getAdminClientOrError();
@@ -160,9 +126,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) {
+    return guard.response;
   }
 
   const body = (await request.json().catch(() => null)) as
@@ -173,6 +139,7 @@ export async function POST(request: Request) {
   const teamId = requiredString(body?.team_id);
   const seasonId = requiredString(body?.season_id);
   const memberRole = membershipRole(body?.member_role);
+  const joinedOn = requiredString(body?.joined_on) ?? todayIsoDate();
 
   if (!playerId || !teamId || !seasonId) {
     return NextResponse.json(
@@ -232,6 +199,7 @@ export async function POST(request: Request) {
       .from("team_memberships")
       .select("id, team_season_id")
       .eq("player_id", playerId)
+      .eq("season_id", seasonId)
       .is("left_on", null)
       .is("deleted_at", null);
 
@@ -249,7 +217,7 @@ export async function POST(request: Request) {
   if (currentMembership) {
     const { data: membership, error } = await supabase
       .from("team_memberships")
-      .update({ member_role: memberRole })
+      .update({ member_role: memberRole, joined_on: joinedOn })
       .eq("id", currentMembership.id)
       .select(
         "id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at",
@@ -268,6 +236,7 @@ export async function POST(request: Request) {
       .from("team_memberships")
       .update({ left_on: todayIsoDate() })
       .eq("player_id", playerId)
+      .eq("season_id", seasonId)
       .is("left_on", null)
       .is("deleted_at", null);
 
@@ -286,7 +255,7 @@ export async function POST(request: Request) {
       season_id: seasonId,
       team_season_id: teamSeasonId,
       member_role: memberRole,
-      joined_on: todayIsoDate(),
+      joined_on: joinedOn,
     })
     .select(
       "id, season_id, team_season_id, player_id, member_role, joined_on, left_on, created_at",

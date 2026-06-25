@@ -1,0 +1,230 @@
+import { NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+
+type RegistrationType = "team" | "player";
+
+type TeamRegistrationPlayerInput = {
+  first_name?: unknown;
+  last_name?: unknown;
+  email?: unknown;
+  phone?: unknown;
+  note?: unknown;
+};
+
+type RegistrationBody = {
+  type?: unknown;
+  website?: unknown;
+  team_name?: unknown;
+  captain_name?: unknown;
+  captain_email?: unknown;
+  captain_phone?: unknown;
+  preferred_league_id?: unknown;
+  preferred_group_id?: unknown;
+  note?: unknown;
+  rules_accepted?: unknown;
+  roster?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+  email?: unknown;
+  phone?: unknown;
+  preferred_team_name?: unknown;
+  preferred_team_id?: unknown;
+  looking_for_team?: unknown;
+};
+
+function optionalString(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function requiredString(value: unknown) {
+  return optionalString(value);
+}
+
+function optionalEmail(value: unknown) {
+  const email = optionalString(value);
+  return email ? email.toLowerCase() : null;
+}
+
+function isUuid(value: string | null) {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+}
+
+function optionalUuid(value: unknown) {
+  const text = optionalString(value);
+  return isUuid(text) ? text : null;
+}
+
+function isEmail(value: string | null) {
+  return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
+}
+
+async function activeSeasonId(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const { data } = await supabase
+    .from("seasons")
+    .select("id")
+    .eq("is_active", true)
+    .is("deleted_at", null)
+    .maybeSingle<{ id: string }>();
+  return data?.id ?? null;
+}
+
+export async function GET() {
+  try {
+    const supabase = createSupabaseAdminClient();
+    const [seasons, leagues, groups, teams] = await Promise.all([
+      supabase
+        .from("seasons")
+        .select("id, name, is_active, starts_on")
+        .is("deleted_at", null)
+        .order("starts_on", { ascending: false }),
+      supabase
+        .from("leagues")
+        .select("id, season_id, name")
+        .is("deleted_at", null)
+        .order("name", { ascending: true }),
+      supabase
+        .from("league_groups")
+        .select("id, league_id, name, sort_order")
+        .is("deleted_at", null)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("teams")
+        .select("id, name")
+        .is("deleted_at", null)
+        .order("name", { ascending: true }),
+    ]);
+
+    const error = seasons.error ?? leagues.error ?? groups.error ?? teams.error;
+    if (error) {
+      return NextResponse.json({ error: "Data pro registraci se nepodařilo načíst." }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      seasons: seasons.data ?? [],
+      leagues: leagues.data ?? [],
+      groups: groups.data ?? [],
+      teams: teams.data ?? [],
+      activeSeasonId: (seasons.data ?? []).find((season) => season.is_active)?.id ?? seasons.data?.[0]?.id ?? null,
+    });
+  } catch {
+    return NextResponse.json({ error: "Data pro registraci se nepodařilo načíst." }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json().catch(() => null)) as RegistrationBody | null;
+    if (!body) {
+      return NextResponse.json({ error: "Formulář se nepodařilo zpracovat." }, { status: 400 });
+    }
+
+    if (optionalString(body.website)) {
+      return NextResponse.json({ error: "Žádost byla odmítnuta." }, { status: 400 });
+    }
+
+    if (body.rules_accepted !== true) {
+      return NextResponse.json({ error: "Pro odeslání je potřeba souhlas s pravidly." }, { status: 400 });
+    }
+
+    const type = optionalString(body.type) as RegistrationType | null;
+    const supabase = createSupabaseAdminClient();
+    const seasonId = await activeSeasonId(supabase);
+
+    if (type === "team") {
+      const teamName = requiredString(body.team_name);
+      const captainName = requiredString(body.captain_name);
+      const captainEmail = optionalEmail(body.captain_email);
+      const roster = Array.isArray(body.roster) ? body.roster : [];
+
+      if (!teamName || !captainName || !isEmail(captainEmail)) {
+        return NextResponse.json({ error: "Vyplňte název týmu, kapitána a platný email kapitána." }, { status: 400 });
+      }
+
+      const players = roster
+        .map((item): TeamRegistrationPlayerInput => (typeof item === "object" && item !== null ? item : {}))
+        .map((player) => ({
+          first_name: requiredString(player.first_name),
+          last_name: requiredString(player.last_name),
+          email: optionalEmail(player.email),
+          phone: optionalString(player.phone),
+          note: optionalString(player.note),
+        }))
+        .filter((player) => player.first_name && player.last_name);
+
+      if (players.length === 0) {
+        return NextResponse.json({ error: "Přidejte alespoň jednoho hráče na soupisku." }, { status: 400 });
+      }
+
+      const { data: registration, error } = await supabase
+        .from("team_registration_requests")
+        .insert({
+          season_id: seasonId,
+          team_name: teamName,
+          captain_name: captainName,
+          captain_email: captainEmail,
+          captain_phone: optionalString(body.captain_phone),
+          preferred_league_id: optionalUuid(body.preferred_league_id),
+          preferred_group_id: optionalUuid(body.preferred_group_id),
+          note: optionalString(body.note),
+        })
+        .select("id")
+        .single<{ id: string }>();
+
+      if (error || !registration) {
+        return NextResponse.json({ error: error?.message ?? "Žádost se nepodařilo odeslat." }, { status: 500 });
+      }
+
+      const { error: playersError } = await supabase.from("team_registration_players").insert(
+        players.map((player) => ({
+          request_id: registration.id,
+          first_name: player.first_name,
+          last_name: player.last_name,
+          email: player.email,
+          phone: player.phone,
+          note: player.note,
+          player_status: "pending",
+        })),
+      );
+
+      if (playersError) {
+        return NextResponse.json({ error: playersError.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ message: "Žádost byla odeslána ke schválení." });
+    }
+
+    if (type === "player") {
+      const firstName = requiredString(body.first_name);
+      const lastName = requiredString(body.last_name);
+      const email = optionalEmail(body.email);
+
+      if (!firstName || !lastName || !isEmail(email)) {
+        return NextResponse.json({ error: "Vyplňte jméno, příjmení a platný email." }, { status: 400 });
+      }
+
+      const { error } = await supabase.from("player_registration_requests").insert({
+        season_id: seasonId,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone: optionalString(body.phone),
+        preferred_team_name: optionalString(body.preferred_team_name),
+        preferred_team_id: optionalUuid(body.preferred_team_id),
+        looking_for_team: body.looking_for_team === true,
+        note: optionalString(body.note),
+      });
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ message: "Žádost byla odeslána ke schválení." });
+    }
+
+    return NextResponse.json({ error: "Vyberte platný typ registrace." }, { status: 400 });
+  } catch {
+    return NextResponse.json({ error: "Žádost se nepodařilo odeslat." }, { status: 500 });
+  }
+}

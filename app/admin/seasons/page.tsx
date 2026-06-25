@@ -25,6 +25,7 @@ type SeasonForm = {
   transfer_deadline_on: string;
   transfer_wait_days: string;
   is_active: boolean;
+  copy_rosters: boolean;
 };
 
 const emptyForm: SeasonForm = {
@@ -34,6 +35,7 @@ const emptyForm: SeasonForm = {
   transfer_deadline_on: "",
   transfer_wait_days: "14",
   is_active: false,
+  copy_rosters: false,
 };
 
 async function readJson(response: Response) {
@@ -63,6 +65,7 @@ function formFromSeason(season: Season): SeasonForm {
     transfer_deadline_on: season.transfer_deadline_on,
     transfer_wait_days: String(season.transfer_wait_days),
     is_active: season.is_active,
+    copy_rosters: false,
   };
 }
 
@@ -160,6 +163,7 @@ export default function AdminSeasonsPage() {
         transfer_deadline_on: seasonForm.transfer_deadline_on,
         transfer_wait_days: seasonForm.transfer_wait_days,
         is_active: seasonForm.is_active,
+        copy_rosters: method === "POST" ? seasonForm.copy_rosters : undefined,
       }),
     });
 
@@ -426,6 +430,25 @@ export default function AdminSeasonsPage() {
 
                   <form className="mt-5 flex flex-col gap-4" onSubmit={handleCreate}>
                     {renderSeasonFields(form, setForm, true)}
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                      <input
+                        checked={form.copy_rosters}
+                        className="mt-1 h-4 w-4 rounded border-slate-300"
+                        onChange={(event) =>
+                          setForm({ ...form, copy_rosters: event.target.checked })
+                        }
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="block font-semibold text-slate-900">
+                          Zkopírovat soupisky z aktivní sezóny
+                        </span>
+                        <span className="mt-1 block text-xs text-slate-500">
+                          Členství bude zapsáno od data začátku nové sezóny.
+                        </span>
+                      </span>
+                    </label>
 
                     <button
                       className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"

@@ -19,6 +19,7 @@ const baseNavigationItems = [
   { href: "/kalendar", label: "Kalendář" },
   { href: "/hraci", label: "Hráči" },
   { href: "/tymy", label: "Týmy" },
+  { href: "/registrace", label: "Registrace" },
   { href: "/galerie", label: "Galerie" },
   { href: "/scoreboard", label: "Počítadlo" },
   { href: "/diskuze", label: "Diskuze" },

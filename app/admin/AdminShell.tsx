@@ -18,7 +18,7 @@ export function AdminShell({ children }: AdminShellProps) {
   const [authState, setAuthState] = useState<"loading" | "allowed" | "blocked">("loading");
   const [displayName, setDisplayName] = useState("");
   const [blockMessage, setBlockMessage] = useState("");
-  const [navigationItems, setNavigationItems] = useState<Array<{ href: string; label: string; minimumRole: AdminRole }>>([]);
+  const [navigationItems, setNavigationItems] = useState<Array<{ key?: string; href: string; label: string; minimumRole: AdminRole; isAlert?: boolean }>>([]);
   const isScoreboard = /^\/admin\/matches\/[^/]+\/scoreboard$/.test(pathname);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function AdminShell({ children }: AdminShellProps) {
         },
       });
       const permissionsBody = (await permissionsResponse.json().catch(() => ({}))) as {
-        permissions?: Array<{ href: string; label: string; minimumRole: AdminRole }>;
+        permissions?: Array<{ key?: string; href: string; label: string; minimumRole: AdminRole }>;
       };
       const permissions = permissionsBody.permissions ?? [];
       const currentPage = adminPageForPath(pathname);
@@ -92,10 +92,28 @@ export function AdminShell({ children }: AdminShellProps) {
         return;
       }
 
+      const statusResponse = await originalFetch("/api/admin/request-status", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const statusBody = (await statusResponse.json().catch(() => ({}))) as {
+        pending?: Record<string, number>;
+      };
+      const pending = statusBody.pending ?? {};
+
       setNavigationItems(
         permissions
           .filter((permission) => canAccessAdminPage(body.user!.role, permission.minimumRole))
-          .map((permission) => ({ href: permission.href, label: permission.label, minimumRole: permission.minimumRole })),
+          .map((permission) => ({
+            key: permission.key,
+            href: permission.href,
+            label: permission.label,
+            minimumRole: permission.minimumRole,
+            isAlert: permission.key === "registrations" || permission.key === "roster-requests"
+              ? (pending[permission.key] ?? 0) > 0
+              : false,
+          })),
       );
       setDisplayName(body.user.displayName);
       setAuthState("allowed");
