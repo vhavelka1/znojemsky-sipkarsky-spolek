@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserProfile, hasAtLeastRole } from "@/lib/appAuth";
+import { getCurrentUserProfile, hasAtLeastRole, requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 type ReviewBody = {
@@ -244,4 +244,34 @@ export async function PATCH(request: Request) {
   }
 
   return NextResponse.json({ request: data });
+}
+
+export async function DELETE(request: Request) {
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
+
+  const url = new URL(request.url);
+  const id = requiredString(url.searchParams.get("id"));
+
+  if (!id) {
+    return NextResponse.json({ error: "Vyberte platnou žádost." }, { status: 400 });
+  }
+
+  const deletedAt = new Date().toISOString();
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("team_roster_requests")
+    .update({
+      deleted_at: deletedAt,
+      reviewed_by_user_id: guard.profile!.userId,
+      reviewed_at: deletedAt,
+    })
+    .eq("id", id)
+    .is("deleted_at", null);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ message: "Žádost byla odstraněna." });
 }

@@ -87,6 +87,28 @@ export default function AdminRosterRequestsPage() {
     loadRequests();
   };
 
+  const deleteRequest = async (id: string) => {
+    if (!window.confirm("Opravdu chcete žádost odstranit?")) return;
+
+    setProcessingId(id);
+    setError(null);
+    setMessage(null);
+
+    const response = await adminFetch(`/api/admin/roster-requests?id=${id}`, {
+      method: "DELETE",
+    });
+    const body = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+    setProcessingId(null);
+
+    if (!response.ok) {
+      setError(body.error ?? "Žádost se nepodařilo odstranit.");
+      return;
+    }
+
+    setMessage(body.message ?? "Žádost byla odstraněna.");
+    loadRequests();
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -141,9 +163,18 @@ export default function AdminRosterRequestsPage() {
                         <Button disabled={processingId === request.id} onClick={() => reviewRequest(request.id, "reject")} variant="danger">
                           Zamítnout
                         </Button>
+                        <Button disabled={processingId === request.id} onClick={() => deleteRequest(request.id)} variant="danger">
+                          Odstranit žádost
+                        </Button>
                       </div>
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="xl:w-[220px]">
+                      <Button disabled={processingId === request.id} onClick={() => deleteRequest(request.id)} variant="danger">
+                        Odstranit žádost
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </article>
             ))}

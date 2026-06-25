@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserProfile, hasAtLeastRole } from "@/lib/appAuth";
+import { getCurrentUserProfile, hasAtLeastRole, requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -605,6 +605,54 @@ export async function PATCH(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Žádost se nepodařilo zpracovat." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
+
+  const url = new URL(request.url);
+  const kind = requiredString(url.searchParams.get("kind"));
+  const id = requiredString(url.searchParams.get("id"));
+
+  if (!id || (kind !== "team" && kind !== "player")) {
+    return NextResponse.json({ error: "Vyberte platnou žádost." }, { status: 400 });
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const reviewedAt = new Date().toISOString();
+    const reviewedBy = guard.profile!.userId;
+
+    const updatePayload = {
+      deleted_at: reviewedAt,
+      reviewed_by_user_id: reviewedBy,
+      reviewed_at: reviewedAt,
+    };
+
+    const result = kind === "team"
+      ? await supabase
+          .from("team_registration_requests")
+          .update(updatePayload)
+          .eq("id", id)
+          .is("deleted_at", null)
+      : await supabase
+          .from("player_registration_requests")
+          .update(updatePayload)
+          .eq("id", id)
+          .is("deleted_at", null);
+
+    if (result.error) {
+      return NextResponse.json({ error: result.error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ message: "Žádost byla odstraněna." });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Žádost se nepodařilo odstranit." },
       { status: 500 },
     );
   }
