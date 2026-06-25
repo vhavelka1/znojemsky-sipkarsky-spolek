@@ -1,15 +1,8 @@
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { removeStoredTeamLogo, teamLogosBucket, teamLogoValidationError, uploadTeamLogo } from "@/lib/teamLogoStorage";
 
 const mockRole = "admin";
-const maximumLogoSize = 2 * 1024 * 1024;
-const allowedLogoTypes = new Map([
-  ["image/jpeg", "jpg"],
-  ["image/png", "png"],
-  ["image/webp", "webp"],
-]);
 
 type RouteContext = {
   params: Promise<{
@@ -43,15 +36,6 @@ function getAdminClientOrError() {
   }
 }
 
-async function removePreviousLocalLogo(logoUrl: string | null) {
-  if (!logoUrl?.startsWith("/team-logos/uploads/")) {
-    return;
-  }
-
-  const filePath = path.join(process.cwd(), "public", ...logoUrl.split("/").filter(Boolean));
-  await unlink(filePath).catch(() => undefined);
-}
-
 export async function POST(request: Request, context: RouteContext) {
   const guardResponse = guardRequest();
   if (guardResponse) {
@@ -65,13 +49,9 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Vyberte obrázek loga." }, { status: 400 });
   }
 
-  const extension = allowedLogoTypes.get(logo.type);
-  if (!extension) {
-    return NextResponse.json({ error: "Logo musí být ve formátu PNG, JPG nebo WebP." }, { status: 400 });
-  }
-
-  if (logo.size > maximumLogoSize) {
-    return NextResponse.json({ error: "Logo může mít nejvýše 2 MB." }, { status: 400 });
+  const validationError = teamLogoValidationError(logo);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
   const { id } = await context.params;
@@ -98,25 +78,29 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const uploadsDirectory = path.join(process.cwd(), "public", "team-logos", "uploads");
-  const fileName = `${id}-${crypto.randomUUID()}.${extension}`;
-  const logoUrl = `/team-logos/uploads/${fileName}`;
-  await mkdir(uploadsDirectory, { recursive: true });
-  await writeFile(path.join(uploadsDirectory, fileName), Buffer.from(await logo.arrayBuffer()));
+  let uploadedLogo: Awaited<ReturnType<typeof uploadTeamLogo>>;
+  try {
+    uploadedLogo = await uploadTeamLogo(supabase, id, logo);
+  } catch (uploadError) {
+    return NextResponse.json(
+      { error: uploadError instanceof Error ? uploadError.message : "Logo se nepodařilo nahrát do Supabase." },
+      { status: 500 },
+    );
+  }
 
   const { data, error } = await supabase
     .from("teams")
-    .update({ logo_url: logoUrl })
+    .update({ logo_url: uploadedLogo.publicUrl })
     .eq("id", id)
     .is("deleted_at", null)
     .select("id, name, slug, logo_url, created_at, updated_at, deleted_at")
     .single();
 
   if (error) {
-    await unlink(path.join(uploadsDirectory, fileName)).catch(() => undefined);
+    await supabase.storage.from(teamLogosBucket).remove([uploadedLogo.storagePath]).catch(() => undefined);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  await removePreviousLocalLogo(existingTeam.logo_url);
+  await removeStoredTeamLogo(supabase, existingTeam.logo_url);
   return NextResponse.json({ team: data });
 }

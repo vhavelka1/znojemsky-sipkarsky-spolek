@@ -269,12 +269,6 @@ export default function PublicDiscussionPage() {
               >
                 Vytvořit téma
               </button>
-              <Link
-                className="rounded-full bg-white px-6 py-3 text-base font-black text-[#061A3A] shadow-xl shadow-black/15 transition hover:-translate-y-0.5 hover:bg-blue-50"
-                href="/galerie"
-              >
-                Galerie
-              </Link>
             </div>
             <div className="mt-8 grid max-w-xl grid-cols-3 gap-3 sm:gap-5">
               {[

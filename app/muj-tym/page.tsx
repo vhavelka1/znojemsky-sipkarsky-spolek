@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 type CaptainTeamPayload = {
   team?: {
     id: string;
+    teamSeasonId: string;
     name: string;
     logoUrl: string | null;
     publicDescription: string;
@@ -16,23 +17,74 @@ type CaptainTeamPayload = {
     publicContactEmail: string;
     websiteUrl: string;
     seasonName: string;
+    publicDetailHref: string;
+    rosterHref: string;
+    competitionHref: string;
   };
+  competition?: TeamCompetition | null;
+  roster?: RosterPlayer[];
+  matches?: TeamMatch[];
   requests?: RosterRequest[];
+  availablePlayers?: AvailablePlayer[];
   error?: string;
+};
+
+type TeamCompetition = {
+  seasonName: string;
+  leagueName: string;
+  groupName: string;
+  href: string;
+};
+
+type RosterPlayer = {
+  id: string;
+  playerId: string;
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  role: "player" | "captain" | "assistant_captain";
+  roleLabel: string;
+  statusLabel: string;
+  joinedOn: string | null;
+};
+
+type TeamMatch = {
+  id: string;
+  scheduledAt: string;
+  playedAt: string | null;
+  status: "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
+  statusLabel: string;
+  side: string;
+  opponentName: string;
+  result: string | null;
 };
 
 type RosterRequest = {
   id: string;
+  requested_player_id: string | null;
   requested_player_name: string;
   requested_player_email: string | null;
+  requested_player_phone: string | null;
+  requested_player_residence: string | null;
+  requested_player_date_of_birth: string | null;
   requested_player_note: string | null;
   status: "pending" | "approved" | "rejected" | "cancelled";
   admin_note: string | null;
   created_at: string;
 };
 
+type AvailablePlayer = {
+  id: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  residence: string | null;
+  dateOfBirth: string | null;
+};
+
 type TeamForm = {
-  logo_url: string;
   public_description: string;
   home_venue: string;
   public_contact_email: string;
@@ -40,13 +92,18 @@ type TeamForm = {
 };
 
 type RequestForm = {
-  requested_player_name: string;
+  request_mode: "existing" | "new";
+  existing_player_id: string;
+  first_name: string;
+  last_name: string;
   requested_player_email: string;
+  requested_player_phone: string;
+  requested_player_residence: string;
+  requested_player_date_of_birth: string;
   requested_player_note: string;
 };
 
 const emptyTeamForm: TeamForm = {
-  logo_url: "",
   public_description: "",
   home_venue: "",
   public_contact_email: "",
@@ -54,8 +111,14 @@ const emptyTeamForm: TeamForm = {
 };
 
 const emptyRequestForm: RequestForm = {
-  requested_player_name: "",
+  request_mode: "existing",
+  existing_player_id: "",
+  first_name: "",
+  last_name: "",
   requested_player_email: "",
+  requested_player_phone: "",
+  requested_player_residence: "",
+  requested_player_date_of_birth: "",
   requested_player_note: "",
 };
 
@@ -82,13 +145,56 @@ function statusClass(status: RosterRequest["status"]) {
   return "bg-slate-100 text-slate-700";
 }
 
+function rosterRoleClass(role: RosterPlayer["role"]) {
+  if (role === "captain") return "bg-[#EF233C] text-white";
+  if (role === "assistant_captain") return "bg-[#0F4FA8] text-white";
+  return "bg-[#F4F8FF] text-[#0B2F6B]";
+}
+
+function rosterStatusClass(status: string) {
+  if (status === "Aktivní") return "bg-green-100 text-green-800";
+  if (status === "Neaktivní hráč") return "bg-amber-100 text-amber-800";
+  return "bg-slate-100 text-slate-700";
+}
+
+function matchStatusClass(status: TeamMatch["status"]) {
+  if (status === "scheduled") return "bg-[#F4F8FF] text-[#0B2F6B]";
+  if (status === "confirmed") return "bg-green-100 text-green-800";
+  if (status === "awaiting_confirmation") return "bg-amber-100 text-amber-800";
+  if (status === "played") return "bg-blue-100 text-blue-800";
+  return "bg-slate-100 text-slate-700";
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("cs-CZ", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("cs-CZ", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 export default function MyTeamPage() {
   const [team, setTeam] = useState<CaptainTeamPayload["team"] | null>(null);
+  const [competition, setCompetition] = useState<TeamCompetition | null>(null);
+  const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  const [matches, setMatches] = useState<TeamMatch[]>([]);
   const [requests, setRequests] = useState<RosterRequest[]>([]);
+  const [availablePlayers, setAvailablePlayers] = useState<AvailablePlayer[]>([]);
   const [teamForm, setTeamForm] = useState<TeamForm>(emptyTeamForm);
   const [requestForm, setRequestForm] = useState<RequestForm>(emptyRequestForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingTeam, setIsSavingTeam] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,9 +207,12 @@ export default function MyTeamPage() {
         const body = (await response.json().catch(() => ({}))) as CaptainTeamPayload;
         if (!response.ok) throw new Error(body.error ?? "Můj tým se nepodařilo načíst.");
         setTeam(body.team ?? null);
+        setCompetition(body.competition ?? null);
+        setRoster(body.roster ?? []);
+        setMatches(body.matches ?? []);
         setRequests(body.requests ?? []);
+        setAvailablePlayers(body.availablePlayers ?? []);
         setTeamForm({
-          logo_url: body.team?.logoUrl ?? "",
           public_description: body.team?.publicDescription ?? "",
           home_venue: body.team?.homeVenue ?? "",
           public_contact_email: body.team?.publicContactEmail ?? "",
@@ -139,6 +248,34 @@ export default function MyTeamPage() {
     }
 
     setMessage("Údaje týmu byly uloženy.");
+    loadTeam();
+  };
+
+  const uploadLogo = async (logo: File | undefined) => {
+    if (!logo) {
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    setMessage(null);
+    setError(null);
+
+    const formData = new FormData();
+    formData.set("logo", logo);
+
+    const response = await authFetch("/api/captain/team/logo", {
+      method: "POST",
+      body: formData,
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    setIsUploadingLogo(false);
+
+    if (!response.ok) {
+      setError(body.error ?? "Logo se nepodařilo nahrát.");
+      return;
+    }
+
+    setMessage("Logo týmu bylo nahráno.");
     loadTeam();
   };
 
@@ -191,6 +328,7 @@ export default function MyTeamPage() {
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+            <div className="space-y-6">
             <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
               <div className="flex items-center gap-4">
                 <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[24px] border border-[#D8E4F2] bg-[#F4F8FF] p-2">
@@ -206,15 +344,53 @@ export default function MyTeamPage() {
                 </div>
               </div>
 
+              <div className="mt-6 grid gap-3 md:grid-cols-3">
+                <Link className="rounded-2xl bg-[#0F4FA8] px-4 py-3 text-center text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#0B2F6B]" href={team.publicDetailHref}>
+                  Veřejný profil týmu
+                </Link>
+                <a className="rounded-2xl bg-[#F4F8FF] px-4 py-3 text-center text-sm font-black text-[#0B2F6B] transition hover:-translate-y-0.5 hover:bg-blue-50" href="#soupiska">
+                  Soupiska
+                </a>
+                <Link className="rounded-2xl bg-[#F4F8FF] px-4 py-3 text-center text-sm font-black text-[#0B2F6B] transition hover:-translate-y-0.5 hover:bg-blue-50" href={competition?.href ?? team.competitionHref}>
+                  Aktuální soutěž
+                </Link>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-3">
+                <div className="rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Sezóna</p>
+                  <p className="mt-2 font-black text-[#061A3A]">{team.seasonName}</p>
+                </div>
+                <div className="rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Soutěž</p>
+                  <p className="mt-2 font-black text-[#061A3A]">{competition ? `${competition.leagueName} / ${competition.groupName}` : "Není přiřazeno"}</p>
+                </div>
+                <div className="rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Hráči</p>
+                  <p className="mt-2 font-black text-[#061A3A]">{roster.length}</p>
+                </div>
+              </div>
+
               <form className="mt-6 grid gap-4" onSubmit={saveTeam}>
+                <div>
+                  <h3 className="text-xl font-black text-[#061A3A]">Základní údaje týmu</h3>
+                  <p className="mt-1 text-sm font-bold text-slate-500">Tyto údaje se zobrazují veřejně u profilu týmu.</p>
+                </div>
                 <label className="flex flex-col gap-2 text-sm font-black text-[#061A3A]">
                   Logo týmu
                   <input
-                    className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
-                    onChange={(event) => setTeamForm((current) => ({ ...current, logo_url: event.target.value }))}
-                    placeholder="URL adresa loga"
-                    value={teamForm.logo_url}
+                    accept="image/jpeg,image/png,image/webp"
+                    className="rounded-2xl border border-dashed border-[#9DB7D7] bg-[#F4F8FF] px-4 py-4 text-sm font-bold file:mr-4 file:rounded-full file:border-0 file:bg-[#0F4FA8] file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
+                    disabled={isUploadingLogo}
+                    onChange={(event) => {
+                      void uploadLogo(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                    type="file"
                   />
+                  <span className="text-xs font-bold text-slate-500">
+                    {isUploadingLogo ? "Nahrávám logo..." : "PNG, JPG nebo WebP, maximálně 2 MB."}
+                  </span>
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-black text-[#061A3A]">
@@ -267,25 +443,213 @@ export default function MyTeamPage() {
               </form>
             </section>
 
+            <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]" id="soupiska">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-black text-[#061A3A]">Soupiska týmu</h2>
+                  <p className="mt-1 text-sm font-bold text-slate-500">Aktuální hráči a jejich role v týmu.</p>
+                </div>
+                <Link className="rounded-full bg-[#0F4FA8] px-4 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#0B2F6B]" href={team.publicDetailHref}>
+                  Veřejná soupiska
+                </Link>
+              </div>
+
+              {roster.length === 0 ? (
+                <p className="mt-5 text-sm font-bold text-slate-500">Soupiska zatím není dostupná.</p>
+              ) : (
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full min-w-[680px] text-left text-sm">
+                    <thead className="bg-[#F4F8FF] text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">Hráč</th>
+                        <th className="px-4 py-3">Role</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Kontakt</th>
+                        <th className="px-4 py-3">Od</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#D8E4F2]">
+                      {roster.map((player) => (
+                        <tr key={player.id}>
+                          <td className="px-4 py-4 font-black text-[#061A3A]">{player.displayName}</td>
+                          <td className="px-4 py-4">
+                            <span className={`rounded-full px-3 py-1 text-xs font-black ${rosterRoleClass(player.role)}`}>{player.roleLabel}</span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className={`rounded-full px-3 py-1 text-xs font-black ${rosterStatusClass(player.statusLabel)}`}>{player.statusLabel}</span>
+                          </td>
+                          <td className="px-4 py-4 text-slate-600">
+                            {player.email || "-"}
+                            {player.phone ? <span className="block">{player.phone}</span> : null}
+                          </td>
+                          <td className="px-4 py-4 text-slate-600">{formatDate(player.joinedOn)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-black text-[#061A3A]">Aktuální soutěž</h2>
+                  <p className="mt-1 text-sm font-bold text-slate-500">Liga, skupina a poslední týmové zápasy.</p>
+                </div>
+                <Link className="rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500" href={competition?.href ?? team.competitionHref}>
+                  Otevřít tabulku
+                </Link>
+              </div>
+
+              <div className="mt-5 rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-4">
+                {competition ? (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Sezóna</p>
+                      <p className="mt-1 font-black text-[#061A3A]">{competition.seasonName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Liga</p>
+                      <p className="mt-1 font-black text-[#061A3A]">{competition.leagueName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Skupina</p>
+                      <p className="mt-1 font-black text-[#061A3A]">{competition.groupName}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm font-bold text-slate-500">Tým zatím není přiřazený do žádné aktuální soutěže.</p>
+                )}
+              </div>
+
+              {matches.length === 0 ? (
+                <p className="mt-5 text-sm font-bold text-slate-500">Zápasy zatím nejsou dostupné.</p>
+              ) : (
+                <div className="mt-5 grid gap-3">
+                  {matches.slice(0, 6).map((match) => (
+                    <Link className="rounded-3xl border border-[#D8E4F2] bg-white p-4 transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]" href={`/admin/matches/${match.id}`} key={match.id}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-[#061A3A]">{match.side} vs. {match.opponentName}</p>
+                          <p className="mt-1 text-sm font-bold text-slate-500">{formatDateTime(match.playedAt ?? match.scheduledAt)}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {match.result ? <span className="rounded-full bg-[#061A3A] px-3 py-1 text-sm font-black text-white">{match.result}</span> : null}
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${matchStatusClass(match.status)}`}>{match.statusLabel}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+            </div>
+
             <aside className="space-y-6">
               <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
                 <h2 className="text-xl font-black text-[#061A3A]">Žádost o přidání hráče</h2>
-                <p className="mt-2 text-sm font-bold text-slate-500">Kapitán může poslat žádost. Soupisku potvrzuje moderátor nebo administrátor.</p>
+                <p className="mt-2 text-sm font-bold text-slate-500">Vyberte hráče bez aktuálního týmu, nebo pošlete žádost na nového hráče.</p>
                 <form className="mt-5 grid gap-4" onSubmit={sendRequest}>
-                  <input
-                    className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
-                    onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_name: event.target.value }))}
-                    placeholder="Jméno hráče"
-                    required
-                    value={requestForm.requested_player_name}
-                  />
-                  <input
-                    className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
-                    onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_email: event.target.value }))}
-                    placeholder="Email hráče"
-                    type="email"
-                    value={requestForm.requested_player_email}
-                  />
+                  <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#F4F8FF] p-1">
+                    <button
+                      className={`rounded-xl px-3 py-2 text-sm font-black transition ${requestForm.request_mode === "existing" ? "bg-white text-[#061A3A] shadow-sm" : "text-slate-500"}`}
+                      onClick={() => setRequestForm((current) => ({ ...current, request_mode: "existing" }))}
+                      type="button"
+                    >
+                      Existující hráč
+                    </button>
+                    <button
+                      className={`rounded-xl px-3 py-2 text-sm font-black transition ${requestForm.request_mode === "new" ? "bg-white text-[#061A3A] shadow-sm" : "text-slate-500"}`}
+                      onClick={() => setRequestForm((current) => ({ ...current, request_mode: "new" }))}
+                      type="button"
+                    >
+                      Nový hráč
+                    </button>
+                  </div>
+
+                  {requestForm.request_mode === "existing" ? (
+                    <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                      Hráč bez aktuálního týmu
+                      <select
+                        className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                        onChange={(event) => setRequestForm((current) => ({ ...current, existing_player_id: event.target.value }))}
+                        required
+                        value={requestForm.existing_player_id}
+                      >
+                        <option value="">Vyberte hráče</option>
+                        {availablePlayers.map((player) => (
+                          <option key={player.id} value={player.id}>
+                            {player.displayName}{player.email ? ` / ${player.email}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {availablePlayers.length === 0 ? (
+                        <span className="text-xs font-bold text-slate-500">Momentálně nejsou dostupní žádní hráči bez týmu v aktuální sezóně.</span>
+                      ) : null}
+                    </label>
+                  ) : (
+                    <div className="grid gap-4">
+                      <div className="grid gap-3">
+                        <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                          Jméno
+                          <input
+                            className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                            onChange={(event) => setRequestForm((current) => ({ ...current, first_name: event.target.value }))}
+                            required
+                            value={requestForm.first_name}
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                          Příjmení
+                          <input
+                            className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                            onChange={(event) => setRequestForm((current) => ({ ...current, last_name: event.target.value }))}
+                            required
+                            value={requestForm.last_name}
+                          />
+                        </label>
+                      </div>
+                      <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                        Email hráče
+                        <input
+                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_email: event.target.value }))}
+                          required
+                          type="email"
+                          value={requestForm.requested_player_email}
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                        Telefon
+                        <input
+                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_phone: event.target.value }))}
+                          value={requestForm.requested_player_phone}
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                        Bydliště
+                        <input
+                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_residence: event.target.value }))}
+                          required
+                          value={requestForm.requested_player_residence}
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                        Datum narození
+                        <input
+                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_date_of_birth: event.target.value }))}
+                          required
+                          type="date"
+                          value={requestForm.requested_player_date_of_birth}
+                        />
+                      </label>
+                    </div>
+                  )}
+
                   <textarea
                     className="min-h-24 rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
                     onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_note: event.target.value }))}
@@ -314,6 +678,11 @@ export default function MyTeamPage() {
                           <div>
                             <p className="font-black text-[#061A3A]">{request.requested_player_name}</p>
                             {request.requested_player_email ? <p className="text-sm font-bold text-slate-500">{request.requested_player_email}</p> : null}
+                            {request.requested_player_residence || request.requested_player_date_of_birth ? (
+                              <p className="text-xs font-bold text-slate-500">
+                                {request.requested_player_residence || "Bez bydliště"} / {formatDate(request.requested_player_date_of_birth)}
+                              </p>
+                            ) : null}
                           </div>
                           <span className={`rounded-full px-3 py-1 text-xs font-black ${statusClass(request.status)}`}>{statusLabel(request.status)}</span>
                         </div>

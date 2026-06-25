@@ -36,8 +36,8 @@ type RegistrationBody = {
   last_name?: unknown;
   email?: unknown;
   phone?: unknown;
-  preferred_team_name?: unknown;
-  preferred_team_id?: unknown;
+  residence?: unknown;
+  date_of_birth?: unknown;
   looking_for_team?: unknown;
 };
 
@@ -60,15 +60,6 @@ function optionalDate(value: unknown) {
   const text = optionalString(value);
   if (!text) return null;
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
-}
-
-function isUuid(value: string | null) {
-  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
-}
-
-function optionalUuid(value: unknown) {
-  const text = optionalString(value);
-  return isUuid(text) ? text : null;
 }
 
 function isEmail(value: string | null) {
@@ -262,9 +253,11 @@ export async function POST(request: Request) {
       const firstName = requiredString(body.first_name);
       const lastName = requiredString(body.last_name);
       const email = optionalEmail(body.email);
+      const residence = requiredString(body.residence);
+      const dateOfBirth = optionalDate(body.date_of_birth);
 
-      if (!firstName || !lastName || !isEmail(email)) {
-        return NextResponse.json({ error: "Vyplňte jméno, příjmení a platný email." }, { status: 400 });
+      if (!firstName || !lastName || !isEmail(email) || !residence || !dateOfBirth) {
+        return NextResponse.json({ error: "Vyplňte jméno, příjmení, platný email, bydliště a datum narození." }, { status: 400 });
       }
 
       const { error } = await supabase.from("player_registration_requests").insert({
@@ -273,8 +266,8 @@ export async function POST(request: Request) {
         last_name: lastName,
         email,
         phone: optionalString(body.phone),
-        preferred_team_name: optionalString(body.preferred_team_name),
-        preferred_team_id: optionalUuid(body.preferred_team_id),
+        residence,
+        date_of_birth: dateOfBirth,
         looking_for_team: body.looking_for_team === true,
         note: optionalString(body.note),
       });

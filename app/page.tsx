@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PublicHeader } from "@/components/public/PublicShell";
+import { supabase } from "@/lib/supabase";
 
 type MatchTeam = {
   name: string;
@@ -52,6 +53,10 @@ type HomepagePayload = {
   upcomingMatches: MatchPreview[];
   standings: StandingRow[];
   error?: string;
+};
+
+type HomepageUser = {
+  canManageOwnTeam: boolean;
 };
 
 const quickLinks = [
@@ -166,6 +171,7 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 export default function Home() {
   const [payload, setPayload] = useState<HomepagePayload>(emptyPayload);
+  const [user, setUser] = useState<HomepageUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -195,6 +201,41 @@ export default function Home() {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadUser() {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        if (isMounted) setUser(null);
+        return;
+      }
+
+      const response = await fetch("/api/auth/me", {
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const body = (await response.json().catch(() => ({}))) as { user?: HomepageUser | null };
+      if (isMounted) setUser(body.user ?? null);
+    }
+
+    loadUser().catch(() => {
+      if (isMounted) setUser(null);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange(() => {
+      loadUser().catch(() => setUser(null));
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
     };
   }, []);
 
@@ -247,6 +288,14 @@ export default function Home() {
                   {item.label}
                 </Link>
               ))}
+              {user?.canManageOwnTeam ? (
+                <Link
+                  className="rounded-full bg-[#0F4FA8] px-6 py-3 text-base font-black text-white shadow-xl shadow-blue-950/25 transition hover:-translate-y-0.5 hover:bg-[#3B82F6]"
+                  href="/muj-tym"
+                >
+                  Můj tým
+                </Link>
+              ) : null}
             </div>
             <div className="mt-8 inline-flex max-w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 font-bold text-blue-50">
               <span className="h-3 w-3 rounded-full bg-[#EF233C] shadow-[0_0_0_5px_rgba(239,35,60,0.18)]" />

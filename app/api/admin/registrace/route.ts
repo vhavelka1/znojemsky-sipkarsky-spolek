@@ -49,6 +49,8 @@ type PlayerRegistrationRequest = {
   last_name: string;
   email: string;
   phone: string | null;
+  residence: string | null;
+  date_of_birth: string | null;
   preferred_team_name: string | null;
   preferred_team_id: string | null;
   looking_for_team: boolean;
@@ -346,7 +348,7 @@ async function loadPayload(supabase: ReturnType<typeof createSupabaseAdminClient
       .returns<TeamRegistrationPlayer[]>(),
     supabase
       .from("player_registration_requests")
-      .select("id, season_id, first_name, last_name, email, phone, preferred_team_name, preferred_team_id, looking_for_team, note, status, admin_note, matched_player_id, created_at")
+      .select("id, season_id, first_name, last_name, email, phone, residence, date_of_birth, preferred_team_name, preferred_team_id, looking_for_team, note, status, admin_note, matched_player_id, created_at")
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .returns<PlayerRegistrationRequest[]>(),
@@ -465,8 +467,8 @@ function toCsv(payload: Awaited<ReturnType<typeof loadPayload>>) {
       fullName(request.first_name, request.last_name),
       request.email,
       request.phone ?? "",
-      "",
-      "",
+      request.residence ?? "",
+      request.date_of_birth ?? "",
       request.player_status,
       request.status,
       request.note ?? "",
@@ -609,10 +611,10 @@ export async function PATCH(request: Request) {
 
     const { data: requestRow, error: requestError } = await supabase
       .from("player_registration_requests")
-      .select("id, season_id, first_name, last_name, email, phone, preferred_team_id, matched_player_id, status")
+      .select("id, season_id, first_name, last_name, email, phone, residence, date_of_birth, preferred_team_id, matched_player_id, status")
       .eq("id", id)
       .is("deleted_at", null)
-      .single<Pick<PlayerRegistrationRequest, "id" | "season_id" | "first_name" | "last_name" | "email" | "phone" | "preferred_team_id" | "matched_player_id" | "status">>();
+      .single<Pick<PlayerRegistrationRequest, "id" | "season_id" | "first_name" | "last_name" | "email" | "phone" | "residence" | "date_of_birth" | "preferred_team_id" | "matched_player_id" | "status">>();
 
     if (requestError || !requestRow) {
       return NextResponse.json({ error: "Žádost nebyla nalezena." }, { status: 404 });
@@ -635,6 +637,8 @@ export async function PATCH(request: Request) {
       lastName: requestRow.last_name,
       email: requestRow.email,
       phone: requestRow.phone,
+      residence: requestRow.residence,
+      dateOfBirth: requestRow.date_of_birth,
       matchedPlayerId,
     });
 

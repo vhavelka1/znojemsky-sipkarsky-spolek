@@ -69,6 +69,17 @@ const emptyFilters: Filters = {
   groupId: "",
 };
 
+function initialFiltersFromUrl(): Filters {
+  if (typeof window === "undefined") return emptyFilters;
+
+  const params = new URLSearchParams(window.location.search);
+  return {
+    seasonId: params.get("season_id") ?? "",
+    leagueId: params.get("league_id") ?? "",
+    groupId: params.get("group_id") ?? "",
+  };
+}
+
 function PublicHeader() {
   return <SharedPublicHeader activeHref="/tabulky" />;
 }
@@ -116,7 +127,7 @@ export default function PublicTablesPage() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [groups, setGroups] = useState<LeagueGroup[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
-  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [filters, setFilters] = useState<Filters>(initialFiltersFromUrl);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

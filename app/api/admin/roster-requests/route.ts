@@ -13,8 +13,12 @@ type RosterRequest = {
   season_id: string;
   team_season_id: string;
   requested_by_user_id: string;
+  requested_player_id: string | null;
   requested_player_name: string;
   requested_player_email: string | null;
+  requested_player_phone: string | null;
+  requested_player_residence: string | null;
+  requested_player_date_of_birth: string | null;
   requested_player_note: string | null;
   status: "pending" | "approved" | "rejected" | "cancelled";
   admin_note: string | null;
@@ -65,7 +69,7 @@ export async function GET(request: Request) {
     supabase
       .from("team_roster_requests")
       .select(
-        "id, season_id, team_season_id, requested_by_user_id, requested_player_name, requested_player_email, requested_player_note, status, admin_note, created_at",
+        "id, season_id, team_season_id, requested_by_user_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at",
       )
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
@@ -122,7 +126,7 @@ export async function PATCH(request: Request) {
   const supabase = createSupabaseAdminClient();
   const { data: rosterRequest, error: requestError } = await supabase
     .from("team_roster_requests")
-    .select("id, season_id, team_season_id, requested_player_name, requested_player_email, status")
+    .select("id, season_id, team_season_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, status")
     .eq("id", id)
     .is("deleted_at", null)
     .single<RosterRequest>();
@@ -155,8 +159,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ request: data });
   }
 
-  let playerId: string | null = null;
-  if (rosterRequest.requested_player_email) {
+  let playerId: string | null = rosterRequest.requested_player_id;
+  if (playerId) {
+    const { data: existingPlayer, error: existingPlayerError } = await supabase
+      .from("players")
+      .select("id")
+      .eq("id", playerId)
+      .is("deleted_at", null)
+      .maybeSingle<{ id: string }>();
+
+    if (existingPlayerError) {
+      return NextResponse.json({ error: existingPlayerError.message }, { status: 500 });
+    }
+
+    if (!existingPlayer) {
+      return NextResponse.json({ error: "Vybraný existující hráč nebyl nalezen." }, { status: 404 });
+    }
+  }
+
+  if (!playerId && rosterRequest.requested_player_email) {
     const { data: playerByEmail } = await supabase
       .from("players")
       .select("id")
@@ -185,6 +206,9 @@ export async function PATCH(request: Request) {
         first_name: nameParts[0] ?? null,
         last_name: nameParts.slice(1).join(" ") || null,
         email: rosterRequest.requested_player_email,
+        phone: rosterRequest.requested_player_phone,
+        residence: rosterRequest.requested_player_residence,
+        date_of_birth: rosterRequest.requested_player_date_of_birth,
         role: "player",
         is_active: true,
       })
@@ -225,6 +249,8 @@ export async function PATCH(request: Request) {
     if (membershipError) {
       return NextResponse.json({ error: membershipError.message }, { status: 500 });
     }
+  } else if (existingMembership.team_season_id !== rosterRequest.team_season_id) {
+    return NextResponse.json({ error: "Hráč už je v této sezóně přiřazený k jinému týmu." }, { status: 400 });
   }
 
   const { data, error } = await supabase

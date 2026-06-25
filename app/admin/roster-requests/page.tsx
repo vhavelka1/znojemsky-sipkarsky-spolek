@@ -6,8 +6,12 @@ import { adminFetch } from "@/lib/adminFetch";
 
 type RosterRequest = {
   id: string;
+  requested_player_id: string | null;
   requested_player_name: string;
   requested_player_email: string | null;
+  requested_player_phone: string | null;
+  requested_player_residence: string | null;
+  requested_player_date_of_birth: string | null;
   requested_player_note: string | null;
   status: "pending" | "approved" | "rejected" | "cancelled";
   admin_note: string | null;
@@ -140,6 +144,17 @@ export default function AdminRosterRequestsPage() {
                     {request.requested_player_email ? (
                       <p className="mt-2 text-sm font-bold text-[var(--brand-blue)]">{request.requested_player_email}</p>
                     ) : null}
+                    <div className="mt-3 grid gap-1 text-sm font-bold text-[var(--admin-muted)] sm:grid-cols-2">
+                      <p>Typ: {request.requested_player_id ? "existující hráč" : "nový hráč"}</p>
+                      <p>Telefon: {request.requested_player_phone || "-"}</p>
+                      <p>Bydliště: {request.requested_player_residence || "-"}</p>
+                      <p>
+                        Datum narození:{" "}
+                        {request.requested_player_date_of_birth
+                          ? new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium" }).format(new Date(request.requested_player_date_of_birth))
+                          : "-"}
+                      </p>
+                    </div>
                     {request.requested_player_note ? (
                       <p className="mt-3 text-sm text-[var(--admin-muted)]">{request.requested_player_note}</p>
                     ) : null}

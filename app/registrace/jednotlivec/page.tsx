@@ -1,23 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { PublicHero, PublicPageShell } from "@/components/public/PublicShell";
-
-type Team = { id: string; name: string };
-type MetaPayload = { teams?: Team[]; error?: string };
 
 const inputClass =
   "min-h-12 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold text-[#061A3A] outline-none transition focus:border-[#3B82F6]";
 
 export default function IndividualRegistrationPage() {
-  const [teams, setTeams] = useState<Team[]>([]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [preferredTeamId, setPreferredTeamId] = useState("");
-  const [preferredTeamName, setPreferredTeamName] = useState("");
+  const [residence, setResidence] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [lookingForTeam, setLookingForTeam] = useState(true);
   const [note, setNote] = useState("");
   const [rulesAccepted, setRulesAccepted] = useState(false);
@@ -26,23 +22,12 @@ export default function IndividualRegistrationPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/public/registrations", { cache: "no-store" })
-      .then(async (response) => {
-        const body = (await response.json().catch(() => ({}))) as MetaPayload;
-        if (!response.ok) throw new Error(body.error ?? "Data pro registraci se nepodařilo načíst.");
-        setTeams(body.teams ?? []);
-      })
-      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Data pro registraci se nepodařilo načíst."));
-  }, []);
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setMessage(null);
     setIsSubmitting(true);
 
-    const selectedTeam = teams.find((team) => team.id === preferredTeamId);
     const response = await fetch("/api/public/registrations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -53,8 +38,8 @@ export default function IndividualRegistrationPage() {
         last_name: lastName,
         email,
         phone,
-        preferred_team_id: preferredTeamId || null,
-        preferred_team_name: selectedTeam?.name ?? preferredTeamName,
+        residence,
+        date_of_birth: dateOfBirth,
         looking_for_team: lookingForTeam,
         note,
         rules_accepted: rulesAccepted,
@@ -73,8 +58,8 @@ export default function IndividualRegistrationPage() {
     setLastName("");
     setEmail("");
     setPhone("");
-    setPreferredTeamId("");
-    setPreferredTeamName("");
+    setResidence("");
+    setDateOfBirth("");
     setLookingForTeam(true);
     setNote("");
     setRulesAccepted(false);
@@ -85,7 +70,7 @@ export default function IndividualRegistrationPage() {
       <PublicHero
         eyebrow="Registrace jednotlivce"
         title="Přihláška hráče"
-        description="Vyplňte kontaktní údaje a dejte vědět, jestli máte preferovaný tým nebo tým teprve hledáte."
+        description="Vyplňte základní údaje hráče pro registraci do soutěží Znojemského šipkařského spolku."
       />
 
       <section className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
@@ -117,20 +102,14 @@ export default function IndividualRegistrationPage() {
               <input className={inputClass} onChange={(event) => setPhone(event.target.value)} value={phone} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Preferovaný tým
-              <select className={inputClass} onChange={(event) => setPreferredTeamId(event.target.value)} value={preferredTeamId}>
-                <option value="">Bez preference</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-              </select>
+              Bydliště
+              <input className={inputClass} onChange={(event) => setResidence(event.target.value)} required value={residence} />
+            </label>
+            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+              Datum narození
+              <input className={inputClass} onChange={(event) => setDateOfBirth(event.target.value)} required type="date" value={dateOfBirth} />
             </label>
           </div>
-
-          {!preferredTeamId ? (
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Preferovaný tým textem
-              <input className={inputClass} onChange={(event) => setPreferredTeamName(event.target.value)} value={preferredTeamName} />
-            </label>
-          ) : null}
 
           <label className="flex items-start gap-3 text-sm font-bold text-slate-700">
             <input className="mt-1 size-4" checked={lookingForTeam} onChange={(event) => setLookingForTeam(event.target.checked)} type="checkbox" />

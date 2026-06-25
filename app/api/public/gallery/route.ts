@@ -4,7 +4,7 @@ import { getAppRequester, hasAtLeastRole } from "@/lib/appAuth";
 
 const galleryBucket = "gallery";
 const maximumPhotoSize = 5 * 1024 * 1024;
-const maximumPhotosPerAlbum = 30;
+const maximumPhotosPerAlbum = 100;
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type GalleryPhotoRow = {

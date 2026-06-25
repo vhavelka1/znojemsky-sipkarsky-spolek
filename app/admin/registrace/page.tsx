@@ -13,11 +13,6 @@ type PlayerOption = {
   email: string | null;
 };
 
-type TeamOption = {
-  id: string;
-  name: string;
-};
-
 type TeamRosterPlayer = {
   id: string;
   first_name: string;
@@ -59,6 +54,8 @@ type PlayerRequest = {
   last_name: string;
   email: string;
   phone: string | null;
+  residence: string | null;
+  date_of_birth: string | null;
   preferred_team_name: string | null;
   preferred_team_id: string | null;
   looking_for_team: boolean;
@@ -74,7 +71,6 @@ type Payload = {
   teamRequests?: TeamRequest[];
   playerRequests?: PlayerRequest[];
   players?: PlayerOption[];
-  teams?: TeamOption[];
   error?: string;
 };
 
@@ -125,13 +121,11 @@ export default function AdminRegistrationsPage() {
   const [teamRequests, setTeamRequests] = useState<TeamRequest[]>([]);
   const [playerRequests, setPlayerRequests] = useState<PlayerRequest[]>([]);
   const [players, setPlayers] = useState<PlayerOption[]>([]);
-  const [teams, setTeams] = useState<TeamOption[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [rosterMatches, setRosterMatches] = useState<Record<string, Record<string, string>>>({});
   const [playerMatches, setPlayerMatches] = useState<Record<string, string>>({});
-  const [preferredTeams, setPreferredTeams] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -156,7 +150,6 @@ export default function AdminRegistrationsPage() {
         setTeamRequests(body.teamRequests ?? []);
         setPlayerRequests(body.playerRequests ?? []);
         setPlayers(body.players ?? []);
-        setTeams(body.teams ?? []);
       })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Žádosti se nepodařilo načíst."))
       .finally(() => setIsLoading(false));
@@ -182,7 +175,6 @@ export default function AdminRegistrationsPage() {
         admin_note: notes[id] ?? "",
         roster_matches: rosterMatches[id] ?? {},
         matched_player_id: playerMatches[id] ?? null,
-        preferred_team_id: preferredTeams[id] ?? null,
       }),
     });
     const body = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
@@ -437,6 +429,9 @@ export default function AdminRegistrationsPage() {
                   <h2 className="text-2xl font-black text-[#061A3A]">{playerName(selectedPlayerRequest)}</h2>
                   <p className="mt-1 text-sm font-bold text-slate-600">{selectedPlayerRequest.email}</p>
                   {selectedPlayerRequest.phone ? <p className="mt-1 text-sm font-bold text-slate-600">Telefon: {selectedPlayerRequest.phone}</p> : null}
+                  <p className="mt-1 text-sm font-bold text-slate-600">
+                    Bydliště: {selectedPlayerRequest.residence || "-"} / Datum narození: {formatPlainDate(selectedPlayerRequest.date_of_birth)}
+                  </p>
                 </div>
                 <span className={statusClass(selectedPlayerRequest.status)}>{statusLabels[selectedPlayerRequest.status]}</span>
               </div>
@@ -447,14 +442,14 @@ export default function AdminRegistrationsPage() {
                   <span className={`mt-2 inline-flex ${playerStatusClass(selectedPlayerRequest.player_status)}`}>{playerStatusLabels[selectedPlayerRequest.player_status]}</span>
                 </div>
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Tým</p>
-                  <p className="mt-2 font-black text-[#061A3A]">{selectedPlayerRequest.preferred_team_name || (selectedPlayerRequest.looking_for_team ? "Hledá tým" : "Bez preference")}</p>
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Zařazení</p>
+                  <p className="mt-2 font-black text-[#061A3A]">{selectedPlayerRequest.looking_for_team ? "Hledá tým" : "Bez zařazení"}</p>
                 </div>
               </div>
 
               {selectedPlayerRequest.note ? <p className="mt-5 text-sm text-slate-600">{selectedPlayerRequest.note}</p> : null}
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div className="mt-5 grid gap-4">
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                   Existující hráč
                   <select
@@ -464,17 +459,6 @@ export default function AdminRegistrationsPage() {
                   >
                     <option value="">Vytvořit nového hráče</option>
                     {players.map((option) => <option key={option.id} value={option.id}>{option.display_name}{option.email ? ` / ${option.email}` : ""}</option>)}
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                  Preferovaný tým
-                  <select
-                    className="rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm font-bold"
-                    onChange={(event) => setPreferredTeams((current) => ({ ...current, [selectedPlayerRequest.id]: event.target.value }))}
-                    value={preferredTeams[selectedPlayerRequest.id] ?? selectedPlayerRequest.preferred_team_id ?? ""}
-                  >
-                    <option value="">Bez týmu</option>
-                    {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                   </select>
                 </label>
               </div>

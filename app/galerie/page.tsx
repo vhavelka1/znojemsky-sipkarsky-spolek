@@ -222,8 +222,8 @@ export default function PublicGalleryPage() {
       return;
     }
 
-    if (files.length > 30) {
-      setError("Jedno album může obsahovat nejvýše 30 fotek.");
+    if (files.length > 100) {
+      setError("Jedno album může obsahovat nejvýše 100 fotek.");
       event.target.value = "";
       return;
     }

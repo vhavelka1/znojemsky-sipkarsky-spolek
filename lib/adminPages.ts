@@ -40,7 +40,7 @@ export const adminPages: AdminPageDefinition[] = [
   { key: "leagues", href: "/admin/leagues", label: "Ligy", defaultMinimumRole: "moderator" },
   { key: "matches", href: "/admin/matches", label: "Zápasy", defaultMinimumRole: "moderator" },
   { key: "tables", href: "/admin/tables", label: "Tabulky", defaultMinimumRole: "moderator" },
-  { key: "users", href: "/admin/users", label: "Uživatelé", defaultMinimumRole: "admin" },
+  { key: "users", href: "/admin/users", label: "Uživatelé webu", defaultMinimumRole: "admin" },
   { key: "permissions", href: "/admin/permissions", label: "Práva", defaultMinimumRole: "admin" },
   { key: "settings", href: "/admin/settings", label: "Nastavení", defaultMinimumRole: "admin" },
 ];
