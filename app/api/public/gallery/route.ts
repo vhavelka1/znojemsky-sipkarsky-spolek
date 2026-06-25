@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Vyberte alespoň jednu fotku." }, { status: 400 });
     }
 
-    if (files.length > maximumPhotosPerAlbum) {
+    if (requester.role !== "admin" && files.length > maximumPhotosPerAlbum) {
       return NextResponse.json({ error: `Jedno album může obsahovat nejvýše ${maximumPhotosPerAlbum} fotek.` }, { status: 400 });
     }
 

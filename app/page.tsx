@@ -388,55 +388,34 @@ export default function Home() {
           ) : null}
         </PortalCard>
 
-        <div className="grid gap-6">
-          <PortalCard>
-            <CardHeader action="Všechny zápasy" href="/zapasy" kicker="Výsledky" title="Poslední zápasy" />
-            <div className="divide-y divide-[#D8E4F2]">
-              {isLoading ? <EmptyState>Načítám výsledky...</EmptyState> : null}
-              {!isLoading && payload.latestResults.length === 0 ? <EmptyState>Zatím nejsou zadané žádné výsledky.</EmptyState> : null}
-              {payload.latestResults.slice(0, 4).map((match) => (
-                <div className="px-5 py-4 sm:px-6" key={match.id}>
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-[#EF233C]">{formatDate(match.playedAt ?? match.scheduledAt)}</p>
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <TeamLogo team={match.homeTeam} size={34} />
-                      <p className="min-w-0 truncate text-sm font-black">{match.homeTeam.name}</p>
-                    </div>
-                    <p className="rounded-xl bg-[#061A3A] px-3 py-2 text-lg font-black text-white">
-                      {match.result?.homePoints}:{match.result?.awayPoints}
-                    </p>
-                    <div className="flex min-w-0 items-center justify-end gap-2 text-right">
-                      <p className="min-w-0 truncate text-sm font-black">{match.awayTeam.name}</p>
-                      <TeamLogo team={match.awayTeam} size={34} />
-                    </div>
+        <PortalCard>
+          <CardHeader action="Všechny zápasy" href="/zapasy" kicker="Výsledky" title="Poslední zápasy" />
+          <div className="divide-y divide-[#D8E4F2]">
+            {isLoading ? <EmptyState>Načítám výsledky...</EmptyState> : null}
+            {!isLoading && payload.latestResults.length === 0 ? <EmptyState>Zatím nejsou zadané žádné výsledky.</EmptyState> : null}
+            {payload.latestResults.slice(0, 4).map((match) => (
+              <div className="px-5 py-4 sm:px-6" key={match.id}>
+                <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-[#EF233C]">{formatDate(match.playedAt ?? match.scheduledAt)}</p>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <TeamLogo team={match.homeTeam} size={34} />
+                    <p className="min-w-0 truncate text-sm font-black">{match.homeTeam.name}</p>
+                  </div>
+                  <p className="rounded-xl bg-[#061A3A] px-3 py-2 text-lg font-black text-white">
+                    {match.result?.homePoints}:{match.result?.awayPoints}
+                  </p>
+                  <div className="flex min-w-0 items-center justify-end gap-2 text-right">
+                    <p className="min-w-0 truncate text-sm font-black">{match.awayTeam.name}</p>
+                    <TeamLogo team={match.awayTeam} size={34} />
                   </div>
                 </div>
-              ))}
-            </div>
-          </PortalCard>
-
-          <PortalCard>
-            <CardHeader action="Všichni hráči" href="/hraci" kicker="Statistiky" title="Nejlepší hráči sezóny" />
-            <EmptyState>Individuální žebříčky budou dostupné po doplnění hráčských statistik.</EmptyState>
-          </PortalCard>
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-14 sm:px-6 lg:grid-cols-3 lg:px-8">
-        <PortalCard className="lg:col-span-2">
-          <CardHeader action="Zobrazit všechny týmy" href="/tymy" kicker="Kluby" title="Týmy" />
-          <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
-            {isLoading ? <p className="text-sm font-semibold text-[#64748b]">Načítám týmy...</p> : null}
-            {!isLoading && featuredTeams.length === 0 ? <p className="text-sm font-semibold text-[#64748b]">Týmy zatím nejsou dostupné.</p> : null}
-            {featuredTeams.map((team) => (
-              <div className="flex min-w-0 items-center gap-3 rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-3" key={team.name}>
-                <TeamLogo team={team} size={44} />
-                <p className="min-w-0 truncate font-black text-[#061A3A]">{team.name}</p>
               </div>
             ))}
           </div>
         </PortalCard>
+      </section>
 
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-10 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:px-8">
         <PortalCard>
           <CardHeader action="Celý rozpis" href="/zapasy" kicker="Program" title="Nejbližší zápasy" />
           <div className="divide-y divide-[#D8E4F2]">
@@ -457,17 +436,65 @@ export default function Home() {
             ))}
           </div>
         </PortalCard>
+
+        <section className="relative overflow-hidden rounded-[28px] bg-[#061A3A] p-6 text-white shadow-[0_20px_60px_rgba(6,26,58,0.18)]">
+          <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-[#EF233C]/25 blur-2xl" />
+          <Image
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-16 -right-10 h-auto w-48 opacity-10"
+            height={700}
+            src="/brand/zss-logo-official.png"
+            width={560}
+          />
+          <div className="relative">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#3B82F6]">Registrace</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight">Registrace do sezóny</h2>
+            <p className="mt-4 max-w-2xl text-base font-bold leading-7 text-blue-100">
+              Přihlaste tým do ligy nebo pošlete individuální přihlášku hráče pro další sezónu ZŠS.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <Link className="rounded-full bg-[#EF233C] px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500" href="/registrace/tym">
+                Registrovat tým
+              </Link>
+              <Link className="rounded-full bg-white px-5 py-3 font-black text-[#061A3A] transition hover:-translate-y-0.5 hover:bg-blue-50" href="/registrace/jednotlivec">
+                Registrovat jednotlivce
+              </Link>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-10 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:px-8">
+        <PortalCard>
+          <CardHeader action="Všichni hráči" href="/hraci" kicker="Statistiky" title="Nejlepší hráči" />
+          <EmptyState>Individuální žebříčky budou dostupné po doplnění hráčských statistik.</EmptyState>
+        </PortalCard>
+
+        <PortalCard>
+          <CardHeader action="Zobrazit týmy" href="/tymy" kicker="Liga" title="Týmy" />
+          <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+            {isLoading ? <p className="text-sm font-semibold text-[#64748b]">Načítám týmy...</p> : null}
+            {!isLoading && featuredTeams.length === 0 ? <p className="text-sm font-semibold text-[#64748b]">Týmy zatím nejsou dostupné.</p> : null}
+            {featuredTeams.map((team) => (
+              <div className="flex min-w-0 items-center gap-3 rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-3" key={team.name}>
+                <TeamLogo team={team} size={44} />
+                <p className="min-w-0 truncate font-black text-[#061A3A]">{team.name}</p>
+              </div>
+            ))}
+          </div>
+        </PortalCard>
       </section>
 
       <section className="border-y border-[#D8E4F2] bg-white">
         <div className="mx-auto grid max-w-7xl gap-6 px-4 py-14 sm:px-6 lg:grid-cols-3 lg:px-8">
           <PortalCard>
-            <CardHeader action="Všechny turnaje" href="/turnaje" kicker="Turnaje" title="Nejbližší turnaje" />
-            <EmptyState>Turnajový modul připravujeme. Brzy zde najdeš mini, major, ženy i dvojice.</EmptyState>
+            <CardHeader action="Všechny turnaje" href="/turnaje" kicker="Turnaje" title="Turnaje" />
+            <EmptyState>Turnajový modul připravujeme. Brzy zde najdeš major a mini turnaje.</EmptyState>
           </PortalCard>
 
           <PortalCard>
-            <CardHeader action="Zobrazit galerii" href="/galerie" kicker="Galerie" title="Z galerie" />
+            <CardHeader action="Zobrazit galerii" href="/galerie" kicker="Galerie" title="Galerie" />
             <div className="grid grid-cols-3 gap-3 p-5 sm:p-6">
               {galleryPlaceholders.map((gradient, index) => (
                 <div className={`aspect-square rounded-3xl bg-gradient-to-br ${gradient} shadow-inner`} key={gradient}>
@@ -487,26 +514,6 @@ export default function Home() {
               </p>
               <Link className="mt-7 inline-flex rounded-full bg-white px-5 py-3 font-black text-[#061A3A] transition hover:-translate-y-0.5 hover:bg-blue-50" href="/scoreboard">
                 Otevřít Počítadlo
-              </Link>
-            </div>
-          </section>
-
-          <section className="relative overflow-hidden rounded-[28px] bg-[#061A3A] p-6 text-white shadow-[0_20px_60px_rgba(6,26,58,0.18)]">
-            <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-[#EF233C]/25 blur-2xl" />
-            <Image
-              alt=""
-              aria-hidden="true"
-              className="pointer-events-none absolute -bottom-16 -right-10 h-auto w-48 opacity-10"
-              height={700}
-              src="/brand/zss-logo-official.png"
-              width={560}
-            />
-            <div className="relative">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#3B82F6]">Spolek</p>
-              <h2 className="mt-2 text-3xl font-black tracking-tight">Přidej se k nám!</h2>
-              <p className="mt-4 text-lg font-bold text-blue-100">Šipky baví. Hraj s námi.</p>
-              <Link className="mt-7 inline-flex rounded-full bg-[#EF233C] px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500" href="/kontakt">
-                Více informací
               </Link>
             </div>
           </section>

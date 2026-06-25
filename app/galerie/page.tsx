@@ -165,11 +165,18 @@ export default function PublicGalleryPage() {
   const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [preparedPhotos, setPreparedPhotos] = useState<PreparedPhoto[]>([]);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
+  const [lightboxPhotoIndex, setLightboxPhotoIndex] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const photoCount = useMemo(() => albums.reduce((sum, album) => sum + album.photos.length, 0), [albums]);
   const featuredAlbum = albums.find((album) => album.photos.length > 0) ?? null;
+  const selectedAlbum = useMemo(
+    () => albums.find((album) => album.id === selectedAlbumId) ?? null,
+    [albums, selectedAlbumId],
+  );
+  const lightboxPhoto = lightboxPhotoIndex !== null ? selectedAlbum?.photos[lightboxPhotoIndex] ?? null : null;
 
   async function loadGallery() {
     setIsLoading(true);
@@ -211,6 +218,37 @@ export default function PublicGalleryPage() {
     };
   }, [preparedPhotos]);
 
+  useEffect(() => {
+    if (lightboxPhotoIndex === null || !selectedAlbum) {
+      return;
+    }
+
+    const activeAlbum = selectedAlbum;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setLightboxPhotoIndex(null);
+      }
+
+      if (event.key === "ArrowLeft") {
+        setLightboxPhotoIndex((current) => {
+          if (current === null || activeAlbum.photos.length === 0) return current;
+          return (current - 1 + activeAlbum.photos.length) % activeAlbum.photos.length;
+        });
+      }
+
+      if (event.key === "ArrowRight") {
+        setLightboxPhotoIndex((current) => {
+          if (current === null || activeAlbum.photos.length === 0) return current;
+          return (current + 1) % activeAlbum.photos.length;
+        });
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxPhotoIndex, selectedAlbum]);
+
   async function handlePhotoSelection(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     preparedPhotos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
@@ -222,7 +260,7 @@ export default function PublicGalleryPage() {
       return;
     }
 
-    if (files.length > 100) {
+    if (currentUser?.role !== "admin" && files.length > 100) {
       setError("Jedno album může obsahovat nejvýše 100 fotek.");
       event.target.value = "";
       return;
@@ -310,7 +348,30 @@ export default function PublicGalleryPage() {
     }
 
     setAlbums((current) => current.filter((album) => album.id !== albumId));
+    setSelectedAlbumId((current) => (current === albumId ? null : current));
+    setLightboxPhotoIndex(null);
     setMessage("Album bylo smazáno.");
+  }
+
+  function openAlbum(albumId: string) {
+    setSelectedAlbumId(albumId);
+    setLightboxPhotoIndex(null);
+  }
+
+  function closeAlbum() {
+    setSelectedAlbumId(null);
+    setLightboxPhotoIndex(null);
+  }
+
+  function moveLightbox(direction: -1 | 1) {
+    if (!selectedAlbum || selectedAlbum.photos.length === 0) {
+      return;
+    }
+
+    setLightboxPhotoIndex((current) => {
+      const currentIndex = current ?? 0;
+      return (currentIndex + direction + selectedAlbum.photos.length) % selectedAlbum.photos.length;
+    });
   }
 
   return (
@@ -345,12 +406,6 @@ export default function PublicGalleryPage() {
               >
                 Nahrát album
               </button>
-              <Link
-                className="rounded-full bg-white px-6 py-3 text-base font-black text-[#061A3A] shadow-xl shadow-black/15 transition hover:-translate-y-0.5 hover:bg-blue-50"
-                href="/turnaje"
-              >
-                Turnaje
-              </Link>
             </div>
             <div className="mt-8 grid max-w-xl grid-cols-3 gap-3 sm:gap-5">
               {[
@@ -512,9 +567,27 @@ export default function PublicGalleryPage() {
       <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">Alba</p>
-            <h2 className="mt-1 text-3xl font-black tracking-tight text-[#061A3A]">Fotky z akcí</h2>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">
+              {selectedAlbum ? "Album" : "Alba"}
+            </p>
+            <h2 className="mt-1 text-3xl font-black tracking-tight text-[#061A3A]">
+              {selectedAlbum ? selectedAlbum.title : "Fotky z akcí"}
+            </h2>
+            {selectedAlbum ? (
+              <p className="mt-2 max-w-3xl text-sm font-bold leading-6 text-slate-600">
+                {selectedAlbum.description || `${selectedAlbum.photos.length} fotek / ${formatDate(selectedAlbum.eventDate)}`}
+              </p>
+            ) : null}
           </div>
+          {selectedAlbum ? (
+            <button
+              className="rounded-full border border-[#D8E4F2] bg-white px-5 py-3 text-sm font-black text-[#061A3A] shadow-sm transition hover:-translate-y-0.5 hover:bg-blue-50"
+              onClick={closeAlbum}
+              type="button"
+            >
+              Zpět na alba
+            </button>
+          ) : null}
         </div>
 
         {isLoading ? (
@@ -529,61 +602,133 @@ export default function PublicGalleryPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-6">
-          {albums.map((album) => (
-            <article
-              className="overflow-hidden rounded-[28px] border border-[#D8E4F2] bg-white shadow-[0_20px_60px_rgba(6,26,58,0.08)]"
-              key={album.id}
-            >
-              <div className="flex flex-col gap-4 border-b border-[#D8E4F2] px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">{formatDate(album.eventDate)}</p>
-                  <h3 className="mt-1 text-2xl font-black tracking-tight text-[#061A3A]">{album.title}</h3>
-                  {album.description ? <p className="mt-2 max-w-4xl text-sm font-bold leading-6 text-slate-600">{album.description}</p> : null}
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="rounded-full bg-[#F4F8FF] px-4 py-2 text-sm font-black text-[#0F4FA8]">
-                    {album.photos.length} fotek
-                  </span>
+        {!selectedAlbum ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {albums.map((album) => {
+              const coverPhoto = album.photos[0] ?? null;
+              return (
+                <article
+                  className="group overflow-hidden rounded-[28px] border border-[#D8E4F2] bg-white shadow-[0_20px_60px_rgba(6,26,58,0.08)] transition hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(6,26,58,0.14)]"
+                  key={album.id}
+                >
+                  <button className="block w-full text-left" onClick={() => openAlbum(album.id)} type="button">
+                    <div className="relative aspect-[4/3] overflow-hidden bg-[#061A3A]">
+                      {coverPhoto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          alt={album.title}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                          loading="lazy"
+                          src={coverPhoto.publicUrl}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(239,35,60,0.35),transparent_30%),linear-gradient(135deg,#0B2F6B,#061A3A)]">
+                          <Image
+                            alt="Logo Znojemského šipkařského spolku"
+                            className="h-auto w-32 opacity-80"
+                            height={700}
+                            src="/brand/zss-logo.png"
+                            width={560}
+                          />
+                        </div>
+                      )}
+                      <span className="absolute bottom-4 left-4 rounded-full bg-white px-4 py-2 text-sm font-black text-[#061A3A] shadow-lg">
+                        {album.photos.length} fotek
+                      </span>
+                    </div>
+                    <div className="p-5">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">{formatDate(album.eventDate)}</p>
+                      <h3 className="mt-2 text-2xl font-black tracking-tight text-[#061A3A]">{album.title}</h3>
+                      {album.description ? <p className="mt-2 line-clamp-2 text-sm font-bold leading-6 text-slate-600">{album.description}</p> : null}
+                    </div>
+                  </button>
                   {currentUser?.canDelete ? (
-                    <button
-                      className="rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-950/10 transition hover:-translate-y-0.5 hover:bg-red-500"
-                      onClick={() => void deleteAlbum(album.id)}
-                      type="button"
-                    >
-                      Smazat album
-                    </button>
+                    <div className="border-t border-[#D8E4F2] px-5 py-4">
+                      <button
+                        className="rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-950/10 transition hover:-translate-y-0.5 hover:bg-red-500"
+                        onClick={() => void deleteAlbum(album.id)}
+                        type="button"
+                      >
+                        Smazat album
+                      </button>
+                    </div>
                   ) : null}
-                </div>
-              </div>
-
-              {album.photos.length === 0 ? (
-                <p className="px-5 py-6 text-sm font-bold text-slate-500 sm:px-6">Album zatím neobsahuje žádné fotky.</p>
-              ) : (
-                <div className="grid gap-3 p-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                  {album.photos.map((photo) => (
-                    <a
-                      className="group block overflow-hidden rounded-3xl bg-[#F4F8FF]"
-                      href={photo.publicUrl}
-                      key={photo.id}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt={album.title}
-                        className="aspect-[4/3] w-full object-cover transition duration-300 group-hover:scale-105"
-                        loading="lazy"
-                        src={photo.publicUrl}
-                      />
-                    </a>
-                  ))}
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : selectedAlbum.photos.length === 0 ? (
+          <div className="rounded-[28px] border border-[#D8E4F2] bg-white px-6 py-8 text-sm font-bold text-slate-500 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
+            Album zatím neobsahuje žádné fotky.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {selectedAlbum.photos.map((photo, index) => (
+              <button
+                className="group block overflow-hidden rounded-3xl bg-[#F4F8FF] text-left shadow-[0_14px_38px_rgba(6,26,58,0.08)]"
+                key={photo.id}
+                onClick={() => setLightboxPhotoIndex(index)}
+                type="button"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  alt={`${selectedAlbum.title} - fotka ${index + 1}`}
+                  className="aspect-[4/3] w-full object-cover transition duration-300 group-hover:scale-105"
+                  loading="lazy"
+                  src={photo.publicUrl}
+                />
+              </button>
+            ))}
+          </div>
+        )}
       </section>
+
+      {selectedAlbum && lightboxPhoto ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#061A3A]/95 p-4 text-white"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Fotka ${lightboxPhotoIndex! + 1} z alba ${selectedAlbum.title}`}
+        >
+          <button
+            className="absolute right-4 top-4 rounded-full bg-white px-4 py-2 text-sm font-black text-[#061A3A] shadow-lg transition hover:-translate-y-0.5 hover:bg-blue-50"
+            onClick={() => setLightboxPhotoIndex(null)}
+            type="button"
+          >
+            Zavřít
+          </button>
+
+          <button
+            className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-3xl font-black backdrop-blur transition hover:bg-white hover:text-[#061A3A] sm:left-6 sm:h-14 sm:w-14"
+            onClick={() => moveLightbox(-1)}
+            type="button"
+            aria-label="Předchozí fotka"
+          >
+            ‹
+          </button>
+
+          <div className="flex max-h-[86vh] max-w-6xl flex-col items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt={`${selectedAlbum.title} - fotka ${lightboxPhotoIndex! + 1}`}
+              className="max-h-[78vh] max-w-full rounded-3xl object-contain shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
+              src={lightboxPhoto.publicUrl}
+            />
+            <p className="rounded-full bg-white/10 px-4 py-2 text-sm font-black text-blue-100 backdrop-blur">
+              {selectedAlbum.title} / {lightboxPhotoIndex! + 1} z {selectedAlbum.photos.length}
+            </p>
+          </div>
+
+          <button
+            className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-3xl font-black backdrop-blur transition hover:bg-white hover:text-[#061A3A] sm:right-6 sm:h-14 sm:w-14"
+            onClick={() => moveLightbox(1)}
+            type="button"
+            aria-label="Další fotka"
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
 
       <PublicFooter />
     </main>

@@ -12,18 +12,20 @@ type PublicUser = {
   canAccessAdmin: boolean;
 };
 
-const baseNavigationItems = [
-  { href: "/", label: "Úvod" },
-  { href: "/tabulky", label: "Liga" },
-  { href: "/turnaje", label: "Turnaje" },
-  { href: "/kalendar", label: "Kalendář" },
+const leagueNavigationItems = [
+  { href: "/tabulky", label: "Tabulky" },
+  { href: "/zapasy", label: "Zápasy" },
   { href: "/hraci", label: "Hráči" },
   { href: "/tymy", label: "Týmy" },
+];
+
+const baseNavigationItems = [
+  { href: "/", label: "Úvod" },
+  { href: "/tabulky", label: "Liga", children: leagueNavigationItems },
+  { href: "/turnaje", label: "Turnaje" },
   { href: "/registrace", label: "Registrace" },
   { href: "/galerie", label: "Galerie" },
   { href: "/scoreboard", label: "Počítadlo" },
-  { href: "/diskuze", label: "Diskuze" },
-  { href: "/kontakt", label: "Kontakt" },
 ];
 
 async function loadPublicUser() {
@@ -82,6 +84,7 @@ export function PublicHeader({ activeHref = "/" }: { activeHref?: string }) {
     () => (user ? [...baseNavigationItems, { href: "/admin", label: "Administrace" }] : baseNavigationItems),
     [user],
   );
+  const isLeagueActive = leagueNavigationItems.some((item) => item.href === activeHref);
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#061A3A]/95 text-white shadow-[0_14px_40px_rgba(6,26,58,0.22)] backdrop-blur">
@@ -104,15 +107,42 @@ export function PublicHeader({ activeHref = "/" }: { activeHref?: string }) {
         <div className="flex min-w-0 items-center gap-3">
           <nav className="hidden items-center gap-5 xl:flex">
             {navigationItems.map((item) => (
-              <Link
-                className={`text-sm font-extrabold transition ${
-                  item.href === activeHref ? "text-white" : "text-blue-100 hover:text-white"
-                }`}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
+              item.children ? (
+                <div className="group relative" key={item.href}>
+                  <Link
+                    className={`inline-flex items-center gap-1 text-sm font-extrabold transition ${
+                      isLeagueActive ? "text-white" : "text-blue-100 hover:text-white"
+                    }`}
+                    href={item.href}
+                  >
+                    {item.label}
+                    <span className="text-xs text-blue-200">▾</span>
+                  </Link>
+                  <div className="invisible absolute left-0 top-full z-40 min-w-44 translate-y-3 rounded-3xl border border-white/10 bg-white p-2 opacity-0 shadow-[0_24px_60px_rgba(6,26,58,0.24)] transition group-hover:visible group-hover:translate-y-2 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-2 group-focus-within:opacity-100">
+                    {item.children.map((child) => (
+                      <Link
+                        className={`block rounded-2xl px-4 py-3 text-sm font-black transition ${
+                          child.href === activeHref ? "bg-[#F4F8FF] text-[#EF233C]" : "text-[#061A3A] hover:bg-[#F4F8FF]"
+                        }`}
+                        href={child.href}
+                        key={child.href}
+                      >
+                        {child.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <Link
+                  className={`text-sm font-extrabold transition ${
+                    item.href === activeHref ? "text-white" : "text-blue-100 hover:text-white"
+                  }`}
+                  href={item.href}
+                  key={item.href}
+                >
+                  {item.label}
+                </Link>
+              )
             ))}
           </nav>
 
@@ -152,7 +182,7 @@ export function PublicHeader({ activeHref = "/" }: { activeHref?: string }) {
         {navigationItems.map((item) => (
           <Link
             className={`whitespace-nowrap rounded-full border px-3 py-2 text-sm font-bold ${
-              item.href === activeHref
+              item.href === activeHref || (item.children && isLeagueActive)
                 ? "border-white bg-white text-[#061A3A]"
                 : "border-white/10 bg-white/5 text-blue-100"
             }`}
@@ -162,6 +192,19 @@ export function PublicHeader({ activeHref = "/" }: { activeHref?: string }) {
             {item.label}
           </Link>
         ))}
+        {isLeagueActive
+          ? leagueNavigationItems.map((item) => (
+              <Link
+                className={`whitespace-nowrap rounded-full border px-3 py-2 text-sm font-bold ${
+                  item.href === activeHref ? "border-white bg-white text-[#061A3A]" : "border-white/10 bg-white/5 text-blue-100"
+                }`}
+                href={item.href}
+                key={`mobile-${item.href}`}
+              >
+                {item.label}
+              </Link>
+            ))
+          : null}
       </nav>
     </header>
   );
@@ -186,9 +229,12 @@ export function PublicFooter() {
         </div>
         <div className="flex flex-wrap gap-4 text-sm font-bold text-blue-100">
           <Link href="/">Úvod</Link>
+          <Link href="/tabulky">Liga</Link>
           <Link href="/tabulky">Tabulky</Link>
-          <Link href="/tymy">Týmy</Link>
           <Link href="/turnaje">Turnaje</Link>
+          <Link href="/registrace">Registrace</Link>
+          <Link href="/galerie">Galerie</Link>
+          <Link href="/scoreboard">Počítadlo</Link>
           <Link href="/prihlaseni">Přihlášení</Link>
         </div>
       </div>
