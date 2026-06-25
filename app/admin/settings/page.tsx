@@ -8,6 +8,7 @@ type HomepageSettings = {
   homepageKicker: string;
   homepageTitle: string;
   homepageSubtitle: string;
+  teamRegistrationIntro: string;
 };
 
 type SettingsResponse = {
@@ -20,6 +21,8 @@ const defaultSettings: HomepageSettings = {
   homepageKicker: "Regionální šipková liga",
   homepageTitle: "Znojemský šipkařský spolek",
   homepageSubtitle: "Oficiální systém lig, turnajů a statistik.",
+  teamRegistrationIntro:
+    "Formulář pro registraci týmu do Znojemské šipkařské týmové ligy pro sezonu 2026/2027.\n\nRegistrační poplatek na sezonu je stanoven na 1500 Kč. Uhrazení proběhne na účet Znojemského šipkařského spolku. Do poznámky pro příjemce uvést název týmu.\nČ. účtu: 246898551\nKód banky: 0/600\n\nTermín odevzdání přihlášek je stanoven na 31. 7. 2026",
 };
 
 const inputClass =
@@ -164,6 +167,19 @@ export default function AdminSettingsPage() {
                 updateField("homepageSubtitle", event.target.value)
               }
               value={settings.homepageSubtitle}
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-black text-[var(--brand-navy)]">
+            Text u registrace týmu
+            <textarea
+              className={`${inputClass} min-h-56 resize-y whitespace-pre-wrap`}
+              disabled={isLoading || isSaving}
+              maxLength={3000}
+              onChange={(event) =>
+                updateField("teamRegistrationIntro", event.target.value)
+              }
+              value={settings.teamRegistrationIntro}
             />
           </label>
 

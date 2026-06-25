@@ -24,6 +24,8 @@ type TeamRosterPlayer = {
   last_name: string;
   email: string | null;
   phone: string | null;
+  address: string | null;
+  date_of_birth: string | null;
   note: string | null;
   matched_player_id: string | null;
   player_status: PlayerStatus;
@@ -35,6 +37,14 @@ type TeamRequest = {
   captain_name: string;
   captain_email: string;
   captain_phone: string | null;
+  captain_address: string | null;
+  captain_date_of_birth: string | null;
+  assistant_captain_name: string | null;
+  assistant_captain_email: string | null;
+  assistant_captain_phone: string | null;
+  assistant_captain_address: string | null;
+  assistant_captain_date_of_birth: string | null;
+  wants_major_tournament: boolean;
   note: string | null;
   status: RequestStatus;
   admin_note: string | null;
@@ -99,6 +109,11 @@ function playerStatusClass(status: PlayerStatus) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatPlainDate(value: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium" }).format(new Date(value));
 }
 
 function playerName(player: Pick<TeamRosterPlayer | PlayerRequest, "first_name" | "last_name">) {
@@ -290,17 +305,36 @@ export default function AdminRegistrationsPage() {
                   <h2 className="text-2xl font-black text-[#061A3A]">{selectedTeamRequest.team_name}</h2>
                   <p className="mt-1 text-sm font-bold text-slate-600">Kapitán: {selectedTeamRequest.captain_name} / {selectedTeamRequest.captain_email}</p>
                   {selectedTeamRequest.captain_phone ? <p className="mt-1 text-sm font-bold text-slate-600">Telefon: {selectedTeamRequest.captain_phone}</p> : null}
+                  <p className="mt-1 text-sm font-bold text-slate-600">
+                    Adresa: {selectedTeamRequest.captain_address || "-"} / Datum narození: {formatPlainDate(selectedTeamRequest.captain_date_of_birth)}
+                  </p>
+                  {selectedTeamRequest.assistant_captain_name ? (
+                    <div className="mt-3 rounded-2xl border border-[var(--admin-border)] bg-[#F4F8FF] p-3 text-sm font-bold text-slate-600">
+                      <p>Zástupce kapitána: {selectedTeamRequest.assistant_captain_name}</p>
+                      <p>
+                        Kontakt: {selectedTeamRequest.assistant_captain_email || "-"}
+                        {selectedTeamRequest.assistant_captain_phone ? ` / ${selectedTeamRequest.assistant_captain_phone}` : ""}
+                      </p>
+                      <p>
+                        Adresa: {selectedTeamRequest.assistant_captain_address || "-"} / Datum narození: {formatPlainDate(selectedTeamRequest.assistant_captain_date_of_birth)}
+                      </p>
+                    </div>
+                  ) : null}
+                  <p className="mt-3 text-sm font-black text-[#061A3A]">
+                    Zájem o pořádání Major turnaje: {selectedTeamRequest.wants_major_tournament ? "ano" : "ne"}
+                  </p>
                 </div>
                 <span className={statusClass(selectedTeamRequest.status)}>{statusLabels[selectedTeamRequest.status]}</span>
               </div>
               {selectedTeamRequest.note ? <p className="mt-4 text-sm text-slate-600">{selectedTeamRequest.note}</p> : null}
 
               <div className="mt-6 overflow-x-auto">
-                <table className="w-full min-w-[820px] text-left text-sm">
+                <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-[#EEF5FF] text-slate-600">
                     <tr>
                       <th className="px-3 py-3">Hráč</th>
                       <th className="px-3 py-3">Kontakt</th>
+                      <th className="px-3 py-3">Údaje</th>
                       <th className="px-3 py-3">Stav</th>
                       <th className="px-3 py-3">Existující hráč</th>
                     </tr>
@@ -313,6 +347,11 @@ export default function AdminRegistrationsPage() {
                           {player.note ? <p className="mt-1 text-xs font-bold text-slate-500">{player.note}</p> : null}
                         </td>
                         <td className="px-3 py-3 text-slate-600">{player.email || "-"}<br />{player.phone || ""}</td>
+                        <td className="px-3 py-3 text-slate-600">
+                          {player.address || "-"}
+                          <br />
+                          {formatPlainDate(player.date_of_birth)}
+                        </td>
                         <td className="px-3 py-3"><span className={playerStatusClass(player.player_status)}>{playerStatusLabels[player.player_status]}</span></td>
                         <td className="px-3 py-3">
                           <select

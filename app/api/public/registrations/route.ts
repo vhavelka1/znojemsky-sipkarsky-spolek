@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { homepageSettingKeys, publicSettingsFromRows, SettingRow } from "@/lib/homepageSettings";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 type RegistrationType = "team" | "player";
@@ -8,6 +9,8 @@ type TeamRegistrationPlayerInput = {
   last_name?: unknown;
   email?: unknown;
   phone?: unknown;
+  address?: unknown;
+  date_of_birth?: unknown;
   note?: unknown;
 };
 
@@ -18,8 +21,14 @@ type RegistrationBody = {
   captain_name?: unknown;
   captain_email?: unknown;
   captain_phone?: unknown;
-  preferred_league_id?: unknown;
-  preferred_group_id?: unknown;
+  captain_address?: unknown;
+  captain_date_of_birth?: unknown;
+  assistant_captain_name?: unknown;
+  assistant_captain_email?: unknown;
+  assistant_captain_phone?: unknown;
+  assistant_captain_address?: unknown;
+  assistant_captain_date_of_birth?: unknown;
+  wants_major_tournament?: unknown;
   note?: unknown;
   rules_accepted?: unknown;
   roster?: unknown;
@@ -45,6 +54,12 @@ function requiredString(value: unknown) {
 function optionalEmail(value: unknown) {
   const email = optionalString(value);
   return email ? email.toLowerCase() : null;
+}
+
+function optionalDate(value: unknown) {
+  const text = optionalString(value);
+  if (!text) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 function isUuid(value: string | null) {
@@ -73,7 +88,7 @@ async function activeSeasonId(supabase: ReturnType<typeof createSupabaseAdminCli
 export async function GET() {
   try {
     const supabase = createSupabaseAdminClient();
-    const [seasons, leagues, groups, teams] = await Promise.all([
+    const [seasons, leagues, groups, teams, settings] = await Promise.all([
       supabase
         .from("seasons")
         .select("id, name, is_active, starts_on")
@@ -94,12 +109,19 @@ export async function GET() {
         .select("id, name")
         .is("deleted_at", null)
         .order("name", { ascending: true }),
+      supabase
+        .from("app_settings")
+        .select("key, value")
+        .in("key", Object.values(homepageSettingKeys))
+        .is("deleted_at", null)
+        .returns<SettingRow[]>(),
     ]);
 
     const error = seasons.error ?? leagues.error ?? groups.error ?? teams.error;
     if (error) {
       return NextResponse.json({ error: "Data pro registraci se nepodařilo načíst." }, { status: 500 });
     }
+    const publicSettings = settings.error ? publicSettingsFromRows(null) : publicSettingsFromRows(settings.data);
 
     return NextResponse.json({
       seasons: seasons.data ?? [],
@@ -107,6 +129,7 @@ export async function GET() {
       groups: groups.data ?? [],
       teams: teams.data ?? [],
       activeSeasonId: (seasons.data ?? []).find((season) => season.is_active)?.id ?? seasons.data?.[0]?.id ?? null,
+      teamRegistrationIntro: publicSettings.teamRegistrationIntro,
     });
   } catch {
     return NextResponse.json({ error: "Data pro registraci se nepodařilo načíst." }, { status: 500 });
@@ -136,10 +159,40 @@ export async function POST(request: Request) {
       const teamName = requiredString(body.team_name);
       const captainName = requiredString(body.captain_name);
       const captainEmail = optionalEmail(body.captain_email);
+      const captainAddress = optionalString(body.captain_address);
+      const captainDateOfBirth = optionalDate(body.captain_date_of_birth);
+      const assistantCaptainName = optionalString(body.assistant_captain_name);
+      const assistantCaptainEmail = optionalEmail(body.assistant_captain_email);
+      const assistantCaptainPhone = optionalString(body.assistant_captain_phone);
+      const assistantCaptainAddress = optionalString(body.assistant_captain_address);
+      const assistantCaptainDateOfBirth = optionalDate(body.assistant_captain_date_of_birth);
+      const hasAssistantCaptain = Boolean(
+        assistantCaptainName ||
+        assistantCaptainEmail ||
+        assistantCaptainPhone ||
+        assistantCaptainAddress ||
+        assistantCaptainDateOfBirth,
+      );
       const roster = Array.isArray(body.roster) ? body.roster : [];
 
       if (!teamName || !captainName || !isEmail(captainEmail)) {
         return NextResponse.json({ error: "Vyplňte název týmu, kapitána a platný email kapitána." }, { status: 400 });
+      }
+
+      if (!captainAddress || !captainDateOfBirth) {
+        return NextResponse.json({ error: "Vyplňte adresu a datum narození kapitána." }, { status: 400 });
+      }
+
+      if (assistantCaptainEmail && !isEmail(assistantCaptainEmail)) {
+        return NextResponse.json({ error: "Vyplňte platný email zástupce kapitána." }, { status: 400 });
+      }
+
+      if (hasAssistantCaptain && !assistantCaptainName) {
+        return NextResponse.json({ error: "Vyplňte jméno zástupce kapitána." }, { status: 400 });
+      }
+
+      if (hasAssistantCaptain && (!assistantCaptainAddress || !assistantCaptainDateOfBirth)) {
+        return NextResponse.json({ error: "Vyplňte adresu a datum narození zástupce kapitána." }, { status: 400 });
       }
 
       const players = roster
@@ -149,6 +202,8 @@ export async function POST(request: Request) {
           last_name: requiredString(player.last_name),
           email: optionalEmail(player.email),
           phone: optionalString(player.phone),
+          address: optionalString(player.address),
+          date_of_birth: optionalDate(player.date_of_birth),
           note: optionalString(player.note),
         }))
         .filter((player) => player.first_name && player.last_name);
@@ -165,8 +220,14 @@ export async function POST(request: Request) {
           captain_name: captainName,
           captain_email: captainEmail,
           captain_phone: optionalString(body.captain_phone),
-          preferred_league_id: optionalUuid(body.preferred_league_id),
-          preferred_group_id: optionalUuid(body.preferred_group_id),
+          captain_address: captainAddress,
+          captain_date_of_birth: captainDateOfBirth,
+          assistant_captain_name: assistantCaptainName,
+          assistant_captain_email: assistantCaptainEmail,
+          assistant_captain_phone: assistantCaptainPhone,
+          assistant_captain_address: assistantCaptainAddress,
+          assistant_captain_date_of_birth: assistantCaptainDateOfBirth,
+          wants_major_tournament: body.wants_major_tournament === true,
           note: optionalString(body.note),
         })
         .select("id")
@@ -183,6 +244,8 @@ export async function POST(request: Request) {
           last_name: player.last_name,
           email: player.email,
           phone: player.phone,
+          address: player.address,
+          date_of_birth: player.date_of_birth,
           note: player.note,
           player_status: "pending",
         })),

@@ -5,12 +5,14 @@ export type PublicHomepageSettings = {
   kicker: string;
   title: string;
   subtitle: string;
+  teamRegistrationIntro: string;
 };
 
 export type AdminHomepageSettings = {
   homepageKicker: string;
   homepageTitle: string;
   homepageSubtitle: string;
+  teamRegistrationIntro: string;
 };
 
 export type SettingRow = {
@@ -22,12 +24,15 @@ export const defaultHomepageSettings: PublicHomepageSettings = {
   kicker: "Regionální šipková liga",
   title: "Znojemský šipkařský spolek",
   subtitle: "Oficiální systém lig, turnajů a statistik.",
+  teamRegistrationIntro:
+    "Formulář pro registraci týmu do Znojemské šipkařské týmové ligy pro sezonu 2026/2027.\n\nRegistrační poplatek na sezonu je stanoven na 1500 Kč. Uhrazení proběhne na účet Znojemského šipkařského spolku. Do poznámky pro příjemce uvést název týmu.\nČ. účtu: 246898551\nKód banky: 0/600\n\nTermín odevzdání přihlášek je stanoven na 31. 7. 2026",
 };
 
 export const homepageSettingKeys = {
   kicker: "homepage_kicker",
   title: "homepage_title",
   subtitle: "homepage_subtitle",
+  teamRegistrationIntro: "team_registration_intro",
 } as const;
 
 const localSettingsPath = path.join(process.cwd(), "data", "homepage-settings.json");
@@ -41,6 +46,15 @@ function clean(value: unknown, fallback: string) {
   return trimmed.length > 0 ? trimmed.slice(0, 180) : fallback;
 }
 
+function cleanLongText(value: unknown, fallback: string) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 3000) : fallback;
+}
+
 export function normalizePublicHomepageSettings(
   settings: Partial<PublicHomepageSettings>,
 ) {
@@ -48,6 +62,10 @@ export function normalizePublicHomepageSettings(
     kicker: clean(settings.kicker, defaultHomepageSettings.kicker),
     title: clean(settings.title, defaultHomepageSettings.title),
     subtitle: clean(settings.subtitle, defaultHomepageSettings.subtitle),
+    teamRegistrationIntro: cleanLongText(
+      settings.teamRegistrationIntro,
+      defaultHomepageSettings.teamRegistrationIntro,
+    ),
   };
 }
 
@@ -58,6 +76,7 @@ export function publicSettingsFromRows(rows: SettingRow[] | null) {
     kicker: values.get(homepageSettingKeys.kicker),
     title: values.get(homepageSettingKeys.title),
     subtitle: values.get(homepageSettingKeys.subtitle),
+    teamRegistrationIntro: values.get(homepageSettingKeys.teamRegistrationIntro),
   });
 }
 
@@ -68,6 +87,7 @@ export function toAdminHomepageSettings(
     homepageKicker: settings.kicker,
     homepageTitle: settings.title,
     homepageSubtitle: settings.subtitle,
+    teamRegistrationIntro: settings.teamRegistrationIntro,
   };
 }
 
@@ -78,6 +98,7 @@ export function toPublicHomepageSettings(
     kicker: settings.homepageKicker,
     title: settings.homepageTitle,
     subtitle: settings.homepageSubtitle,
+    teamRegistrationIntro: settings.teamRegistrationIntro,
   });
 }
 
@@ -86,6 +107,7 @@ export function toSettingRows(settings: PublicHomepageSettings) {
     { key: homepageSettingKeys.kicker, value: settings.kicker, deleted_at: null },
     { key: homepageSettingKeys.title, value: settings.title, deleted_at: null },
     { key: homepageSettingKeys.subtitle, value: settings.subtitle, deleted_at: null },
+    { key: homepageSettingKeys.teamRegistrationIntro, value: settings.teamRegistrationIntro, deleted_at: null },
   ];
 }
 

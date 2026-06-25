@@ -12,6 +12,14 @@ type TeamRegistrationRequest = {
   captain_name: string;
   captain_email: string;
   captain_phone: string | null;
+  captain_address: string | null;
+  captain_date_of_birth: string | null;
+  assistant_captain_name: string | null;
+  assistant_captain_email: string | null;
+  assistant_captain_phone: string | null;
+  assistant_captain_address: string | null;
+  assistant_captain_date_of_birth: string | null;
+  wants_major_tournament: boolean;
   preferred_league_id: string | null;
   preferred_group_id: string | null;
   note: string | null;
@@ -27,6 +35,8 @@ type TeamRegistrationPlayer = {
   last_name: string;
   email: string | null;
   phone: string | null;
+  address: string | null;
+  date_of_birth: string | null;
   note: string | null;
   matched_player_id: string | null;
   player_status: PlayerStatus;
@@ -223,7 +233,15 @@ async function createOrFindTeamSeason(
 
 async function createOrFindPlayer(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  data: { firstName: string; lastName: string; email: string | null; phone?: string | null; matchedPlayerId?: string | null },
+  data: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone?: string | null;
+    residence?: string | null;
+    dateOfBirth?: string | null;
+    matchedPlayerId?: string | null;
+  },
 ) {
   if (data.matchedPlayerId) return data.matchedPlayerId;
 
@@ -256,6 +274,8 @@ async function createOrFindPlayer(
       last_name: data.lastName,
       email: data.email,
       phone: data.phone ?? null,
+      residence: data.residence ?? null,
+      date_of_birth: data.dateOfBirth ?? null,
     })
     .select("id")
     .single<{ id: string }>();
@@ -269,7 +289,7 @@ async function ensureMembership(
   seasonId: string | null,
   teamSeasonId: string | null,
   playerId: string,
-  memberRole: "player" | "captain",
+  memberRole: "player" | "captain" | "assistant_captain",
 ) {
   if (!seasonId || !teamSeasonId) return;
 
@@ -316,13 +336,13 @@ async function loadPayload(supabase: ReturnType<typeof createSupabaseAdminClient
   ] = await Promise.all([
     supabase
       .from("team_registration_requests")
-      .select("id, season_id, team_name, captain_name, captain_email, captain_phone, preferred_league_id, preferred_group_id, note, status, admin_note, created_at")
+      .select("id, season_id, team_name, captain_name, captain_email, captain_phone, captain_address, captain_date_of_birth, assistant_captain_name, assistant_captain_email, assistant_captain_phone, assistant_captain_address, assistant_captain_date_of_birth, wants_major_tournament, preferred_league_id, preferred_group_id, note, status, admin_note, created_at")
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .returns<TeamRegistrationRequest[]>(),
     supabase
       .from("team_registration_players")
-      .select("id, request_id, first_name, last_name, email, phone, note, matched_player_id, player_status")
+      .select("id, request_id, first_name, last_name, email, phone, address, date_of_birth, note, matched_player_id, player_status")
       .returns<TeamRegistrationPlayer[]>(),
     supabase
       .from("player_registration_requests")
@@ -414,7 +434,7 @@ function csvEscape(value: unknown) {
 
 function toCsv(payload: Awaited<ReturnType<typeof loadPayload>>) {
   const rows = [
-    ["typ žádosti", "tým", "kapitán", "hráč", "email", "telefon", "stav hráče", "stav žádosti", "poznámka"],
+    ["typ žádosti", "tým", "kapitán", "major turnaj", "hráč", "email", "telefon", "adresa", "datum narození", "stav hráče", "stav žádosti", "poznámka"],
   ];
 
   payload.teamRequests.forEach((request) => {
@@ -423,9 +443,12 @@ function toCsv(payload: Awaited<ReturnType<typeof loadPayload>>) {
         "tým",
         request.team_name,
         request.captain_name,
+        request.wants_major_tournament ? "ano" : "ne",
         fullName(player.first_name, player.last_name),
         player.email ?? "",
         player.phone ?? "",
+        player.address ?? "",
+        player.date_of_birth ?? "",
         player.player_status,
         request.status,
         player.note ?? request.note ?? "",
@@ -438,9 +461,12 @@ function toCsv(payload: Awaited<ReturnType<typeof loadPayload>>) {
       "jednotlivec",
       request.preferred_team_name ?? "",
       "",
+      "",
       fullName(request.first_name, request.last_name),
       request.email,
       request.phone ?? "",
+      "",
+      "",
       request.player_status,
       request.status,
       request.note ?? "",
@@ -502,10 +528,10 @@ export async function PATCH(request: Request) {
     if (kind === "team") {
       const { data: requestRow, error: requestError } = await supabase
         .from("team_registration_requests")
-        .select("id, season_id, team_name, captain_name, captain_email, captain_phone, status")
+        .select("id, season_id, team_name, captain_name, captain_email, captain_phone, captain_address, captain_date_of_birth, assistant_captain_name, assistant_captain_email, assistant_captain_phone, assistant_captain_address, assistant_captain_date_of_birth, status")
         .eq("id", id)
         .is("deleted_at", null)
-        .single<Pick<TeamRegistrationRequest, "id" | "season_id" | "team_name" | "captain_name" | "captain_email" | "captain_phone" | "status">>();
+        .single<Pick<TeamRegistrationRequest, "id" | "season_id" | "team_name" | "captain_name" | "captain_email" | "captain_phone" | "captain_address" | "captain_date_of_birth" | "assistant_captain_name" | "assistant_captain_email" | "assistant_captain_phone" | "assistant_captain_address" | "assistant_captain_date_of_birth" | "status">>();
 
       if (requestError || !requestRow) {
         return NextResponse.json({ error: "Žádost nebyla nalezena." }, { status: 404 });
@@ -529,9 +555,9 @@ export async function PATCH(request: Request) {
         : {};
       const { data: roster, error: rosterError } = await supabase
         .from("team_registration_players")
-        .select("id, first_name, last_name, email, phone, matched_player_id")
+        .select("id, first_name, last_name, email, phone, address, date_of_birth, matched_player_id")
         .eq("request_id", id)
-        .returns<Array<Pick<TeamRegistrationPlayer, "id" | "first_name" | "last_name" | "email" | "phone" | "matched_player_id">>>();
+        .returns<Array<Pick<TeamRegistrationPlayer, "id" | "first_name" | "last_name" | "email" | "phone" | "address" | "date_of_birth" | "matched_player_id">>>();
 
       if (rosterError) throw new Error(rosterError.message);
 
@@ -543,8 +569,23 @@ export async function PATCH(request: Request) {
         lastName: captainParts.lastName,
         email: requestRow.captain_email,
         phone: requestRow.captain_phone,
+        residence: requestRow.captain_address,
+        dateOfBirth: requestRow.captain_date_of_birth,
       });
       await ensureMembership(supabase, requestRow.season_id, teamSeasonId, captainId, "captain");
+
+      if (requestRow.assistant_captain_name) {
+        const assistantParts = splitName(requestRow.assistant_captain_name);
+        const assistantId = await createOrFindPlayer(supabase, {
+          firstName: assistantParts.firstName,
+          lastName: assistantParts.lastName,
+          email: requestRow.assistant_captain_email,
+          phone: requestRow.assistant_captain_phone,
+          residence: requestRow.assistant_captain_address,
+          dateOfBirth: requestRow.assistant_captain_date_of_birth,
+        });
+        await ensureMembership(supabase, requestRow.season_id, teamSeasonId, assistantId, "assistant_captain");
+      }
 
       for (const row of roster ?? []) {
         const matchedPlayerId = optionalUuid(rosterMatches[row.id]) ?? row.matched_player_id;
@@ -553,6 +594,8 @@ export async function PATCH(request: Request) {
           lastName: row.last_name,
           email: row.email,
           phone: row.phone,
+          residence: row.address,
+          dateOfBirth: row.date_of_birth,
           matchedPlayerId,
         });
         const { error } = await supabase.from("team_registration_players").update({ matched_player_id: playerId, player_status: "active" }).eq("id", row.id);

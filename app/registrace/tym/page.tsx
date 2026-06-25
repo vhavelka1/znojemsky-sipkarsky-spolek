@@ -1,15 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { PublicHero, PublicPageShell } from "@/components/public/PublicShell";
 
-type League = { id: string; season_id: string; name: string };
-type Group = { id: string; league_id: string; name: string };
 type MetaPayload = {
   activeSeasonId?: string | null;
-  leagues?: League[];
-  groups?: Group[];
+  teamRegistrationIntro?: string;
   error?: string;
 };
 type RosterPlayer = {
@@ -17,6 +14,8 @@ type RosterPlayer = {
   last_name: string;
   email: string;
   phone: string;
+  address: string;
+  date_of_birth: string;
   note: string;
 };
 
@@ -25,6 +24,8 @@ const emptyPlayer: RosterPlayer = {
   last_name: "",
   email: "",
   phone: "",
+  address: "",
+  date_of_birth: "",
   note: "",
 };
 
@@ -32,14 +33,19 @@ const inputClass =
   "min-h-12 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold text-[#061A3A] outline-none transition focus:border-[#3B82F6]";
 
 export default function TeamRegistrationPage() {
-  const [leagues, setLeagues] = useState<League[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [teamRegistrationIntro, setTeamRegistrationIntro] = useState("");
   const [teamName, setTeamName] = useState("");
   const [captainName, setCaptainName] = useState("");
   const [captainEmail, setCaptainEmail] = useState("");
   const [captainPhone, setCaptainPhone] = useState("");
-  const [leagueId, setLeagueId] = useState("");
-  const [groupId, setGroupId] = useState("");
+  const [captainAddress, setCaptainAddress] = useState("");
+  const [captainDateOfBirth, setCaptainDateOfBirth] = useState("");
+  const [assistantCaptainName, setAssistantCaptainName] = useState("");
+  const [assistantCaptainEmail, setAssistantCaptainEmail] = useState("");
+  const [assistantCaptainPhone, setAssistantCaptainPhone] = useState("");
+  const [assistantCaptainAddress, setAssistantCaptainAddress] = useState("");
+  const [assistantCaptainDateOfBirth, setAssistantCaptainDateOfBirth] = useState("");
+  const [wantsMajorTournament, setWantsMajorTournament] = useState(false);
   const [note, setNote] = useState("");
   const [rulesAccepted, setRulesAccepted] = useState(false);
   const [website, setWebsite] = useState("");
@@ -53,16 +59,10 @@ export default function TeamRegistrationPage() {
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as MetaPayload;
         if (!response.ok) throw new Error(body.error ?? "Data pro registraci se nepodařilo načíst.");
-        setLeagues(body.leagues ?? []);
-        setGroups(body.groups ?? []);
+        setTeamRegistrationIntro(body.teamRegistrationIntro ?? "");
       })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Data pro registraci se nepodařilo načíst."));
   }, []);
-
-  const visibleGroups = useMemo(
-    () => groups.filter((group) => !leagueId || group.league_id === leagueId),
-    [groups, leagueId],
-  );
 
   function updateRoster(index: number, patch: Partial<RosterPlayer>) {
     setRoster((current) => current.map((player, itemIndex) => (itemIndex === index ? { ...player, ...patch } : player)));
@@ -88,8 +88,14 @@ export default function TeamRegistrationPage() {
         captain_name: captainName,
         captain_email: captainEmail,
         captain_phone: captainPhone,
-        preferred_league_id: leagueId || null,
-        preferred_group_id: groupId || null,
+        captain_address: captainAddress,
+        captain_date_of_birth: captainDateOfBirth,
+        assistant_captain_name: assistantCaptainName,
+        assistant_captain_email: assistantCaptainEmail,
+        assistant_captain_phone: assistantCaptainPhone,
+        assistant_captain_address: assistantCaptainAddress,
+        assistant_captain_date_of_birth: assistantCaptainDateOfBirth,
+        wants_major_tournament: wantsMajorTournament,
         note,
         rules_accepted: rulesAccepted,
         roster,
@@ -108,8 +114,14 @@ export default function TeamRegistrationPage() {
     setCaptainName("");
     setCaptainEmail("");
     setCaptainPhone("");
-    setLeagueId("");
-    setGroupId("");
+    setCaptainAddress("");
+    setCaptainDateOfBirth("");
+    setAssistantCaptainName("");
+    setAssistantCaptainEmail("");
+    setAssistantCaptainPhone("");
+    setAssistantCaptainAddress("");
+    setAssistantCaptainDateOfBirth("");
+    setWantsMajorTournament(false);
     setNote("");
     setRulesAccepted(false);
     setRoster([{ ...emptyPlayer }]);
@@ -131,40 +143,91 @@ export default function TeamRegistrationPage() {
         <form className="mt-6 space-y-6 rounded-[28px] border border-[#D8E4F2] bg-white p-5 shadow-[0_18px_50px_rgba(6,26,58,0.10)] sm:p-7" onSubmit={submit}>
           {message ? <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-black text-green-800">{message}</div> : null}
           {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div> : null}
+          {teamRegistrationIntro ? (
+            <div className="whitespace-pre-line rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-5 text-sm font-bold leading-7 text-[#061A3A]">
+              {teamRegistrationIntro}
+            </div>
+          ) : null}
 
           <input className="hidden" onChange={(event) => setWebsite(event.target.value)} tabIndex={-1} value={website} />
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Název týmu
-              <input className={inputClass} onChange={(event) => setTeamName(event.target.value)} required value={teamName} />
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Jméno kapitána
-              <input className={inputClass} onChange={(event) => setCaptainName(event.target.value)} required value={captainName} />
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Email kapitána
-              <input className={inputClass} onChange={(event) => setCaptainEmail(event.target.value)} required type="email" value={captainEmail} />
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Telefon kapitána
-              <input className={inputClass} onChange={(event) => setCaptainPhone(event.target.value)} value={captainPhone} />
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Preferovaná liga
-              <select className={inputClass} onChange={(event) => { setLeagueId(event.target.value); setGroupId(""); }} value={leagueId}>
-                <option value="">Bez preference</option>
-                {leagues.map((league) => <option key={league.id} value={league.id}>{league.name}</option>)}
-              </select>
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Preferovaná skupina
-              <select className={inputClass} onChange={(event) => setGroupId(event.target.value)} value={groupId}>
-                <option value="">Bez preference</option>
-                {visibleGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-              </select>
-            </label>
+          <div className="rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-5">
+            <h2 className="text-xl font-black text-[#061A3A]">Údaje týmu</h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                Název týmu
+                <input className={inputClass} onChange={(event) => setTeamName(event.target.value)} required value={teamName} />
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-black text-[#061A3A] md:self-end">
+                <input
+                  checked={wantsMajorTournament}
+                  className="size-4"
+                  onChange={(event) => setWantsMajorTournament(event.target.checked)}
+                  type="checkbox"
+                />
+                Tým má zájem pořádat Major turnaj
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <section className="rounded-3xl border border-[#D8E4F2] bg-white p-5 shadow-[0_12px_32px_rgba(6,26,58,0.06)]">
+              <div>
+                <h2 className="text-xl font-black text-[#061A3A]">Kapitán</h2>
+                <p className="mt-1 text-sm font-bold text-slate-600">Hlavní kontaktní osoba týmu.</p>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Jméno a příjmení
+                  <input className={inputClass} onChange={(event) => setCaptainName(event.target.value)} required value={captainName} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Email
+                  <input className={inputClass} onChange={(event) => setCaptainEmail(event.target.value)} required type="email" value={captainEmail} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Telefon
+                  <input className={inputClass} onChange={(event) => setCaptainPhone(event.target.value)} value={captainPhone} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Datum narození
+                  <input className={inputClass} onChange={(event) => setCaptainDateOfBirth(event.target.value)} required type="date" value={captainDateOfBirth} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Adresa
+                  <input className={inputClass} onChange={(event) => setCaptainAddress(event.target.value)} required value={captainAddress} />
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-[#D8E4F2] bg-white p-5 shadow-[0_12px_32px_rgba(6,26,58,0.06)]">
+              <div>
+                <h2 className="text-xl font-black text-[#061A3A]">Zástupce kapitána</h2>
+                <p className="mt-1 text-sm font-bold text-slate-600">Volitelné, ale doporučené pro komunikaci se spolkem.</p>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Jméno a příjmení
+                  <input className={inputClass} onChange={(event) => setAssistantCaptainName(event.target.value)} value={assistantCaptainName} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Email
+                  <input className={inputClass} onChange={(event) => setAssistantCaptainEmail(event.target.value)} type="email" value={assistantCaptainEmail} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Telefon
+                  <input className={inputClass} onChange={(event) => setAssistantCaptainPhone(event.target.value)} value={assistantCaptainPhone} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Datum narození
+                  <input className={inputClass} onChange={(event) => setAssistantCaptainDateOfBirth(event.target.value)} type="date" value={assistantCaptainDateOfBirth} />
+                </label>
+                <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                  Adresa
+                  <input className={inputClass} onChange={(event) => setAssistantCaptainAddress(event.target.value)} value={assistantCaptainAddress} />
+                </label>
+              </div>
+            </section>
           </div>
 
           <label className="grid gap-2 text-sm font-black text-[#061A3A]">
@@ -197,6 +260,8 @@ export default function TeamRegistrationPage() {
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <input className={inputClass} onChange={(event) => updateRoster(index, { first_name: event.target.value })} placeholder="Jméno" required value={player.first_name} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { last_name: event.target.value })} placeholder="Příjmení" required value={player.last_name} />
+                    <input className={inputClass} onChange={(event) => updateRoster(index, { date_of_birth: event.target.value })} placeholder="Datum narození" type="date" value={player.date_of_birth} />
+                    <input className={inputClass} onChange={(event) => updateRoster(index, { address: event.target.value })} placeholder="Adresa" value={player.address} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { email: event.target.value })} placeholder="Email" type="email" value={player.email} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { phone: event.target.value })} placeholder="Telefon" value={player.phone} />
                     <input className={`${inputClass} md:col-span-2`} onChange={(event) => updateRoster(index, { note: event.target.value })} placeholder="Poznámka" value={player.note} />
