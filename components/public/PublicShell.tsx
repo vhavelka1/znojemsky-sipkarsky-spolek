@@ -109,16 +109,16 @@ export function PublicHeader({ activeHref = "/" }: { activeHref?: string }) {
             {navigationItems.map((item) => (
               item.children ? (
                 <div className="group relative" key={item.href}>
-                  <Link
+                  <button
                     className={`inline-flex items-center gap-1 text-sm font-extrabold transition ${
                       isLeagueActive ? "text-white" : "text-blue-100 hover:text-white"
                     }`}
-                    href={item.href}
+                    type="button"
                   >
                     {item.label}
                     <span className="text-xs text-blue-200">▾</span>
-                  </Link>
-                  <div className="invisible absolute left-0 top-full z-40 min-w-44 translate-y-3 rounded-3xl border border-white/10 bg-white p-2 opacity-0 shadow-[0_24px_60px_rgba(6,26,58,0.24)] transition group-hover:visible group-hover:translate-y-2 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-2 group-focus-within:opacity-100">
+                  </button>
+                  <div className="invisible absolute left-0 top-full z-40 min-w-44 rounded-3xl border border-white/10 bg-white p-2 opacity-0 shadow-[0_24px_60px_rgba(6,26,58,0.24)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
                     {item.children.map((child) => (
                       <Link
                         className={`block rounded-2xl px-4 py-3 text-sm font-black transition ${
