@@ -66,6 +66,10 @@ function isEmail(value: string | null) {
   return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
 }
 
+function isSchemaCacheColumnError(message: string | undefined) {
+  return Boolean(message?.includes("schema cache") && message.includes("column"));
+}
+
 async function activeSeasonId(supabase: ReturnType<typeof createSupabaseAdminClient>) {
   const { data } = await supabase
     .from("seasons")
@@ -203,44 +207,78 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Přidejte alespoň jednoho hráče na soupisku." }, { status: 400 });
       }
 
-      const { data: registration, error } = await supabase
+      const teamRegistrationPayload = {
+        season_id: seasonId,
+        team_name: teamName,
+        captain_name: captainName,
+        captain_email: captainEmail,
+        captain_phone: optionalString(body.captain_phone),
+        captain_address: captainAddress,
+        captain_date_of_birth: captainDateOfBirth,
+        assistant_captain_name: assistantCaptainName,
+        assistant_captain_email: assistantCaptainEmail,
+        assistant_captain_phone: assistantCaptainPhone,
+        assistant_captain_address: assistantCaptainAddress,
+        assistant_captain_date_of_birth: assistantCaptainDateOfBirth,
+        wants_major_tournament: body.wants_major_tournament === true,
+        note: optionalString(body.note),
+      };
+      const fallbackTeamRegistrationPayload = {
+        season_id: seasonId,
+        team_name: teamName,
+        captain_name: captainName,
+        captain_email: captainEmail,
+        captain_phone: optionalString(body.captain_phone),
+        note: optionalString(body.note),
+      };
+
+      let registrationResult = await supabase
         .from("team_registration_requests")
-        .insert({
-          season_id: seasonId,
-          team_name: teamName,
-          captain_name: captainName,
-          captain_email: captainEmail,
-          captain_phone: optionalString(body.captain_phone),
-          captain_address: captainAddress,
-          captain_date_of_birth: captainDateOfBirth,
-          assistant_captain_name: assistantCaptainName,
-          assistant_captain_email: assistantCaptainEmail,
-          assistant_captain_phone: assistantCaptainPhone,
-          assistant_captain_address: assistantCaptainAddress,
-          assistant_captain_date_of_birth: assistantCaptainDateOfBirth,
-          wants_major_tournament: body.wants_major_tournament === true,
-          note: optionalString(body.note),
-        })
+        .insert(teamRegistrationPayload)
         .select("id")
         .single<{ id: string }>();
+
+      if (isSchemaCacheColumnError(registrationResult.error?.message)) {
+        registrationResult = await supabase
+          .from("team_registration_requests")
+          .insert(fallbackTeamRegistrationPayload)
+          .select("id")
+          .single<{ id: string }>();
+      }
+
+      const { data: registration, error } = registrationResult;
 
       if (error || !registration) {
         return NextResponse.json({ error: error?.message ?? "Žádost se nepodařilo odeslat." }, { status: 500 });
       }
 
-      const { error: playersError } = await supabase.from("team_registration_players").insert(
-        players.map((player) => ({
-          request_id: registration.id,
-          first_name: player.first_name,
-          last_name: player.last_name,
-          email: player.email,
-          phone: player.phone,
-          address: player.address,
-          date_of_birth: player.date_of_birth,
-          note: player.note,
-          player_status: "pending",
-        })),
-      );
+      const playerRows = players.map((player) => ({
+        request_id: registration.id,
+        first_name: player.first_name,
+        last_name: player.last_name,
+        email: player.email,
+        phone: player.phone,
+        address: player.address,
+        date_of_birth: player.date_of_birth,
+        note: player.note,
+        player_status: "pending",
+      }));
+      const fallbackPlayerRows = players.map((player) => ({
+        request_id: registration.id,
+        first_name: player.first_name,
+        last_name: player.last_name,
+        email: player.email,
+        phone: player.phone,
+        note: player.note,
+        player_status: "pending",
+      }));
+
+      let playersResult = await supabase.from("team_registration_players").insert(playerRows);
+      if (isSchemaCacheColumnError(playersResult.error?.message)) {
+        playersResult = await supabase.from("team_registration_players").insert(fallbackPlayerRows);
+      }
+
+      const { error: playersError } = playersResult;
 
       if (playersError) {
         return NextResponse.json({ error: playersError.message }, { status: 500 });
@@ -260,7 +298,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Vyplňte jméno, příjmení, platný email, bydliště a datum narození." }, { status: 400 });
       }
 
-      const { error } = await supabase.from("player_registration_requests").insert({
+      const playerRegistrationPayload = {
         season_id: seasonId,
         first_name: firstName,
         last_name: lastName,
@@ -270,7 +308,23 @@ export async function POST(request: Request) {
         date_of_birth: dateOfBirth,
         looking_for_team: body.looking_for_team === true,
         note: optionalString(body.note),
-      });
+      };
+      const fallbackPlayerRegistrationPayload = {
+        season_id: seasonId,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone: optionalString(body.phone),
+        looking_for_team: body.looking_for_team === true,
+        note: optionalString(body.note),
+      };
+
+      let playerRegistrationResult = await supabase.from("player_registration_requests").insert(playerRegistrationPayload);
+      if (isSchemaCacheColumnError(playerRegistrationResult.error?.message)) {
+        playerRegistrationResult = await supabase.from("player_registration_requests").insert(fallbackPlayerRegistrationPayload);
+      }
+
+      const { error } = playerRegistrationResult;
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });

@@ -78,6 +78,8 @@ type TeamRow = {
 type SeasonRow = { id: string; name: string; is_active: boolean };
 type LeagueRow = { id: string; name: string };
 type GroupRow = { id: string; name: string };
+type TeamApprovalRequest = Pick<TeamRegistrationRequest, "id" | "season_id" | "team_name" | "captain_name" | "captain_email" | "captain_phone" | "captain_address" | "captain_date_of_birth" | "assistant_captain_name" | "assistant_captain_email" | "assistant_captain_phone" | "assistant_captain_address" | "assistant_captain_date_of_birth" | "status">;
+type TeamApprovalRosterPlayer = Pick<TeamRegistrationPlayer, "id" | "first_name" | "last_name" | "email" | "phone" | "address" | "date_of_birth" | "matched_player_id">;
 
 type ReviewBody = {
   kind?: unknown;
@@ -106,6 +108,10 @@ function isUuid(value: string | null) {
 function optionalUuid(value: unknown) {
   const text = optionalString(value);
   return isUuid(text) ? text : null;
+}
+
+function isSchemaCacheColumnError(message: string | undefined) {
+  return Boolean(message?.includes("schema cache") && message.includes("column"));
 }
 
 function normalize(value: string | null | undefined) {
@@ -325,6 +331,89 @@ async function ensureMembership(
   if (error) throw new Error(error.message);
 }
 
+async function loadTeamRegistrationRequests(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const extended = await supabase
+    .from("team_registration_requests")
+    .select("id, season_id, team_name, captain_name, captain_email, captain_phone, captain_address, captain_date_of_birth, assistant_captain_name, assistant_captain_email, assistant_captain_phone, assistant_captain_address, assistant_captain_date_of_birth, wants_major_tournament, preferred_league_id, preferred_group_id, note, status, admin_note, created_at")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<TeamRegistrationRequest[]>();
+
+  if (!isSchemaCacheColumnError(extended.error?.message)) return extended;
+
+  const fallback = await supabase
+    .from("team_registration_requests")
+    .select("id, season_id, team_name, captain_name, captain_email, captain_phone, preferred_league_id, preferred_group_id, note, status, admin_note, created_at")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<Array<Omit<TeamRegistrationRequest, "captain_address" | "captain_date_of_birth" | "assistant_captain_name" | "assistant_captain_email" | "assistant_captain_phone" | "assistant_captain_address" | "assistant_captain_date_of_birth" | "wants_major_tournament">>>();
+
+  return {
+    ...fallback,
+    data: fallback.data?.map((request) => ({
+      ...request,
+      captain_address: null,
+      captain_date_of_birth: null,
+      assistant_captain_name: null,
+      assistant_captain_email: null,
+      assistant_captain_phone: null,
+      assistant_captain_address: null,
+      assistant_captain_date_of_birth: null,
+      wants_major_tournament: false,
+    })) ?? null,
+  };
+}
+
+async function loadTeamRegistrationPlayers(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const extended = await supabase
+    .from("team_registration_players")
+    .select("id, request_id, first_name, last_name, email, phone, address, date_of_birth, note, matched_player_id, player_status")
+    .returns<TeamRegistrationPlayer[]>();
+
+  if (!isSchemaCacheColumnError(extended.error?.message)) return extended;
+
+  const fallback = await supabase
+    .from("team_registration_players")
+    .select("id, request_id, first_name, last_name, email, phone, note, matched_player_id, player_status")
+    .returns<Array<Omit<TeamRegistrationPlayer, "address" | "date_of_birth">>>();
+
+  return {
+    ...fallback,
+    data: fallback.data?.map((player) => ({
+      ...player,
+      address: null,
+      date_of_birth: null,
+    })) ?? null,
+  };
+}
+
+async function loadPlayerRegistrationRequests(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const extended = await supabase
+    .from("player_registration_requests")
+    .select("id, season_id, first_name, last_name, email, phone, residence, date_of_birth, preferred_team_name, preferred_team_id, looking_for_team, note, status, admin_note, matched_player_id, created_at")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<PlayerRegistrationRequest[]>();
+
+  if (!isSchemaCacheColumnError(extended.error?.message)) return extended;
+
+  const fallback = await supabase
+    .from("player_registration_requests")
+    .select("id, season_id, first_name, last_name, email, phone, preferred_team_name, preferred_team_id, looking_for_team, note, status, admin_note, matched_player_id, created_at")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<Array<Omit<PlayerRegistrationRequest, "residence" | "date_of_birth">>>();
+
+  return {
+    ...fallback,
+    data: fallback.data?.map((request) => ({
+      ...request,
+      residence: null,
+      date_of_birth: null,
+    })) ?? null,
+  };
+}
+
 async function loadPayload(supabase: ReturnType<typeof createSupabaseAdminClient>) {
   const [
     teamRequests,
@@ -336,22 +425,9 @@ async function loadPayload(supabase: ReturnType<typeof createSupabaseAdminClient
     leagues,
     groups,
   ] = await Promise.all([
-    supabase
-      .from("team_registration_requests")
-      .select("id, season_id, team_name, captain_name, captain_email, captain_phone, captain_address, captain_date_of_birth, assistant_captain_name, assistant_captain_email, assistant_captain_phone, assistant_captain_address, assistant_captain_date_of_birth, wants_major_tournament, preferred_league_id, preferred_group_id, note, status, admin_note, created_at")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .returns<TeamRegistrationRequest[]>(),
-    supabase
-      .from("team_registration_players")
-      .select("id, request_id, first_name, last_name, email, phone, address, date_of_birth, note, matched_player_id, player_status")
-      .returns<TeamRegistrationPlayer[]>(),
-    supabase
-      .from("player_registration_requests")
-      .select("id, season_id, first_name, last_name, email, phone, residence, date_of_birth, preferred_team_name, preferred_team_id, looking_for_team, note, status, admin_note, matched_player_id, created_at")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .returns<PlayerRegistrationRequest[]>(),
+    loadTeamRegistrationRequests(supabase),
+    loadTeamRegistrationPlayers(supabase),
+    loadPlayerRegistrationRequests(supabase),
     supabase
       .from("players")
       .select("id, display_name, first_name, last_name, email")
@@ -528,12 +604,38 @@ export async function PATCH(request: Request) {
     };
 
     if (kind === "team") {
-      const { data: requestRow, error: requestError } = await supabase
+      const requestResult = await supabase
         .from("team_registration_requests")
         .select("id, season_id, team_name, captain_name, captain_email, captain_phone, captain_address, captain_date_of_birth, assistant_captain_name, assistant_captain_email, assistant_captain_phone, assistant_captain_address, assistant_captain_date_of_birth, status")
         .eq("id", id)
         .is("deleted_at", null)
-        .single<Pick<TeamRegistrationRequest, "id" | "season_id" | "team_name" | "captain_name" | "captain_email" | "captain_phone" | "captain_address" | "captain_date_of_birth" | "assistant_captain_name" | "assistant_captain_email" | "assistant_captain_phone" | "assistant_captain_address" | "assistant_captain_date_of_birth" | "status">>();
+        .single<TeamApprovalRequest>();
+
+      let requestRow: TeamApprovalRequest | null = requestResult.data;
+      let requestError = requestResult.error;
+
+      if (isSchemaCacheColumnError(requestResult.error?.message)) {
+        const fallbackRequestResult = await supabase
+          .from("team_registration_requests")
+          .select("id, season_id, team_name, captain_name, captain_email, captain_phone, status")
+          .eq("id", id)
+          .is("deleted_at", null)
+          .single<Pick<TeamRegistrationRequest, "id" | "season_id" | "team_name" | "captain_name" | "captain_email" | "captain_phone" | "status">>();
+
+        requestError = fallbackRequestResult.error;
+        requestRow = fallbackRequestResult.data
+          ? {
+              ...fallbackRequestResult.data,
+              captain_address: null,
+              captain_date_of_birth: null,
+              assistant_captain_name: null,
+              assistant_captain_email: null,
+              assistant_captain_phone: null,
+              assistant_captain_address: null,
+              assistant_captain_date_of_birth: null,
+            }
+          : null;
+      }
 
       if (requestError || !requestRow) {
         return NextResponse.json({ error: "Žádost nebyla nalezena." }, { status: 404 });
@@ -555,11 +657,29 @@ export async function PATCH(request: Request) {
       const rosterMatches = typeof body?.roster_matches === "object" && body.roster_matches !== null
         ? body.roster_matches as Record<string, unknown>
         : {};
-      const { data: roster, error: rosterError } = await supabase
+      const rosterResult = await supabase
         .from("team_registration_players")
         .select("id, first_name, last_name, email, phone, address, date_of_birth, matched_player_id")
         .eq("request_id", id)
-        .returns<Array<Pick<TeamRegistrationPlayer, "id" | "first_name" | "last_name" | "email" | "phone" | "address" | "date_of_birth" | "matched_player_id">>>();
+        .returns<TeamApprovalRosterPlayer[]>();
+
+      let roster: TeamApprovalRosterPlayer[] | null = rosterResult.data;
+      let rosterError = rosterResult.error;
+
+      if (isSchemaCacheColumnError(rosterResult.error?.message)) {
+        const fallbackRosterResult = await supabase
+          .from("team_registration_players")
+          .select("id, first_name, last_name, email, phone, matched_player_id")
+          .eq("request_id", id)
+          .returns<Array<Pick<TeamRegistrationPlayer, "id" | "first_name" | "last_name" | "email" | "phone" | "matched_player_id">>>();
+
+        rosterError = fallbackRosterResult.error;
+        roster = fallbackRosterResult.data?.map((player) => ({
+          ...player,
+          address: null,
+          date_of_birth: null,
+        })) ?? null;
+      }
 
       if (rosterError) throw new Error(rosterError.message);
 
