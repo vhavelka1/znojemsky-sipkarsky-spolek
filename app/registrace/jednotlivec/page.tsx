@@ -1,11 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { PublicHero, PublicPageShell } from "@/components/public/PublicShell";
+
+type MetaPayload = {
+  competitionRulesFileName?: string;
+  competitionRulesFileUrl?: string;
+};
 
 const inputClass =
   "min-h-12 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold text-[#061A3A] outline-none transition focus:border-[#3B82F6]";
+
+function requiredInputClass(value: string) {
+  return value.trim() ? inputClass : `${inputClass} border-[#EF233C] bg-red-50 focus:border-[#EF233C]`;
+}
 
 export default function IndividualRegistrationPage() {
   const [firstName, setFirstName] = useState("");
@@ -17,10 +26,23 @@ export default function IndividualRegistrationPage() {
   const [lookingForTeam, setLookingForTeam] = useState(true);
   const [note, setNote] = useState("");
   const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [competitionRulesFileName, setCompetitionRulesFileName] = useState("");
+  const [competitionRulesFileUrl, setCompetitionRulesFileUrl] = useState("");
   const [website, setWebsite] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/public/registrations", { cache: "no-store" })
+      .then(async (response) => {
+        const body = (await response.json().catch(() => ({}))) as MetaPayload;
+        if (!response.ok) return;
+        setCompetitionRulesFileName(body.competitionRulesFileName ?? "");
+        setCompetitionRulesFileUrl(body.competitionRulesFileUrl ?? "");
+      })
+      .catch(() => undefined);
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,15 +109,15 @@ export default function IndividualRegistrationPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Jméno
-              <input className={inputClass} onChange={(event) => setFirstName(event.target.value)} required value={firstName} />
+              <input className={requiredInputClass(firstName)} onChange={(event) => setFirstName(event.target.value)} required value={firstName} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Příjmení
-              <input className={inputClass} onChange={(event) => setLastName(event.target.value)} required value={lastName} />
+              <input className={requiredInputClass(lastName)} onChange={(event) => setLastName(event.target.value)} required value={lastName} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Email
-              <input className={inputClass} onChange={(event) => setEmail(event.target.value)} required type="email" value={email} />
+              <input className={requiredInputClass(email)} onChange={(event) => setEmail(event.target.value)} required type="email" value={email} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Telefon
@@ -103,13 +125,24 @@ export default function IndividualRegistrationPage() {
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Adresa
-              <input className={inputClass} onChange={(event) => setResidence(event.target.value)} required value={residence} />
+              <input className={requiredInputClass(residence)} onChange={(event) => setResidence(event.target.value)} required value={residence} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Datum narození
-              <input className={inputClass} onChange={(event) => setDateOfBirth(event.target.value)} required type="date" value={dateOfBirth} />
+              <input className={requiredInputClass(dateOfBirth)} onChange={(event) => setDateOfBirth(event.target.value)} required type="date" value={dateOfBirth} />
             </label>
           </div>
+
+          {competitionRulesFileUrl ? (
+            <a
+              className="inline-flex text-sm font-black text-[#0F4FA8] hover:text-[#EF233C]"
+              href={competitionRulesFileUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {competitionRulesFileName || "Pravidla soutěže"}
+            </a>
+          ) : null}
 
           <label className="flex items-start gap-3 text-sm font-bold text-slate-700">
             <input className="mt-1 size-4" checked={lookingForTeam} onChange={(event) => setLookingForTeam(event.target.checked)} type="checkbox" />

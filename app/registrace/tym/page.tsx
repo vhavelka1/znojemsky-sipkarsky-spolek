@@ -7,6 +7,8 @@ import { PublicHero, PublicPageShell } from "@/components/public/PublicShell";
 type MetaPayload = {
   activeSeasonId?: string | null;
   teamRegistrationIntro?: string;
+  competitionRulesFileName?: string;
+  competitionRulesFileUrl?: string;
   error?: string;
 };
 type RosterPlayer = {
@@ -32,8 +34,14 @@ const emptyPlayer: RosterPlayer = {
 const inputClass =
   "min-h-12 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold text-[#061A3A] outline-none transition focus:border-[#3B82F6]";
 
+function requiredInputClass(value: string) {
+  return value.trim() ? inputClass : `${inputClass} border-[#EF233C] bg-red-50 focus:border-[#EF233C]`;
+}
+
 export default function TeamRegistrationPage() {
   const [teamRegistrationIntro, setTeamRegistrationIntro] = useState("");
+  const [competitionRulesFileName, setCompetitionRulesFileName] = useState("");
+  const [competitionRulesFileUrl, setCompetitionRulesFileUrl] = useState("");
   const [teamName, setTeamName] = useState("");
   const [captainName, setCaptainName] = useState("");
   const [captainEmail, setCaptainEmail] = useState("");
@@ -60,6 +68,8 @@ export default function TeamRegistrationPage() {
         const body = (await response.json().catch(() => ({}))) as MetaPayload;
         if (!response.ok) throw new Error(body.error ?? "Data pro registraci se nepodařilo načíst.");
         setTeamRegistrationIntro(body.teamRegistrationIntro ?? "");
+        setCompetitionRulesFileName(body.competitionRulesFileName ?? "");
+        setCompetitionRulesFileUrl(body.competitionRulesFileUrl ?? "");
       })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Data pro registraci se nepodařilo načíst."));
   }, []);
@@ -156,7 +166,7 @@ export default function TeamRegistrationPage() {
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                 Název týmu
-                <input className={inputClass} onChange={(event) => setTeamName(event.target.value)} required value={teamName} />
+                <input className={requiredInputClass(teamName)} onChange={(event) => setTeamName(event.target.value)} required value={teamName} />
               </label>
               <label className="flex items-center gap-3 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-black text-[#061A3A] md:self-end">
                 <input
@@ -179,11 +189,11 @@ export default function TeamRegistrationPage() {
               <div className="mt-4 grid gap-3">
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                   Jméno a příjmení
-                  <input className={inputClass} onChange={(event) => setCaptainName(event.target.value)} required value={captainName} />
+                  <input className={requiredInputClass(captainName)} onChange={(event) => setCaptainName(event.target.value)} required value={captainName} />
                 </label>
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                   Email
-                  <input className={inputClass} onChange={(event) => setCaptainEmail(event.target.value)} required type="email" value={captainEmail} />
+                  <input className={requiredInputClass(captainEmail)} onChange={(event) => setCaptainEmail(event.target.value)} required type="email" value={captainEmail} />
                 </label>
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                   Telefon
@@ -191,11 +201,11 @@ export default function TeamRegistrationPage() {
                 </label>
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                   Datum narození
-                  <input className={inputClass} onChange={(event) => setCaptainDateOfBirth(event.target.value)} required type="date" value={captainDateOfBirth} />
+                  <input className={requiredInputClass(captainDateOfBirth)} onChange={(event) => setCaptainDateOfBirth(event.target.value)} required type="date" value={captainDateOfBirth} />
                 </label>
                 <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                   Adresa
-                  <input className={inputClass} onChange={(event) => setCaptainAddress(event.target.value)} required value={captainAddress} />
+                  <input className={requiredInputClass(captainAddress)} onChange={(event) => setCaptainAddress(event.target.value)} required value={captainAddress} />
                 </label>
               </div>
             </section>
@@ -258,10 +268,10 @@ export default function TeamRegistrationPage() {
                     ) : null}
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <input className={inputClass} onChange={(event) => updateRoster(index, { first_name: event.target.value })} placeholder="Jméno" required value={player.first_name} />
-                    <input className={inputClass} onChange={(event) => updateRoster(index, { last_name: event.target.value })} placeholder="Příjmení" required value={player.last_name} />
-                    <input className={inputClass} onChange={(event) => updateRoster(index, { date_of_birth: event.target.value })} placeholder="Datum narození" required type="date" value={player.date_of_birth} />
-                    <input className={inputClass} onChange={(event) => updateRoster(index, { address: event.target.value })} placeholder="Adresa" required value={player.address} />
+                    <input className={requiredInputClass(player.first_name)} onChange={(event) => updateRoster(index, { first_name: event.target.value })} placeholder="Jméno" required value={player.first_name} />
+                    <input className={requiredInputClass(player.last_name)} onChange={(event) => updateRoster(index, { last_name: event.target.value })} placeholder="Příjmení" required value={player.last_name} />
+                    <input className={requiredInputClass(player.date_of_birth)} onChange={(event) => updateRoster(index, { date_of_birth: event.target.value })} placeholder="Datum narození" required type="date" value={player.date_of_birth} />
+                    <input className={requiredInputClass(player.address)} onChange={(event) => updateRoster(index, { address: event.target.value })} placeholder="Adresa" required value={player.address} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { email: event.target.value })} placeholder="Email" type="email" value={player.email} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { phone: event.target.value })} placeholder="Telefon" value={player.phone} />
                     <input className={`${inputClass} md:col-span-2`} onChange={(event) => updateRoster(index, { note: event.target.value })} placeholder="Poznámka" value={player.note} />
@@ -270,6 +280,17 @@ export default function TeamRegistrationPage() {
               ))}
             </div>
           </div>
+
+          {competitionRulesFileUrl ? (
+            <a
+              className="inline-flex text-sm font-black text-[#0F4FA8] hover:text-[#EF233C]"
+              href={competitionRulesFileUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {competitionRulesFileName || "Pravidla soutěže"}
+            </a>
+          ) : null}
 
           <label className="flex items-start gap-3 text-sm font-bold text-slate-700">
             <input className="mt-1 size-4" checked={rulesAccepted} onChange={(event) => setRulesAccepted(event.target.checked)} required type="checkbox" />

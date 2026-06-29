@@ -125,6 +125,8 @@ export async function GET() {
       teams: teams.data ?? [],
       activeSeasonId: (seasons.data ?? []).find((season) => season.is_active)?.id ?? seasons.data?.[0]?.id ?? null,
       teamRegistrationIntro: publicSettings.teamRegistrationIntro,
+      competitionRulesFileName: publicSettings.competitionRulesFileName,
+      competitionRulesFileUrl: publicSettings.competitionRulesFileUrl,
     });
   } catch {
     return NextResponse.json({ error: "Data pro registraci se nepodařilo načíst." }, { status: 500 });

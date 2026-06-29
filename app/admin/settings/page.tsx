@@ -9,6 +9,9 @@ type HomepageSettings = {
   homepageTitle: string;
   homepageSubtitle: string;
   teamRegistrationIntro: string;
+  competitionRulesFileName: string;
+  competitionRulesFileUrl: string;
+  competitionRulesStoragePath: string;
 };
 
 type SettingsResponse = {
@@ -23,6 +26,9 @@ const defaultSettings: HomepageSettings = {
   homepageSubtitle: "Oficiální systém lig, turnajů a statistik.",
   teamRegistrationIntro:
     "Formulář pro registraci týmu do Znojemské šipkařské týmové ligy pro sezonu 2026/2027.\n\nRegistrační poplatek na sezonu je stanoven na 1500 Kč. Uhrazení proběhne na účet Znojemského šipkařského spolku. Do poznámky pro příjemce uvést název týmu.\nČ. účtu: 246898551\nKód banky: 0/600\n\nTermín odevzdání přihlášek je stanoven na 31. 7. 2026",
+  competitionRulesFileName: "",
+  competitionRulesFileUrl: "",
+  competitionRulesStoragePath: "",
 };
 
 const inputClass =
@@ -32,6 +38,8 @@ export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<HomepageSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingRules, setIsUploadingRules] = useState(false);
+  const [rulesFile, setRulesFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +109,39 @@ export default function AdminSettingsPage() {
     }
 
     setIsSaving(false);
+  }
+
+  async function handleRulesUpload() {
+    if (!rulesFile) {
+      setError("Vyberte soubor pravidel soutěže.");
+      setMessage(null);
+      return;
+    }
+
+    setIsUploadingRules(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("rules_file", rulesFile);
+      const response = await adminFetch("/api/admin/settings", {
+        method: "POST",
+        body: formData,
+      });
+      const body = (await response.json().catch(() => ({}))) as SettingsResponse;
+      if (!response.ok) {
+        throw new Error(body.error ?? "Soubor pravidel se nepodařilo uložit.");
+      }
+
+      setSettings(body.settings ?? settings);
+      setRulesFile(null);
+      setMessage(body.notice ?? "Soubor pravidel soutěže byl uložen.");
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Soubor pravidel se nepodařilo uložit.");
+    }
+
+    setIsUploadingRules(false);
   }
 
   return (
@@ -182,6 +223,41 @@ export default function AdminSettingsPage() {
               value={settings.teamRegistrationIntro}
             />
           </label>
+
+          <div className="rounded-3xl border border-[var(--admin-border)] bg-[#F4F8FF] p-5">
+            <h3 className="text-lg font-black text-[var(--brand-navy)]">Pravidla soutěže</h3>
+            <p className="mt-2 text-sm text-[var(--admin-muted)]">
+              Soubor se zobrazí jako odkaz ve formuláři registrace týmu i jednotlivce.
+            </p>
+            {settings.competitionRulesFileUrl ? (
+              <a
+                className="mt-4 inline-flex text-sm font-black text-[var(--brand-blue)] hover:text-[var(--brand-red)]"
+                href={settings.competitionRulesFileUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {settings.competitionRulesFileName || "Zobrazit aktuální pravidla"}
+              </a>
+            ) : (
+              <p className="mt-4 text-sm font-bold text-[var(--admin-muted)]">Soubor pravidel zatím není nahraný.</p>
+            )}
+            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
+              <input
+                accept=".pdf,.doc,.docx,.odt,.rtf,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className={inputClass}
+                disabled={isLoading || isSaving || isUploadingRules}
+                onChange={(event) => setRulesFile(event.target.files?.[0] ?? null)}
+                type="file"
+              />
+              <Button
+                disabled={isLoading || isSaving || isUploadingRules || !rulesFile}
+                onClick={handleRulesUpload}
+                type="button"
+              >
+                {isUploadingRules ? "Nahrávám..." : settings.competitionRulesFileUrl ? "Změnit pravidla" : "Nahrát pravidla"}
+              </Button>
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-3">
             <Button disabled={isLoading || isSaving} type="submit">
