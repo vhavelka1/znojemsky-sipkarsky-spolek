@@ -281,20 +281,24 @@ export default function TeamRegistrationPage() {
             </div>
           </div>
 
-          {competitionRulesFileUrl ? (
-            <a
-              className="inline-flex text-sm font-black text-[#0F4FA8] hover:text-[#EF233C]"
-              href={competitionRulesFileUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {competitionRulesFileName || "Pravidla soutěže"}
-            </a>
-          ) : null}
-
           <label className="flex items-start gap-3 text-sm font-bold text-slate-700">
             <input className="mt-1 size-4" checked={rulesAccepted} onChange={(event) => setRulesAccepted(event.target.checked)} required type="checkbox" />
-            Souhlasím s pravidly soutěže a se zpracováním údajů pro účely registrace.
+            <span>
+              Souhlasím s{" "}
+              {competitionRulesFileUrl ? (
+                <a
+                  className="font-black text-[#0F4FA8] underline decoration-[#0F4FA8]/30 underline-offset-4 hover:text-[#EF233C]"
+                  href={competitionRulesFileUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {competitionRulesFileName || "pravidly soutěže"}
+                </a>
+              ) : (
+                "pravidly soutěže"
+              )}{" "}
+              a se zpracováním údajů pro účely registrace.
+            </span>
           </label>
 
           <button className="w-full rounded-full bg-[#EF233C] px-6 py-4 text-base font-black text-white shadow-lg shadow-red-950/20 transition hover:-translate-y-0.5 hover:bg-red-500" disabled={isSubmitting} type="submit">
