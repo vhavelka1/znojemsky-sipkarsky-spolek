@@ -102,7 +102,7 @@ export default function IndividualRegistrationPage() {
               <input className={inputClass} onChange={(event) => setPhone(event.target.value)} value={phone} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-              Bydliště
+              Adresa
               <input className={inputClass} onChange={(event) => setResidence(event.target.value)} required value={residence} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">

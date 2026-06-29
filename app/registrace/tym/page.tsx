@@ -260,8 +260,8 @@ export default function TeamRegistrationPage() {
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <input className={inputClass} onChange={(event) => updateRoster(index, { first_name: event.target.value })} placeholder="Jméno" required value={player.first_name} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { last_name: event.target.value })} placeholder="Příjmení" required value={player.last_name} />
-                    <input className={inputClass} onChange={(event) => updateRoster(index, { date_of_birth: event.target.value })} placeholder="Datum narození" type="date" value={player.date_of_birth} />
-                    <input className={inputClass} onChange={(event) => updateRoster(index, { address: event.target.value })} placeholder="Adresa" value={player.address} />
+                    <input className={inputClass} onChange={(event) => updateRoster(index, { date_of_birth: event.target.value })} placeholder="Datum narození" required type="date" value={player.date_of_birth} />
+                    <input className={inputClass} onChange={(event) => updateRoster(index, { address: event.target.value })} placeholder="Adresa" required value={player.address} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { email: event.target.value })} placeholder="Email" type="email" value={player.email} />
                     <input className={inputClass} onChange={(event) => updateRoster(index, { phone: event.target.value })} placeholder="Telefon" value={player.phone} />
                     <input className={`${inputClass} md:col-span-2`} onChange={(event) => updateRoster(index, { note: event.target.value })} placeholder="Poznámka" value={player.note} />

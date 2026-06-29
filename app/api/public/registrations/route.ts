@@ -207,6 +207,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Přidejte alespoň jednoho hráče na soupisku." }, { status: 400 });
       }
 
+      if (players.some((player) => !player.first_name || !player.last_name || !player.address || !player.date_of_birth)) {
+        return NextResponse.json({ error: "U každého hráče na soupisce vyplňte jméno, příjmení, adresu a datum narození." }, { status: 400 });
+      }
+
       const teamRegistrationPayload = {
         season_id: seasonId,
         team_name: teamName,
@@ -223,27 +227,18 @@ export async function POST(request: Request) {
         wants_major_tournament: body.wants_major_tournament === true,
         note: optionalString(body.note),
       };
-      const fallbackTeamRegistrationPayload = {
-        season_id: seasonId,
-        team_name: teamName,
-        captain_name: captainName,
-        captain_email: captainEmail,
-        captain_phone: optionalString(body.captain_phone),
-        note: optionalString(body.note),
-      };
 
-      let registrationResult = await supabase
+      const registrationResult = await supabase
         .from("team_registration_requests")
         .insert(teamRegistrationPayload)
         .select("id")
         .single<{ id: string }>();
 
       if (isSchemaCacheColumnError(registrationResult.error?.message)) {
-        registrationResult = await supabase
-          .from("team_registration_requests")
-          .insert(fallbackTeamRegistrationPayload)
-          .select("id")
-          .single<{ id: string }>();
+        return NextResponse.json(
+          { error: "V databázi chybí povinná registrační pole. Spusťte SQL soubor supabase/apply_missing_registration_fields_in_dashboard.sql." },
+          { status: 500 },
+        );
       }
 
       const { data: registration, error } = registrationResult;
@@ -263,19 +258,12 @@ export async function POST(request: Request) {
         note: player.note,
         player_status: "pending",
       }));
-      const fallbackPlayerRows = players.map((player) => ({
-        request_id: registration.id,
-        first_name: player.first_name,
-        last_name: player.last_name,
-        email: player.email,
-        phone: player.phone,
-        note: player.note,
-        player_status: "pending",
-      }));
-
-      let playersResult = await supabase.from("team_registration_players").insert(playerRows);
+      const playersResult = await supabase.from("team_registration_players").insert(playerRows);
       if (isSchemaCacheColumnError(playersResult.error?.message)) {
-        playersResult = await supabase.from("team_registration_players").insert(fallbackPlayerRows);
+        return NextResponse.json(
+          { error: "V databázi chybí povinná registrační pole pro soupisku. Spusťte SQL soubor supabase/apply_missing_registration_fields_in_dashboard.sql." },
+          { status: 500 },
+        );
       }
 
       const { error: playersError } = playersResult;
@@ -295,7 +283,7 @@ export async function POST(request: Request) {
       const dateOfBirth = optionalDate(body.date_of_birth);
 
       if (!firstName || !lastName || !isEmail(email) || !residence || !dateOfBirth) {
-        return NextResponse.json({ error: "Vyplňte jméno, příjmení, platný email, bydliště a datum narození." }, { status: 400 });
+        return NextResponse.json({ error: "Vyplňte jméno, příjmení, platný email, adresu a datum narození." }, { status: 400 });
       }
 
       const playerRegistrationPayload = {
@@ -309,19 +297,13 @@ export async function POST(request: Request) {
         looking_for_team: body.looking_for_team === true,
         note: optionalString(body.note),
       };
-      const fallbackPlayerRegistrationPayload = {
-        season_id: seasonId,
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        phone: optionalString(body.phone),
-        looking_for_team: body.looking_for_team === true,
-        note: optionalString(body.note),
-      };
 
-      let playerRegistrationResult = await supabase.from("player_registration_requests").insert(playerRegistrationPayload);
+      const playerRegistrationResult = await supabase.from("player_registration_requests").insert(playerRegistrationPayload);
       if (isSchemaCacheColumnError(playerRegistrationResult.error?.message)) {
-        playerRegistrationResult = await supabase.from("player_registration_requests").insert(fallbackPlayerRegistrationPayload);
+        return NextResponse.json(
+          { error: "V databázi chybí povinná registrační pole. Spusťte SQL soubor supabase/apply_missing_registration_fields_in_dashboard.sql." },
+          { status: 500 },
+        );
       }
 
       const { error } = playerRegistrationResult;
