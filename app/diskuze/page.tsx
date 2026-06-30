@@ -6,7 +6,7 @@ import { PublicHeader as SharedPublicHeader } from "@/components/public/PublicSh
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-type UserRole = "guest" | "player" | "captain" | "moderator" | "admin";
+type UserRole = "guest" | "player" | "moderator" | "admin";
 
 type CurrentUser = {
   displayName: string;
@@ -43,7 +43,6 @@ type DiscussionPayload = {
 const roleLabels: Record<UserRole, string> = {
   guest: "host",
   player: "hráč",
-  captain: "kapitán",
   moderator: "moderátor",
   admin: "administrátor",
 };

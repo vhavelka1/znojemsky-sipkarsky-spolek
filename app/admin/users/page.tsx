@@ -4,7 +4,7 @@ import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button, Card, PageHeader } from "@/components/ui/admin";
 
-type AppRole = "player" | "captain" | "moderator" | "admin";
+type AppRole = "player" | "moderator" | "admin";
 
 type ManagedUser = {
   id: string;
@@ -30,8 +30,7 @@ type UsersPayload = {
 };
 
 const roleOptions: Array<{ value: AppRole; label: string }> = [
-  { value: "player", label: "Hráč" },
-  { value: "captain", label: "Kapitán" },
+  { value: "player", label: "Standardní uživatel" },
   { value: "moderator", label: "Moderátor" },
   { value: "admin", label: "Administrátor" },
 ];

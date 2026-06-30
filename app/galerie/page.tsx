@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 
 type CurrentUser = {
   displayName: string;
-  role: "guest" | "player" | "captain" | "moderator" | "admin";
+  role: "guest" | "player" | "moderator" | "admin";
   canUpload: boolean;
   canDelete: boolean;
 };
@@ -47,7 +47,6 @@ type PreparedPhoto = {
 const roleLabels: Record<CurrentUser["role"], string> = {
   guest: "host",
   player: "hráč",
-  captain: "kapitán",
   moderator: "moderátor",
   admin: "administrátor",
 };

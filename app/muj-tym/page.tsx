@@ -17,6 +17,11 @@ type CaptainTeamPayload = {
     publicContactEmail: string;
     websiteUrl: string;
     seasonName: string;
+    registrationStatus: TeamRegistrationStatus;
+    registrationSubmittedAt: string | null;
+    registrationReviewedAt: string | null;
+    registrationNote: string;
+    registrationAdminNote: string;
     publicDetailHref: string;
     rosterHref: string;
     competitionHref: string;
@@ -83,6 +88,8 @@ type AvailablePlayer = {
   residence: string | null;
   dateOfBirth: string | null;
 };
+
+type TeamRegistrationStatus = "draft" | "submitted" | "approved" | "returned" | "cancelled";
 
 type TeamForm = {
   public_description: string;
@@ -165,6 +172,22 @@ function matchStatusClass(status: TeamMatch["status"]) {
   return "bg-slate-100 text-slate-700";
 }
 
+function teamRegistrationStatusLabel(status: TeamRegistrationStatus) {
+  if (status === "submitted") return "Odesláno ke schválení";
+  if (status === "approved") return "Schváleno";
+  if (status === "returned") return "Vráceno k doplnění";
+  if (status === "cancelled") return "Zrušeno";
+  return "Rozpracováno";
+}
+
+function teamRegistrationStatusClass(status: TeamRegistrationStatus) {
+  if (status === "approved") return "bg-green-100 text-green-800";
+  if (status === "submitted") return "bg-blue-100 text-blue-800";
+  if (status === "returned") return "bg-amber-100 text-amber-800";
+  if (status === "cancelled") return "bg-slate-100 text-slate-700";
+  return "bg-[#F4F8FF] text-[#0B2F6B]";
+}
+
 function formatDate(value: string | null) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("cs-CZ", {
@@ -192,10 +215,12 @@ export default function MyTeamPage() {
   const [availablePlayers, setAvailablePlayers] = useState<AvailablePlayer[]>([]);
   const [teamForm, setTeamForm] = useState<TeamForm>(emptyTeamForm);
   const [requestForm, setRequestForm] = useState<RequestForm>(emptyRequestForm);
+  const [registrationNote, setRegistrationNote] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [isSubmittingRegistration, setIsSubmittingRegistration] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -212,6 +237,7 @@ export default function MyTeamPage() {
         setMatches(body.matches ?? []);
         setRequests(body.requests ?? []);
         setAvailablePlayers(body.availablePlayers ?? []);
+        setRegistrationNote(body.team?.registrationNote ?? "");
         setTeamForm({
           public_description: body.team?.publicDescription ?? "",
           home_venue: body.team?.homeVenue ?? "",
@@ -303,6 +329,31 @@ export default function MyTeamPage() {
     loadTeam();
   };
 
+  const submitSeasonRegistration = async () => {
+    setIsSubmittingRegistration(true);
+    setMessage(null);
+    setError(null);
+
+    const response = await authFetch("/api/captain/team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "submit_season_registration",
+        registration_note: registrationNote,
+      }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    setIsSubmittingRegistration(false);
+
+    if (!response.ok) {
+      setError(body.error ?? "Účast týmu se nepodařilo odeslat.");
+      return;
+    }
+
+    setMessage("Účast týmu v sezóně byla odeslána ke schválení.");
+    loadTeam();
+  };
+
   return (
     <PublicPageShell activeHref="/tymy">
       <PublicHero
@@ -369,6 +420,47 @@ export default function MyTeamPage() {
                   <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Hráči</p>
                   <p className="mt-2 font-black text-[#061A3A]">{roster.length}</p>
                 </div>
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[#EF233C]">Účast v sezóně</p>
+                    <h3 className="mt-1 text-xl font-black text-[#061A3A]">Potvrzení týmu pro {team.seasonName}</h3>
+                    <p className="mt-2 text-sm font-bold text-slate-600">
+                      Tým může odeslat soupisku ke schválení ještě před vytvořením lig a skupin. Zařazení do soutěže doplní administrátor později.
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${teamRegistrationStatusClass(team.registrationStatus)}`}>
+                    {teamRegistrationStatusLabel(team.registrationStatus)}
+                  </span>
+                </div>
+
+                {team.registrationAdminNote ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                    Poznámka administrátora: {team.registrationAdminNote}
+                  </div>
+                ) : null}
+
+                <label className="mt-4 flex flex-col gap-2 text-sm font-black text-[#061A3A]">
+                  Poznámka ke schválení soupisky
+                  <textarea
+                    className="min-h-24 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8] disabled:bg-slate-100"
+                    disabled={!["draft", "returned"].includes(team.registrationStatus)}
+                    onChange={(event) => setRegistrationNote(event.target.value)}
+                    placeholder="Například změny v týmu, doplnění hráčů nebo poznámka pro vedení soutěže."
+                    value={registrationNote}
+                  />
+                </label>
+
+                <button
+                  className="mt-4 rounded-full bg-[#EF233C] px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/20 transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  disabled={isSubmittingRegistration || !["draft", "returned"].includes(team.registrationStatus)}
+                  onClick={submitSeasonRegistration}
+                  type="button"
+                >
+                  {isSubmittingRegistration ? "Odesílám..." : "Odeslat soupisku ke schválení"}
+                </button>
               </div>
 
               <form className="mt-6 grid gap-4" onSubmit={saveTeam}>

@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
-export type AppRole = "guest" | "player" | "captain" | "moderator" | "admin";
+export type AppRole = "guest" | "player" | "moderator" | "admin";
 
 export type AppRequester = {
   userId: string;
@@ -15,9 +15,8 @@ export type AppRequester = {
 const roleWeight: Record<AppRole, number> = {
   guest: 0,
   player: 1,
-  captain: 2,
-  moderator: 3,
-  admin: 4,
+  moderator: 2,
+  admin: 3,
 };
 
 function bearerToken(request: Request) {

@@ -13,6 +13,18 @@ type CreatePlayerBody = {
   phone?: unknown;
 };
 
+type PlayerRow = {
+  id: string;
+  display_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  date_of_birth: string | null;
+  residence: string | null;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+};
+
 function developmentOnlyResponse() {
   if (
     process.env.NODE_ENV === "development" ||
@@ -96,17 +108,37 @@ export async function GET() {
     return response;
   }
 
-  const { data, error } = await supabase
+  const [playersResult, membershipsResult] = await Promise.all([
+    supabase
     .from("players")
     .select("id, display_name, first_name, last_name, date_of_birth, residence, email, phone, created_at")
     .is("deleted_at", null)
-    .order("display_name", { ascending: true });
+      .order("display_name", { ascending: true })
+      .returns<PlayerRow[]>(),
+    supabase
+      .from("team_memberships")
+      .select("player_id")
+      .is("deleted_at", null)
+      .returns<Array<{ player_id: string }>>(),
+  ]);
+
+  const error = playersResult.error ?? membershipsResult.error;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ players: data ?? [] });
+  const membershipCounts = new Map<string, number>();
+  for (const membership of membershipsResult.data ?? []) {
+    membershipCounts.set(membership.player_id, (membershipCounts.get(membership.player_id) ?? 0) + 1);
+  }
+
+  const players = (playersResult.data ?? []).map((player) => ({
+    ...player,
+    roster_membership_count: membershipCounts.get(player.id) ?? 0,
+  }));
+
+  return NextResponse.json({ players });
 }
 
 export async function POST(request: Request) {

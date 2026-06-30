@@ -3,7 +3,7 @@ import { getCurrentUserProfile } from "@/lib/appAuth";
 import { passwordSetupRedirectTo } from "@/lib/siteUrl";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
-const allowedRoles = new Set(["player", "captain", "moderator", "admin"]);
+const allowedRoles = new Set(["player", "moderator", "admin"]);
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";

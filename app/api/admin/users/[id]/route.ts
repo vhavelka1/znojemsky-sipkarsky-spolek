@@ -4,7 +4,7 @@ import { getCurrentUserProfile } from "@/lib/appAuth";
 import { passwordSetupRedirectTo } from "@/lib/siteUrl";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
-const allowedRoles = new Set(["player", "captain", "moderator", "admin"]);
+const allowedRoles = new Set(["player", "moderator", "admin"]);
 
 type RouteContext = {
   params: Promise<{

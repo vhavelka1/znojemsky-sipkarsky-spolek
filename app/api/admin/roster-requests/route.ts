@@ -25,6 +25,18 @@ type RosterRequest = {
   created_at: string;
 };
 
+const ROSTER_REQUEST_SELECT =
+  "id, season_id, team_season_id, requested_by_user_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at";
+
+const ROSTER_REQUEST_FALLBACK_SELECT =
+  "id, season_id, team_season_id, requested_by_user_id, requested_player_name, requested_player_email, requested_player_note, status, admin_note, created_at";
+
+const REVIEW_REQUEST_SELECT =
+  "id, season_id, team_season_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, status";
+
+const REVIEW_REQUEST_FALLBACK_SELECT =
+  "id, season_id, team_season_id, requested_player_name, requested_player_email, status";
+
 function requiredString(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -60,20 +72,83 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isMissingRosterRequestColumn(message: string | undefined) {
+  return Boolean(
+    message &&
+      (message.includes("team_roster_requests") || message.includes("schema cache")) &&
+      (message.includes("requested_player_id") ||
+        message.includes("requested_player_phone") ||
+        message.includes("requested_player_residence") ||
+        message.includes("requested_player_date_of_birth")),
+  );
+}
+
+function withRosterRequestDefaults<T extends Partial<RosterRequest>>(row: T): T & Pick<
+  RosterRequest,
+  "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth"
+> {
+  return {
+    ...row,
+    requested_player_id: row.requested_player_id ?? null,
+    requested_player_phone: row.requested_player_phone ?? null,
+    requested_player_residence: row.requested_player_residence ?? null,
+    requested_player_date_of_birth: row.requested_player_date_of_birth ?? null,
+  };
+}
+
+async function loadRosterRequests(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const result = await supabase
+    .from("team_roster_requests")
+    .select(ROSTER_REQUEST_SELECT)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<RosterRequest[]>();
+
+  if (!isMissingRosterRequestColumn(result.error?.message)) return result;
+
+  const fallback = await supabase
+    .from("team_roster_requests")
+    .select(ROSTER_REQUEST_FALLBACK_SELECT)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<Array<Omit<RosterRequest, "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth">>>();
+
+  return {
+    data: fallback.data?.map(withRosterRequestDefaults) ?? null,
+    error: fallback.error,
+  };
+}
+
+async function loadReviewRosterRequest(supabase: ReturnType<typeof createSupabaseAdminClient>, id: string) {
+  const result = await supabase
+    .from("team_roster_requests")
+    .select(REVIEW_REQUEST_SELECT)
+    .eq("id", id)
+    .is("deleted_at", null)
+    .single<RosterRequest>();
+
+  if (!isMissingRosterRequestColumn(result.error?.message)) return result;
+
+  const fallback = await supabase
+    .from("team_roster_requests")
+    .select(REVIEW_REQUEST_FALLBACK_SELECT)
+    .eq("id", id)
+    .is("deleted_at", null)
+    .single<Omit<RosterRequest, "requested_by_user_id" | "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth" | "requested_player_note" | "admin_note" | "created_at">>();
+
+  return {
+    data: fallback.data ? withRosterRequestDefaults(fallback.data) as RosterRequest : null,
+    error: fallback.error,
+  };
+}
+
 export async function GET(request: Request) {
   const guard = await guardModerator(request);
   if (guard.response) return guard.response;
 
   const supabase = createSupabaseAdminClient();
   const [requests, teamSeasons, teams, seasons] = await Promise.all([
-    supabase
-      .from("team_roster_requests")
-      .select(
-        "id, season_id, team_season_id, requested_by_user_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at",
-      )
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .returns<RosterRequest[]>(),
+    loadRosterRequests(supabase),
     supabase
       .from("team_seasons")
       .select("id, team_id, season_id, display_name")
@@ -124,12 +199,7 @@ export async function PATCH(request: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: rosterRequest, error: requestError } = await supabase
-    .from("team_roster_requests")
-    .select("id, season_id, team_season_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, status")
-    .eq("id", id)
-    .is("deleted_at", null)
-    .single<RosterRequest>();
+  const { data: rosterRequest, error: requestError } = await loadReviewRosterRequest(supabase, id);
 
   if (requestError || !rosterRequest) {
     return NextResponse.json({ error: "Žádost nebyla nalezena." }, { status: 404 });

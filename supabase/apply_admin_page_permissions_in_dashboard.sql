@@ -7,7 +7,7 @@ create table if not exists public.admin_page_permissions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,
-  constraint admin_page_permissions_minimum_role_valid check (minimum_role in ('player', 'captain', 'moderator', 'admin'))
+  constraint admin_page_permissions_minimum_role_valid check (minimum_role in ('player', 'moderator', 'admin'))
 );
 
 create index if not exists admin_page_permissions_active_idx

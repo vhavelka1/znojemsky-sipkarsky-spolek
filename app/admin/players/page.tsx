@@ -15,6 +15,7 @@ type Player = {
   email: string | null;
   phone: string | null;
   created_at: string;
+  roster_membership_count: number;
 };
 
 type PlayerForm = {
@@ -90,6 +91,7 @@ export default function AdminPlayersPage() {
   const [playerFilter, setPlayerFilter] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [deletingPlayerId, setDeletingPlayerId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +214,33 @@ export default function AdminPlayersPage() {
     }
 
     setIsSaving(false);
+  }
+
+  async function handleDelete(player: Player) {
+    if (!canManagePlayers || player.roster_membership_count > 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Opravdu chcete smazat hráče ${player.display_name}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingPlayerId(player.id);
+    setError(null);
+
+    const response = await adminFetch(`/api/admin/players/${player.id}`, {
+      method: "DELETE",
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setError(body.error ?? "Hráče se nepodařilo smazat.");
+    } else {
+      await loadPlayers(false);
+    }
+
+    setDeletingPlayerId(null);
   }
 
   return (
@@ -414,6 +443,7 @@ export default function AdminPlayersPage() {
                           {emptyText(player.phone)}
                         </td>
                         <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-2">
                           <button
                             className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                             onClick={() => startEditing(player)}
@@ -421,6 +451,17 @@ export default function AdminPlayersPage() {
                           >
                             Upravit
                           </button>
+                            {player.roster_membership_count === 0 ? (
+                              <button
+                                className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={deletingPlayerId === player.id}
+                                onClick={() => handleDelete(player)}
+                                type="button"
+                              >
+                                {deletingPlayerId === player.id ? "Mažu..." : "Smazat"}
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}

@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 
 type AccountUser = {
   displayName: string;
-  role: "guest" | "player" | "captain" | "moderator" | "admin";
+  role: "guest" | "player" | "moderator" | "admin";
   isActive: boolean;
   canAccessAdmin: boolean;
 };
@@ -16,7 +16,6 @@ type AccountUser = {
 const roleLabels: Record<AccountUser["role"], string> = {
   guest: "Host",
   player: "Hráč",
-  captain: "Kapitán",
   moderator: "Moderátor",
   admin: "Administrátor",
 };

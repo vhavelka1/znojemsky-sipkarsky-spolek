@@ -29,6 +29,14 @@ Configure Supabase Authentication redirect URLs:
 
 Admin invitations and password reset links build the redirect URL dynamically from the current request host, so the same code works on localhost, Vercel and a future custom domain. The domain still has to be allowed in Supabase Authentication redirect URLs.
 
+For Czech invitation emails, copy `supabase/auth_invite_user_email_template.html` into Supabase Dashboard:
+
+- Authentication
+- Email Templates
+- Invite user
+
+Use a Czech subject such as `Pozvánka do Znojemského šipkařského spolku`. The template uses `{{ .ConfirmationURL }}`, which opens the Supabase verification link and then redirects the user to `/nastavit-heslo`, where they create their own password. The login name is the user's email address.
+
 Run these SQL files in Supabase SQL Editor when deploying the related modules:
 
 - `supabase/apply_user_profiles_in_dashboard.sql`

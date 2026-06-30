@@ -1,4 +1,4 @@
-export type AdminRole = "player" | "captain" | "moderator" | "admin";
+export type AdminRole = "player" | "moderator" | "admin";
 
 export type AdminPageDefinition = {
   key: string;
@@ -9,21 +9,18 @@ export type AdminPageDefinition = {
 
 export const adminRoleWeight: Record<AdminRole, number> = {
   player: 1,
-  captain: 2,
-  moderator: 3,
-  admin: 4,
+  moderator: 2,
+  admin: 3,
 };
 
 export const adminRoleLabels: Record<AdminRole, string> = {
-  player: "Hráč",
-  captain: "Kapitán",
+  player: "Standardní uživatel",
   moderator: "Moderátor",
   admin: "Administrátor",
 };
 
 export const adminRoleShortLabels: Record<AdminRole, string> = {
-  player: "Hráč",
-  captain: "Kapitán",
+  player: "Uživ.",
   moderator: "Mod.",
   admin: "Admin",
 };
@@ -46,7 +43,7 @@ export const adminPages: AdminPageDefinition[] = [
 ];
 
 export function isAdminRole(value: string): value is AdminRole {
-  return value === "player" || value === "captain" || value === "moderator" || value === "admin";
+  return value === "player" || value === "moderator" || value === "admin";
 }
 
 export function canAccessAdminPage(userRole: string | null | undefined, minimumRole: AdminRole) {

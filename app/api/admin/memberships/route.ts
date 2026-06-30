@@ -54,6 +54,18 @@ function getAdminClientOrError() {
   }
 }
 
+function isMissingTeamSeasonRegistrationColumn(message: string | undefined) {
+  return Boolean(
+    message &&
+      (message.includes("schema cache") || message.includes("Could not find")) &&
+      (message.includes("registration_status") ||
+        message.includes("registration_submitted_at") ||
+        message.includes("registration_reviewed_at") ||
+        message.includes("registration_note") ||
+        message.includes("registration_admin_note")),
+  );
+}
+
 export async function GET(request: Request) {
   const guard = await requireModeratorOrAdmin(request);
   if (guard.response) {
@@ -65,11 +77,18 @@ export async function GET(request: Request) {
     return response;
   }
 
+  const teamSeasonsPromise = supabase
+    .from("team_seasons")
+    .select(
+      "id, team_id, season_id, display_name, registration_status, registration_submitted_at, registration_reviewed_at, registration_note, registration_admin_note",
+    )
+    .is("deleted_at", null);
+
   const [
     playersResult,
     teamsResult,
     seasonsResult,
-    teamSeasonsResult,
+    teamSeasonsWithRegistrationResult,
     membershipsResult,
   ] = await Promise.all([
     supabase
@@ -90,10 +109,7 @@ export async function GET(request: Request) {
       .is("deleted_at", null)
       .order("starts_on", { ascending: false }),
 
-    supabase
-      .from("team_seasons")
-      .select("id, team_id, season_id, display_name")
-      .is("deleted_at", null),
+    teamSeasonsPromise,
 
     supabase
       .from("team_memberships")
@@ -104,6 +120,13 @@ export async function GET(request: Request) {
       .order("left_on", { ascending: true, nullsFirst: true })
       .order("created_at", { ascending: false }),
   ]);
+
+  const teamSeasonsResult = isMissingTeamSeasonRegistrationColumn(teamSeasonsWithRegistrationResult.error?.message)
+    ? await supabase
+        .from("team_seasons")
+        .select("id, team_id, season_id, display_name")
+        .is("deleted_at", null)
+    : teamSeasonsWithRegistrationResult;
 
   const error =
     playersResult.error ??

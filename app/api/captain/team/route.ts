@@ -8,6 +8,8 @@ type UpdateCaptainTeamBody = {
   home_venue?: unknown;
   public_contact_email?: unknown;
   website_url?: unknown;
+  action?: unknown;
+  registration_note?: unknown;
 };
 
 type TeamMembership = {
@@ -59,6 +61,47 @@ type TeamSeasonRow = {
   display_name: string | null;
 };
 
+type SeasonRow = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  starts_on: string | null;
+};
+
+type CaptainTeamSeason = {
+  id: string;
+  team_id: string;
+  season_id: string;
+  display_name: string | null;
+  home_venue: string | null;
+  contact_email: string | null;
+  registration_status: "draft" | "submitted" | "approved" | "returned" | "cancelled";
+  registration_submitted_at: string | null;
+  registration_reviewed_at: string | null;
+  registration_note: string | null;
+  registration_admin_note: string | null;
+};
+
+type RosterRequestRow = {
+  id: string;
+  requested_player_id: string | null;
+  requested_player_name: string;
+  requested_player_email: string | null;
+  requested_player_phone: string | null;
+  requested_player_residence: string | null;
+  requested_player_date_of_birth: string | null;
+  requested_player_note: string | null;
+  status: string;
+  admin_note: string | null;
+  created_at: string;
+};
+
+const ROSTER_REQUEST_SELECT =
+  "id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at";
+
+const ROSTER_REQUEST_FALLBACK_SELECT =
+  "id, requested_player_name, requested_player_email, requested_player_note, status, admin_note, created_at";
+
 function optionalString(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -83,6 +126,137 @@ function optionalEmail(value: unknown) {
   const email = optionalString(value);
   if (!email) return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "invalid";
+}
+
+function isMissingRosterRequestColumn(message: string | undefined) {
+  return Boolean(
+    message &&
+      (message.includes("team_roster_requests") || message.includes("schema cache")) &&
+      (message.includes("requested_player_id") ||
+        message.includes("requested_player_phone") ||
+        message.includes("requested_player_residence") ||
+        message.includes("requested_player_date_of_birth")),
+  );
+}
+
+function isMissingTeamSeasonRegistrationColumn(message: string | undefined) {
+  return Boolean(
+    message &&
+      (message.includes("schema cache") || message.includes("Could not find")) &&
+      (message.includes("registration_status") ||
+        message.includes("registration_submitted_at") ||
+        message.includes("registration_reviewed_at") ||
+        message.includes("registration_note") ||
+        message.includes("registration_admin_note")),
+  );
+}
+
+function teamSeasonRegistrationDefaults<T extends {
+  id: string;
+  team_id: string;
+  season_id: string;
+  display_name: string | null;
+  home_venue: string | null;
+  contact_email: string | null;
+}>(teamSeason: T): CaptainTeamSeason {
+  return {
+    ...teamSeason,
+    registration_status: "draft",
+    registration_submitted_at: null,
+    registration_reviewed_at: null,
+    registration_note: null,
+    registration_admin_note: null,
+  };
+}
+
+async function loadTargetSeason(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const { data, error } = await supabase
+    .from("seasons")
+    .select("id, name, is_active, starts_on")
+    .is("deleted_at", null)
+    .order("starts_on", { ascending: false })
+    .returns<SeasonRow[]>();
+
+  if (error) return { season: null, error };
+  return { season: data?.find((season) => season.is_active) ?? data?.[0] ?? null, error: null };
+}
+
+async function loadCaptainTeamSeason(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  teamSeasonId: string,
+) {
+  const withRegistration = await supabase
+    .from("team_seasons")
+    .select(
+      "id, team_id, season_id, display_name, home_venue, contact_email, registration_status, registration_submitted_at, registration_reviewed_at, registration_note, registration_admin_note",
+    )
+    .eq("id", teamSeasonId)
+    .is("deleted_at", null)
+    .single<CaptainTeamSeason>();
+
+  if (!isMissingTeamSeasonRegistrationColumn(withRegistration.error?.message)) {
+    return withRegistration;
+  }
+
+  const fallback = await supabase
+    .from("team_seasons")
+    .select("id, team_id, season_id, display_name, home_venue, contact_email")
+    .eq("id", teamSeasonId)
+    .is("deleted_at", null)
+    .single<{
+      id: string;
+      team_id: string;
+      season_id: string;
+      display_name: string | null;
+      home_venue: string | null;
+      contact_email: string | null;
+    }>();
+
+  return {
+    data: fallback.data ? teamSeasonRegistrationDefaults(fallback.data) : null,
+    error: fallback.error,
+  };
+}
+
+function withRosterRequestDefaults<T extends Partial<RosterRequestRow>>(row: T): T & Pick<
+  RosterRequestRow,
+  "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth"
+> {
+  return {
+    ...row,
+    requested_player_id: row.requested_player_id ?? null,
+    requested_player_phone: row.requested_player_phone ?? null,
+    requested_player_residence: row.requested_player_residence ?? null,
+    requested_player_date_of_birth: row.requested_player_date_of_birth ?? null,
+  };
+}
+
+async function loadRosterRequests(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  teamSeasonId: string,
+) {
+  const result = await supabase
+    .from("team_roster_requests")
+    .select(ROSTER_REQUEST_SELECT)
+    .eq("team_season_id", teamSeasonId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<RosterRequestRow[]>();
+
+  if (!isMissingRosterRequestColumn(result.error?.message)) return result;
+
+  const fallback = await supabase
+    .from("team_roster_requests")
+    .select(ROSTER_REQUEST_FALLBACK_SELECT)
+    .eq("team_season_id", teamSeasonId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<Array<Omit<RosterRequestRow, "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth">>>();
+
+  return {
+    data: fallback.data?.map(withRosterRequestDefaults) ?? null,
+    error: fallback.error,
+  };
 }
 
 async function getCaptainContext(request: Request) {
@@ -110,18 +284,10 @@ async function getCaptainContext(request: Request) {
     };
   }
 
-  const { data: captainMembership, error: membershipError } = await supabase
-    .from("team_memberships")
-    .select("id, season_id, team_season_id, player_id, member_role")
-    .eq("player_id", requester.playerId)
-    .in("member_role", ["captain", "assistant_captain"])
-    .is("left_on", null)
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (membershipError || !captainMembership) {
+  const { season: targetSeason, error: seasonError } = await loadTargetSeason(supabase);
+  if (seasonError || !targetSeason) {
     return {
-      response: NextResponse.json({ error: "Nejste vedený jako kapitán nebo zástupce kapitána aktivního týmu." }, { status: 403 }),
+      response: NextResponse.json({ error: "Aktuální sezónu se nepodařilo načíst." }, { status: 500 }),
       requester,
       supabase,
       captainMembership: null,
@@ -130,12 +296,43 @@ async function getCaptainContext(request: Request) {
     };
   }
 
-  const { data: teamSeason, error: teamSeasonError } = await supabase
-    .from("team_seasons")
-    .select("id, team_id, season_id, display_name, home_venue, contact_email")
-    .eq("id", captainMembership.team_season_id)
+  const membershipQuery = supabase
+    .from("team_memberships")
+    .select("id, season_id, team_season_id, player_id, member_role, joined_on, left_on")
+    .eq("player_id", requester.playerId)
+    .eq("season_id", targetSeason.id)
+    .in("member_role", ["captain", "assistant_captain"])
+    .is("left_on", null)
     .is("deleted_at", null)
-    .single();
+    .order("joined_on", { ascending: false })
+    .limit(1)
+    .returns<TeamMembership[]>();
+
+  const { data: captainMemberships, error: membershipError } = await membershipQuery;
+
+  const captainMembership = captainMemberships?.[0] ?? null;
+
+  if (membershipError || !captainMembership) {
+    return {
+      response: NextResponse.json(
+        {
+          error:
+            "Nejste vedený jako kapitán nebo zástupce kapitána týmu v aktuální sezóně. Nejprve je potřeba tým do sezóny zkopírovat nebo vytvořit registraci.",
+        },
+        { status: 403 },
+      ),
+      requester,
+      supabase,
+      captainMembership: null,
+      teamSeason: null,
+      team: null,
+    };
+  }
+
+  const { data: teamSeason, error: teamSeasonError } = await loadCaptainTeamSeason(
+    supabase,
+    captainMembership.team_season_id,
+  );
 
   if (teamSeasonError || !teamSeason) {
     return {
@@ -205,12 +402,7 @@ export async function GET(request: Request) {
       .select("id, name, is_active")
       .eq("id", captainMembership.season_id)
       .single(),
-    supabase
-      .from("team_roster_requests")
-      .select("id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at")
-      .eq("team_season_id", teamSeason.id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false }),
+    loadRosterRequests(supabase, teamSeason.id),
     supabase
       .from("team_memberships")
       .select("id, season_id, team_season_id, player_id, member_role, joined_on, left_on")
@@ -365,6 +557,11 @@ export async function GET(request: Request) {
       publicContactEmail: team.public_contact_email ?? teamSeason.contact_email ?? "",
       websiteUrl: team.website_url ?? "",
       seasonName: seasonResult.data?.name ?? "Sezóna",
+      registrationStatus: teamSeason.registration_status,
+      registrationSubmittedAt: teamSeason.registration_submitted_at,
+      registrationReviewedAt: teamSeason.registration_reviewed_at,
+      registrationNote: teamSeason.registration_note ?? "",
+      registrationAdminNote: teamSeason.registration_admin_note ?? "",
       publicDetailHref: `/tymy/${team.id}`,
       rosterHref: "/muj-tym#soupiska",
       competitionHref: groupResult.data ? `/tabulky?season_id=${captainMembership.season_id}&league_id=${groupResult.data.league_id}&group_id=${groupResult.data.id}` : "/tabulky",
@@ -383,6 +580,54 @@ export async function GET(request: Request) {
     availablePlayers,
     requests: requestsResult.error ? [] : requestsResult.data ?? [],
   });
+}
+
+export async function POST(request: Request) {
+  const context = await getCaptainContext(request);
+  if (context.response) return context.response;
+
+  const body = (await request.json().catch(() => null)) as UpdateCaptainTeamBody | null;
+  const action = optionalString(body?.action);
+
+  if (action !== "submit_season_registration") {
+    return NextResponse.json({ error: "Neznámá akce." }, { status: 400 });
+  }
+
+  const { supabase, teamSeason } = context;
+  if (!["draft", "returned"].includes(teamSeason.registration_status)) {
+    return NextResponse.json(
+      { error: "Účast týmu v sezóně už byla odeslána nebo schválena." },
+      { status: 400 },
+    );
+  }
+
+  const note = optionalString(body?.registration_note);
+  const { error } = await supabase
+    .from("team_seasons")
+    .update({
+      registration_status: "submitted",
+      registration_submitted_at: new Date().toISOString(),
+      registration_note: note,
+      registration_admin_note: null,
+    })
+    .eq("id", teamSeason.id)
+    .is("deleted_at", null);
+
+  if (isMissingTeamSeasonRegistrationColumn(error?.message)) {
+    return NextResponse.json(
+      {
+        error:
+          "V databázi chybí sloupce pro potvrzení účasti. Spusťte SQL soubor supabase/apply_team_season_registration_status_in_dashboard.sql.",
+      },
+      { status: 500 },
+    );
+  }
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
 
 export async function PATCH(request: Request) {

@@ -18,11 +18,10 @@ type PermissionsPayload = {
   error?: string;
 };
 
-const roleOptions: AdminRole[] = ["player", "captain", "moderator", "admin"];
+const roleOptions: AdminRole[] = ["player", "moderator", "admin"];
 
 const roleDescriptions: Record<AdminRole, string> = {
-  player: "Přístup mají hráči, kapitáni, moderátoři a administrátoři.",
-  captain: "Přístup mají kapitáni, moderátoři a administrátoři.",
+  player: "Přístup mají standardní uživatelé, moderátoři a administrátoři.",
   moderator: "Přístup mají moderátoři a administrátoři.",
   admin: "Přístup mají pouze administrátoři.",
 };

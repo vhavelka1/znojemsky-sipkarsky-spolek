@@ -135,3 +135,52 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   return NextResponse.json({ player: data });
 }
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const developmentResponse = developmentOnlyResponse();
+  if (developmentResponse) {
+    return developmentResponse;
+  }
+
+  const adminResponse = mockAdminResponse();
+  if (adminResponse) {
+    return adminResponse;
+  }
+
+  const { id } = await context.params;
+  const { supabase, response } = getAdminClientOrError();
+  if (response) {
+    return response;
+  }
+
+  const { count, error: membershipError } = await supabase
+    .from("team_memberships")
+    .select("id", { count: "exact", head: true })
+    .eq("player_id", id)
+    .is("deleted_at", null);
+
+  if (membershipError) {
+    return NextResponse.json({ error: membershipError.message }, { status: 500 });
+  }
+
+  if ((count ?? 0) > 0) {
+    return NextResponse.json(
+      { error: "Hráče nelze smazat, protože má záznam v soupisce." },
+      { status: 400 },
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("players")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select("id, display_name, first_name, last_name, date_of_birth, residence, email, phone, created_at")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ player: data });
+}

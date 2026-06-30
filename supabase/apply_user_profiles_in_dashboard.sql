@@ -11,7 +11,7 @@ create table if not exists public.user_profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,
-  constraint user_profiles_app_role_valid check (app_role in ('player', 'captain', 'moderator', 'admin'))
+  constraint user_profiles_app_role_valid check (app_role in ('player', 'moderator', 'admin'))
 );
 
 create index if not exists user_profiles_user_active_idx

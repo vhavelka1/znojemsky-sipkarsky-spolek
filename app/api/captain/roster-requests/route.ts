@@ -15,6 +15,26 @@ type CreateRosterRequestBody = {
   requested_player_note?: unknown;
 };
 
+type RosterRequestRow = {
+  id: string;
+  requested_player_id: string | null;
+  requested_player_name: string;
+  requested_player_email: string | null;
+  requested_player_phone: string | null;
+  requested_player_residence: string | null;
+  requested_player_date_of_birth: string | null;
+  requested_player_note: string | null;
+  status: string;
+  admin_note: string | null;
+  created_at: string;
+};
+
+const ROSTER_REQUEST_SELECT =
+  "id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at";
+
+const ROSTER_REQUEST_FALLBACK_SELECT =
+  "id, requested_player_name, requested_player_email, requested_player_note, status, admin_note, created_at";
+
 function requiredString(value: unknown) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -41,6 +61,62 @@ function optionalDate(value: unknown) {
 function optionalUuid(value: unknown) {
   const text = optionalString(value);
   return text && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null;
+}
+
+function isMissingRosterRequestColumn(message: string | undefined) {
+  return Boolean(
+    message &&
+      (message.includes("team_roster_requests") || message.includes("schema cache")) &&
+      (message.includes("requested_player_id") ||
+        message.includes("requested_player_phone") ||
+        message.includes("requested_player_residence") ||
+        message.includes("requested_player_date_of_birth")),
+  );
+}
+
+function rosterRequestSchemaMessage() {
+  return "V databázi chybí pole pro žádosti soupisky. Spusťte SQL soubor supabase/apply_team_roster_request_fields_in_dashboard.sql.";
+}
+
+function withRosterRequestDefaults<T extends Partial<RosterRequestRow>>(row: T): T & Pick<
+  RosterRequestRow,
+  "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth"
+> {
+  return {
+    ...row,
+    requested_player_id: row.requested_player_id ?? null,
+    requested_player_phone: row.requested_player_phone ?? null,
+    requested_player_residence: row.requested_player_residence ?? null,
+    requested_player_date_of_birth: row.requested_player_date_of_birth ?? null,
+  };
+}
+
+async function loadRosterRequests(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  teamSeasonId: string,
+) {
+  const result = await supabase
+    .from("team_roster_requests")
+    .select(ROSTER_REQUEST_SELECT)
+    .eq("team_season_id", teamSeasonId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<RosterRequestRow[]>();
+
+  if (!isMissingRosterRequestColumn(result.error?.message)) return result;
+
+  const fallback = await supabase
+    .from("team_roster_requests")
+    .select(ROSTER_REQUEST_FALLBACK_SELECT)
+    .eq("team_season_id", teamSeasonId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .returns<Array<Omit<RosterRequestRow, "requested_player_id" | "requested_player_phone" | "requested_player_residence" | "requested_player_date_of_birth">>>();
+
+  return {
+    data: fallback.data?.map(withRosterRequestDefaults) ?? null,
+    error: fallback.error,
+  };
 }
 
 async function captainMembershipForRequest(request: Request) {
@@ -89,12 +165,7 @@ export async function GET(request: Request) {
   const context = await captainMembershipForRequest(request);
   if (context.response) return context.response;
 
-  const { data, error } = await context.supabase
-    .from("team_roster_requests")
-    .select("id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at")
-    .eq("team_season_id", context.membership.team_season_id)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
+  const { data, error } = await loadRosterRequests(context.supabase, context.membership.team_season_id);
 
   if (error) {
     return NextResponse.json({ error: "Žádosti se nepodařilo načíst." }, { status: 500 });
@@ -200,6 +271,10 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
+    if (isMissingRosterRequestColumn(error.message)) {
+      return NextResponse.json({ error: rosterRequestSchemaMessage() }, { status: 500 });
+    }
+
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

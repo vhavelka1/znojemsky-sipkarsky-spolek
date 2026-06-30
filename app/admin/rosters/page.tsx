@@ -26,7 +26,14 @@ type TeamSeason = {
   team_id: string;
   season_id: string;
   display_name: string | null;
+  registration_status?: TeamSeasonRegistrationStatus;
+  registration_submitted_at?: string | null;
+  registration_reviewed_at?: string | null;
+  registration_note?: string | null;
+  registration_admin_note?: string | null;
 };
+
+type TeamSeasonRegistrationStatus = "draft" | "submitted" | "approved" | "returned" | "cancelled";
 
 type MemberRole = "player" | "captain" | "assistant_captain";
 
@@ -146,6 +153,22 @@ function memberRoleLabel(role: MemberRole) {
   }
 
   return "Hráč";
+}
+
+function registrationStatusLabel(status: TeamSeasonRegistrationStatus | undefined) {
+  if (status === "submitted") return "Odesláno ke schválení";
+  if (status === "approved") return "Schváleno";
+  if (status === "returned") return "Vráceno k doplnění";
+  if (status === "cancelled") return "Zrušeno";
+  return "Rozpracováno";
+}
+
+function registrationStatusClass(status: TeamSeasonRegistrationStatus | undefined) {
+  if (status === "approved") return "bg-emerald-50 text-emerald-700";
+  if (status === "submitted") return "bg-blue-50 text-blue-700";
+  if (status === "returned") return "bg-amber-50 text-amber-700";
+  if (status === "cancelled") return "bg-slate-100 text-slate-600";
+  return "bg-slate-100 text-slate-700";
 }
 
 function todayIsoDate() {
@@ -285,9 +308,10 @@ export default function AdminRostersPage() {
         ?? data.seasons.find((item) => item.is_active)
         ?? data.seasons[0];
       const seasonId = season?.id ?? "";
-      const firstLeague = data.leagues.find((league) => league.season_id === seasonId);
       setSelectedSeasonId(seasonId);
-      setSelectedLeagueId((current) => current || firstLeague?.id || "");
+      setSelectedLeagueId((current) =>
+        data.leagues.some((league) => league.id === current && league.season_id === seasonId) ? current : "",
+      );
       setForm((current) => ({
         ...current,
         season_id: current.season_id || seasonId,
@@ -428,6 +452,31 @@ export default function AdminRostersPage() {
     setBusyId(null);
   }
 
+  async function handleRegistrationAction(teamSeasonId: string, action: "approve" | "return" | "cancel" | "draft") {
+    const note = action === "return" ? window.prompt("Poznámka pro kapitána:", "") : "";
+    if (note === null) return;
+
+    setBusyId(`registration-${teamSeasonId}`);
+    setError(null);
+    setMessage(null);
+
+    const response = await adminFetch(`/api/admin/team-seasons/${teamSeasonId}/registration`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, admin_note: note }),
+    });
+    const body = await readJson<{ error?: string }>(response);
+
+    if (!response.ok) {
+      setError(body.error ?? "Stav účasti týmu se nepodařilo uložit.");
+    } else {
+      setMessage("Stav účasti týmu byl uložen.");
+      await loadData(false);
+    }
+
+    setBusyId(null);
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -448,7 +497,7 @@ export default function AdminRostersPage() {
                 const seasonId = event.target.value;
                 const season = seasons.find((item) => item.id === seasonId);
                 setSelectedSeasonId(seasonId);
-                setSelectedLeagueId(leagues.find((league) => league.season_id === seasonId)?.id ?? "");
+                setSelectedLeagueId("");
                 setSelectedTeamSeasonId("");
                 setForm((current) => ({ ...current, season_id: seasonId, team_id: "", joined_on: season?.starts_on || current.joined_on }));
               }}
@@ -594,14 +643,57 @@ export default function AdminRostersPage() {
             <section className="rounded-lg bg-white shadow-sm" key={teamSeason.id}>
               <div className="flex flex-col gap-2 border-b border-slate-200 px-6 py-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold">{getTeamSeasonLabel(teamSeason)}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-semibold">{getTeamSeasonLabel(teamSeason)}</h3>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${registrationStatusClass(teamSeason.registration_status)}`}>
+                      {registrationStatusLabel(teamSeason.registration_status)}
+                    </span>
+                  </div>
                   <p className="mt-1 text-sm text-slate-500">
                     {groupNames.length > 0 ? groupNames.join(", ") : "Bez přiřazené skupiny"}
                   </p>
+                  {teamSeason.registration_note ? (
+                    <p className="mt-2 text-sm text-slate-600">Poznámka kapitána: {teamSeason.registration_note}</p>
+                  ) : null}
+                  {teamSeason.registration_admin_note ? (
+                    <p className="mt-1 text-sm text-amber-700">Poznámka administrace: {teamSeason.registration_admin_note}</p>
+                  ) : null}
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                  Aktivní: {teamMemberships.filter((membership) => !membership.left_on).length}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    Aktivní: {teamMemberships.filter((membership) => !membership.left_on).length}
+                  </span>
+                  {teamSeason.registration_status === "submitted" ? (
+                    <>
+                      <button
+                        className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-400"
+                        disabled={busyId === `registration-${teamSeason.id}`}
+                        onClick={() => handleRegistrationAction(teamSeason.id, "approve")}
+                        type="button"
+                      >
+                        Schválit účast
+                      </button>
+                      <button
+                        className="rounded-md border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-60"
+                        disabled={busyId === `registration-${teamSeason.id}`}
+                        onClick={() => handleRegistrationAction(teamSeason.id, "return")}
+                        type="button"
+                      >
+                        Vrátit k doplnění
+                      </button>
+                    </>
+                  ) : null}
+                  {teamSeason.registration_status === "approved" ? (
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+                      disabled={busyId === `registration-${teamSeason.id}`}
+                      onClick={() => handleRegistrationAction(teamSeason.id, "return")}
+                      type="button"
+                    >
+                      Vrátit
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               {teamMemberships.length === 0 ? (

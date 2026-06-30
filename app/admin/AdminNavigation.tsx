@@ -53,7 +53,6 @@ export function AdminNavigation({ items }: { items?: AdminNavigationItem[] }) {
 
 function roleColor(role: AdminRole) {
   if (role === "player") return "#16A34A";
-  if (role === "captain") return "#0F4FA8";
   if (role === "moderator") return "#E2C57A";
   return "#EF233C";
 }

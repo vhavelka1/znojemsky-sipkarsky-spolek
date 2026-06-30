@@ -96,7 +96,7 @@ export async function GET(request: Request) {
         ? {
             displayName: requester.displayName,
             role: requester.role,
-            canCreateTopic: hasAtLeastRole(requester.role, "captain"),
+            canCreateTopic: hasAtLeastRole(requester.role, "moderator"),
             canComment: hasAtLeastRole(requester.role, "player"),
           }
         : null,
@@ -128,9 +128,9 @@ export async function POST(request: Request) {
   try {
     const requester = await getAppRequester(request);
 
-    if (!requester || !hasAtLeastRole(requester.role, "captain")) {
+    if (!requester || !hasAtLeastRole(requester.role, "moderator")) {
       return NextResponse.json(
-        { error: "Téma může vytvořit pouze kapitán, moderátor nebo administrátor." },
+        { error: "Téma může vytvořit pouze moderátor nebo administrátor." },
         { status: 403 },
       );
     }
