@@ -53,6 +53,7 @@ create policy "Admins can manage admin page permissions"
 insert into public.admin_page_permissions (page_key, page_path, page_label, minimum_role)
 values
   ('dashboard', '/admin', 'Přehled', 'moderator'),
+  ('my-team', '/admin/my-team', 'Můj tým', 'player'),
   ('teams', '/admin/teams', 'Týmy', 'moderator'),
   ('rosters', '/admin/rosters', 'Soupisky', 'moderator'),
   ('players', '/admin/players', 'Hráči', 'moderator'),
@@ -61,7 +62,7 @@ values
   ('leagues', '/admin/leagues', 'Ligy', 'moderator'),
   ('matches', '/admin/matches', 'Zápasy', 'moderator'),
   ('tables', '/admin/tables', 'Tabulky', 'moderator'),
-  ('users', '/admin/users', 'Uživatelé', 'admin'),
+  ('users', '/admin/users', 'Uživatelé webu', 'admin'),
   ('permissions', '/admin/permissions', 'Práva', 'admin'),
   ('settings', '/admin/settings', 'Nastavení', 'admin')
 on conflict (page_key) do update

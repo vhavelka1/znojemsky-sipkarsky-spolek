@@ -56,6 +56,7 @@ export function AdminShell({ children }: AdminShellProps) {
           canAccessAdmin: boolean;
           role: string;
           isActive: boolean;
+          canManageOwnTeam: boolean;
         } | null;
       };
 
@@ -87,6 +88,11 @@ export function AdminShell({ children }: AdminShellProps) {
       const minimumRole = currentPermission?.minimumRole ?? currentPage.defaultMinimumRole;
 
       if (!canAccessAdminPage(body.user.role, minimumRole)) {
+        if (body.user.canManageOwnTeam && pathname === "/admin") {
+          router.replace("/admin/my-team");
+          return;
+        }
+
         setBlockMessage("Pro přístup na tuto stránku nemáte oprávnění.");
         setAuthState("blocked");
         return;

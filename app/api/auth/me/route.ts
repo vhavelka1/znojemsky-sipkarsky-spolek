@@ -12,15 +12,16 @@ export async function GET(request: Request) {
   let canManageOwnTeam = false;
   if (profile.isActive && profile.playerId) {
     const supabase = createSupabaseAdminClient();
-    const { data: leadershipMembership } = await supabase
+    const { data: leadershipMemberships } = await supabase
       .from("team_memberships")
       .select("id")
       .eq("player_id", profile.playerId)
       .in("member_role", ["captain", "assistant_captain"])
       .is("left_on", null)
       .is("deleted_at", null)
-      .maybeSingle();
-    canManageOwnTeam = Boolean(leadershipMembership);
+      .limit(1)
+      .returns<Array<{ id: string }>>();
+    canManageOwnTeam = Boolean(leadershipMemberships?.[0]);
   }
 
   return NextResponse.json({
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
       displayName: profile.displayName,
       role: profile.role,
       isActive: profile.isActive,
-      canAccessAdmin: profile.isActive && hasAtLeastRole(profile.role, "moderator"),
+      canAccessAdmin: profile.isActive && (hasAtLeastRole(profile.role, "moderator") || canManageOwnTeam),
       canManageAdmin: profile.isActive && profile.role === "admin",
       canManageOwnTeam,
     },

@@ -27,6 +27,7 @@ export const adminRoleShortLabels: Record<AdminRole, string> = {
 
 export const adminPages: AdminPageDefinition[] = [
   { key: "dashboard", href: "/admin", label: "Přehled", defaultMinimumRole: "moderator" },
+  { key: "my-team", href: "/admin/my-team", label: "Můj tým", defaultMinimumRole: "player" },
   { key: "teams", href: "/admin/teams", label: "Týmy", defaultMinimumRole: "moderator" },
   { key: "rosters", href: "/admin/rosters", label: "Soupisky", defaultMinimumRole: "moderator" },
   { key: "registrations", href: "/admin/registrace", label: "Žádosti registrace", defaultMinimumRole: "moderator" },
