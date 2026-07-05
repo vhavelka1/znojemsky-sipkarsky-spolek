@@ -196,8 +196,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Vyberte hráče ze seznamu." }, { status: 400 });
   }
 
-  if (requestMode === "new" && (!firstName || !lastName || !requestedPlayerEmail || !requestedPlayerResidence || !requestedPlayerDateOfBirth)) {
-    return NextResponse.json({ error: "Vyplňte jméno, příjmení, email, bydliště a datum narození hráče." }, { status: 400 });
+  if (requestMode === "new" && (!firstName || !lastName || !requestedPlayerResidence || !requestedPlayerDateOfBirth)) {
+    return NextResponse.json({ error: "Vyplňte jméno, příjmení, bydliště a datum narození hráče." }, { status: 400 });
   }
 
   if (requestedPlayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedPlayerEmail)) {

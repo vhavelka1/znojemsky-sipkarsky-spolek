@@ -51,6 +51,7 @@ type RosterPlayer = {
   roleLabel: string;
   statusLabel: string;
   joinedOn: string | null;
+  leftOn: string | null;
 };
 
 type TeamMatch = {
@@ -128,6 +129,19 @@ const emptyRequestForm: RequestForm = {
   requested_player_date_of_birth: "",
   requested_player_note: "",
 };
+
+const rosterRequestInputClass =
+  "rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none transition focus:border-[#0F4FA8]";
+
+function requiredRosterRequestInputClass(value: string) {
+  return value.trim()
+    ? rosterRequestInputClass
+    : `${rosterRequestInputClass} border-[#EF233C] bg-red-50 focus:border-[#EF233C]`;
+}
+
+function RequiredMark() {
+  return <span className="ml-2 text-xs font-black uppercase tracking-[0.08em] text-[#EF233C]">povinné</span>;
+}
 
 async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
   const { data } = await supabase.auth.getSession();
@@ -221,6 +235,7 @@ export default function MyTeamPage() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [isSubmittingRegistration, setIsSubmittingRegistration] = useState(false);
+  const [removingMembershipId, setRemovingMembershipId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -353,6 +368,37 @@ export default function MyTeamPage() {
     setMessage("Účast týmu v sezóně byla odeslána ke schválení.");
     loadTeam();
   };
+
+  const removeRosterMember = async (player: RosterPlayer) => {
+    if (!window.confirm(`Opravdu chcete vyřadit hráče ${player.displayName} ze soupisky?`)) {
+      return;
+    }
+
+    setRemovingMembershipId(player.id);
+    setMessage(null);
+    setError(null);
+
+    const response = await authFetch("/api/captain/team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "remove_roster_member",
+        membership_id: player.id,
+      }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    setRemovingMembershipId(null);
+
+    if (!response.ok) {
+      setError(body.error ?? "Hráče se nepodařilo vyřadit ze soupisky.");
+      return;
+    }
+
+    setMessage("Hráč byl vyřazen ze soupisky.");
+    loadTeam();
+  };
+
+  const canEditRoster = team ? ["draft", "returned"].includes(team.registrationStatus) : false;
 
   return (
     <PublicPageShell activeHref="/tymy">
@@ -539,7 +585,9 @@ export default function MyTeamPage() {
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h2 className="text-2xl font-black text-[#061A3A]">Soupiska týmu</h2>
-                  <p className="mt-1 text-sm font-bold text-slate-500">Aktuální hráči a jejich role v týmu.</p>
+                  <p className="mt-1 text-sm font-bold text-slate-500">
+                    Aktuální hráči a jejich role v týmu. Soupisku lze upravovat jen před odesláním ke schválení.
+                  </p>
                 </div>
                 <Link className="rounded-full bg-[#0F4FA8] px-4 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#0B2F6B]" href={team.publicDetailHref}>
                   Veřejná soupiska
@@ -550,7 +598,7 @@ export default function MyTeamPage() {
                 <p className="mt-5 text-sm font-bold text-slate-500">Soupiska zatím není dostupná.</p>
               ) : (
                 <div className="mt-5 overflow-x-auto">
-                  <table className="w-full min-w-[680px] text-left text-sm">
+                  <table className="w-full min-w-[820px] text-left text-sm">
                     <thead className="bg-[#F4F8FF] text-xs font-black uppercase tracking-[0.1em] text-slate-500">
                       <tr>
                         <th className="px-4 py-3">Hráč</th>
@@ -558,6 +606,7 @@ export default function MyTeamPage() {
                         <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3">Kontakt</th>
                         <th className="px-4 py-3">Od</th>
+                        <th className="px-4 py-3">Akce</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#D8E4F2]">
@@ -575,6 +624,22 @@ export default function MyTeamPage() {
                             {player.phone ? <span className="block">{player.phone}</span> : null}
                           </td>
                           <td className="px-4 py-4 text-slate-600">{formatDate(player.joinedOn)}</td>
+                          <td className="px-4 py-4">
+                            {player.leftOn ? (
+                              <span className="text-xs font-bold text-slate-500">Vyřazen {formatDate(player.leftOn)}</span>
+                            ) : canEditRoster && player.role !== "captain" ? (
+                              <button
+                                className="rounded-full border border-red-200 px-3 py-2 text-xs font-black text-red-700 transition hover:-translate-y-0.5 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={removingMembershipId === player.id}
+                                onClick={() => void removeRosterMember(player)}
+                                type="button"
+                              >
+                                {removingMembershipId === player.id ? "Vyřazuji..." : "Vyřadit"}
+                              </button>
+                            ) : (
+                              <span className="text-xs font-bold text-slate-400">-</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -684,18 +749,18 @@ export default function MyTeamPage() {
                     <div className="grid gap-4">
                       <div className="grid gap-3">
                         <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                          Jméno
+                          <span>Jméno<RequiredMark /></span>
                           <input
-                            className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                            className={requiredRosterRequestInputClass(requestForm.first_name)}
                             onChange={(event) => setRequestForm((current) => ({ ...current, first_name: event.target.value }))}
                             required
                             value={requestForm.first_name}
                           />
                         </label>
                         <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                          Příjmení
+                          <span>Příjmení<RequiredMark /></span>
                           <input
-                            className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                            className={requiredRosterRequestInputClass(requestForm.last_name)}
                             onChange={(event) => setRequestForm((current) => ({ ...current, last_name: event.target.value }))}
                             required
                             value={requestForm.last_name}
@@ -705,9 +770,8 @@ export default function MyTeamPage() {
                       <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                         Email hráče
                         <input
-                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          className={rosterRequestInputClass}
                           onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_email: event.target.value }))}
-                          required
                           type="email"
                           value={requestForm.requested_player_email}
                         />
@@ -715,24 +779,24 @@ export default function MyTeamPage() {
                       <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                         Telefon
                         <input
-                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          className={rosterRequestInputClass}
                           onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_phone: event.target.value }))}
                           value={requestForm.requested_player_phone}
                         />
                       </label>
                       <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                        Bydliště
+                        <span>Bydliště<RequiredMark /></span>
                         <input
-                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          className={requiredRosterRequestInputClass(requestForm.requested_player_residence)}
                           onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_residence: event.target.value }))}
                           required
                           value={requestForm.requested_player_residence}
                         />
                       </label>
                       <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                        Datum narození
+                        <span>Datum narození<RequiredMark /></span>
                         <input
-                          className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                          className={requiredRosterRequestInputClass(requestForm.requested_player_date_of_birth)}
                           onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_date_of_birth: event.target.value }))}
                           required
                           type="date"
@@ -743,7 +807,7 @@ export default function MyTeamPage() {
                   )}
 
                   <textarea
-                    className="min-h-24 rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                    className={`${rosterRequestInputClass} min-h-24`}
                     onChange={(event) => setRequestForm((current) => ({ ...current, requested_player_note: event.target.value }))}
                     placeholder="Poznámka"
                     value={requestForm.requested_player_note}

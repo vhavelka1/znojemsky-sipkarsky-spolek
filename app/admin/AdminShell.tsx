@@ -114,7 +114,11 @@ export function AdminShell({ children }: AdminShellProps) {
           .map((permission) => ({
             key: permission.key,
             href: permission.href,
-            label: permission.label,
+            label:
+              (permission.key === "registrations" || permission.key === "roster-requests") &&
+              (pending[permission.key] ?? 0) > 0
+                ? `${permission.label} (${pending[permission.key]})`
+                : permission.label,
             minimumRole: permission.minimumRole,
             isAlert: permission.key === "registrations" || permission.key === "roster-requests"
               ? (pending[permission.key] ?? 0) > 0

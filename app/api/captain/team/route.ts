@@ -10,6 +10,7 @@ type UpdateCaptainTeamBody = {
   website_url?: unknown;
   action?: unknown;
   registration_note?: unknown;
+  membership_id?: unknown;
 };
 
 type TeamMembership = {
@@ -126,6 +127,15 @@ function optionalEmail(value: unknown) {
   const email = optionalString(value);
   if (!email) return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "invalid";
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function membershipEndDate(joinedOn: string | null) {
+  const today = todayIsoDate();
+  return joinedOn && joinedOn > today ? joinedOn : today;
 }
 
 function isMissingRosterRequestColumn(message: string | undefined) {
@@ -523,8 +533,9 @@ export async function GET(request: Request) {
         phone: player?.phone ?? null,
         role: membership.member_role,
         roleLabel: roleLabel(membership.member_role),
-        statusLabel: membership.left_on ? "Ukončeno" : player?.is_active === false ? "Neaktivní hráč" : "Aktivní",
+        statusLabel: membership.left_on ? "Neaktivní" : player?.is_active === false ? "Neaktivní hráč" : "Aktivní",
         joinedOn: membership.joined_on,
+        leftOn: membership.left_on,
       };
     })
     .sort((first, second) => roleOrder[first.role] - roleOrder[second.role] || first.displayName.localeCompare(second.displayName, "cs"));
@@ -588,6 +599,61 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as UpdateCaptainTeamBody | null;
   const action = optionalString(body?.action);
+
+  if (action === "remove_roster_member") {
+    const membershipId = optionalString(body?.membership_id);
+    if (!membershipId) {
+      return NextResponse.json({ error: "Vyberte hráče ze soupisky." }, { status: 400 });
+    }
+
+    const { supabase, captainMembership, teamSeason } = context;
+    if (!["draft", "returned"].includes(teamSeason.registration_status)) {
+      return NextResponse.json(
+        { error: "Soupisku lze upravovat pouze před odesláním ke schválení." },
+        { status: 400 },
+      );
+    }
+
+    const { data: membership, error: membershipError } = await supabase
+      .from("team_memberships")
+      .select("id, team_season_id, season_id, player_id, member_role, joined_on, left_on")
+      .eq("id", membershipId)
+      .eq("team_season_id", teamSeason.id)
+      .eq("season_id", captainMembership.season_id)
+      .is("deleted_at", null)
+      .maybeSingle<TeamMembership>();
+
+    if (membershipError) {
+      return NextResponse.json({ error: membershipError.message }, { status: 500 });
+    }
+
+    if (!membership) {
+      return NextResponse.json({ error: "Hráč v soupisce nebyl nalezen." }, { status: 404 });
+    }
+
+    if (membership.left_on) {
+      return NextResponse.json({ error: "Hráč už je v soupisce vedený jako neaktivní." }, { status: 400 });
+    }
+
+    if (membership.id === captainMembership.id || membership.member_role === "captain") {
+      return NextResponse.json(
+        { error: "Kapitána nelze vyřadit touto akcí. Nejdříve změňte kapitána v administraci týmu." },
+        { status: 400 },
+      );
+    }
+
+    const { error } = await supabase
+      .from("team_memberships")
+      .update({ left_on: membershipEndDate(membership.joined_on) })
+      .eq("id", membership.id)
+      .is("deleted_at", null);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
 
   if (action !== "submit_season_registration") {
     return NextResponse.json({ error: "Neznámá akce." }, { status: 400 });

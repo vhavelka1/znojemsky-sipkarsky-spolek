@@ -5,6 +5,7 @@ import { Button, Card, PageHeader } from "@/components/ui/admin";
 import { adminFetch } from "@/lib/adminFetch";
 
 type RosterRequest = {
+  type: "player_roster_request";
   id: string;
   requested_player_id: string | null;
   requested_player_name: string;
@@ -20,27 +21,46 @@ type RosterRequest = {
   seasonName: string;
 };
 
+type SeasonRosterRequest = {
+  type: "season_roster_request";
+  id: string;
+  status: "submitted" | "approved" | "returned" | "cancelled";
+  teamName: string;
+  seasonName: string;
+  note: string | null;
+  admin_note: string | null;
+  created_at: string;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+};
+
+type RosterRequestItem = RosterRequest | SeasonRosterRequest;
+
 type RequestsPayload = {
-  requests?: RosterRequest[];
+  requests?: RosterRequestItem[];
   error?: string;
 };
 
-function statusLabel(status: RosterRequest["status"]) {
+function statusLabel(status: RosterRequestItem["status"]) {
   if (status === "pending") return "Čeká na schválení";
+  if (status === "submitted") return "Odesláno ke schválení";
   if (status === "approved") return "Schváleno";
   if (status === "rejected") return "Zamítnuto";
+  if (status === "returned") return "Vráceno k doplnění";
   return "Zrušeno";
 }
 
-function statusClass(status: RosterRequest["status"]) {
+function statusClass(status: RosterRequestItem["status"]) {
   if (status === "pending") return "admin-badge";
+  if (status === "submitted") return "admin-badge";
   if (status === "approved") return "rounded-full bg-green-100 px-3 py-1 text-xs font-black text-green-800";
   if (status === "rejected") return "rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-800";
+  if (status === "returned") return "rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800";
   return "rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700";
 }
 
 export default function AdminRosterRequestsPage() {
-  const [requests, setRequests] = useState<RosterRequest[]>([]);
+  const [requests, setRequests] = useState<RosterRequestItem[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -91,6 +111,31 @@ export default function AdminRosterRequestsPage() {
     loadRequests();
   };
 
+  const reviewSeasonRosterRequest = async (id: string, action: "approve" | "return") => {
+    setProcessingId(id);
+    setError(null);
+    setMessage(null);
+
+    const response = await adminFetch(`/api/admin/team-seasons/${id}/registration`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        admin_note: notes[id] ?? "",
+      }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    setProcessingId(null);
+
+    if (!response.ok) {
+      setError(body.error ?? "Soupisku se nepodařilo zpracovat.");
+      return;
+    }
+
+    setMessage(action === "approve" ? "Soupiska byla schválena." : "Soupiska byla vrácena k doplnění.");
+    loadRequests();
+  };
+
   const deleteRequest = async (id: string) => {
     if (!window.confirm("Opravdu chcete žádost odstranit?")) return;
 
@@ -135,35 +180,60 @@ export default function AdminRosterRequestsPage() {
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-lg font-black text-[var(--brand-navy)]">{request.requested_player_name}</h2>
+                      <h2 className="text-lg font-black text-[var(--brand-navy)]">
+                        {request.type === "season_roster_request" ? `Soupiska týmu ${request.teamName}` : request.requested_player_name}
+                      </h2>
                       <span className={statusClass(request.status)}>{statusLabel(request.status)}</span>
+                      <span className="rounded-full bg-[#F4F8FF] px-3 py-1 text-xs font-black text-[#0B2F6B]">
+                        {request.type === "season_roster_request" ? "celá soupiska" : "přidání hráče"}
+                      </span>
                     </div>
                     <p className="mt-1 text-sm font-bold text-[var(--admin-muted)]">
                       {request.teamName} · {request.seasonName}
                     </p>
-                    {request.requested_player_email ? (
-                      <p className="mt-2 text-sm font-bold text-[var(--brand-blue)]">{request.requested_player_email}</p>
-                    ) : null}
-                    <div className="mt-3 grid gap-1 text-sm font-bold text-[var(--admin-muted)] sm:grid-cols-2">
-                      <p>Typ: {request.requested_player_id ? "existující hráč" : "nový hráč"}</p>
-                      <p>Telefon: {request.requested_player_phone || "-"}</p>
-                      <p>Bydliště: {request.requested_player_residence || "-"}</p>
-                      <p>
-                        Datum narození:{" "}
-                        {request.requested_player_date_of_birth
-                          ? new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium" }).format(new Date(request.requested_player_date_of_birth))
-                          : "-"}
-                      </p>
-                    </div>
-                    {request.requested_player_note ? (
-                      <p className="mt-3 text-sm text-[var(--admin-muted)]">{request.requested_player_note}</p>
-                    ) : null}
+                    {request.type === "player_roster_request" ? (
+                      <>
+                        {request.requested_player_email ? (
+                          <p className="mt-2 text-sm font-bold text-[var(--brand-blue)]">{request.requested_player_email}</p>
+                        ) : null}
+                        <div className="mt-3 grid gap-1 text-sm font-bold text-[var(--admin-muted)] sm:grid-cols-2">
+                          <p>Typ: {request.requested_player_id ? "existující hráč" : "nový hráč"}</p>
+                          <p>Telefon: {request.requested_player_phone || "-"}</p>
+                          <p>Bydliště: {request.requested_player_residence || "-"}</p>
+                          <p>
+                            Datum narození:{" "}
+                            {request.requested_player_date_of_birth
+                              ? new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium" }).format(new Date(request.requested_player_date_of_birth))
+                              : "-"}
+                          </p>
+                        </div>
+                        {request.requested_player_note ? (
+                          <p className="mt-3 text-sm text-[var(--admin-muted)]">{request.requested_player_note}</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="mt-3 grid gap-1 text-sm font-bold text-[var(--admin-muted)] sm:grid-cols-2">
+                        <p>
+                          Odesláno:{" "}
+                          {request.submitted_at
+                            ? new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(request.submitted_at))
+                            : "-"}
+                        </p>
+                        <p>
+                          Zpracováno:{" "}
+                          {request.reviewed_at
+                            ? new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(request.reviewed_at))
+                            : "-"}
+                        </p>
+                        <p className="sm:col-span-2">Poznámka kapitána: {request.note || "-"}</p>
+                      </div>
+                    )}
                     {request.admin_note ? (
                       <p className="mt-3 text-sm font-bold text-[var(--admin-muted)]">Poznámka: {request.admin_note}</p>
                     ) : null}
                   </div>
 
-                  {request.status === "pending" ? (
+                  {request.type === "player_roster_request" && request.status === "pending" ? (
                     <div className="grid gap-3 xl:w-[360px]">
                       <textarea
                         className="min-h-20 rounded-2xl border border-[var(--admin-border)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--brand-blue)]"
@@ -183,11 +253,36 @@ export default function AdminRosterRequestsPage() {
                         </Button>
                       </div>
                     </div>
-                  ) : (
+                  ) : request.type === "season_roster_request" && request.status === "submitted" ? (
+                    <div className="grid gap-3 xl:w-[360px]">
+                      <textarea
+                        className="min-h-20 rounded-2xl border border-[var(--admin-border)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--brand-blue)]"
+                        onChange={(event) => setNotes((current) => ({ ...current, [request.id]: event.target.value }))}
+                        placeholder="Poznámka pro kapitána"
+                        value={notes[request.id] ?? ""}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <Button disabled={processingId === request.id} onClick={() => reviewSeasonRosterRequest(request.id, "approve")} variant="primary">
+                          Schválit soupisku
+                        </Button>
+                        <Button disabled={processingId === request.id} onClick={() => reviewSeasonRosterRequest(request.id, "return")} variant="danger">
+                          Vrátit k doplnění
+                        </Button>
+                      </div>
+                    </div>
+                  ) : request.type === "player_roster_request" ? (
                     <div className="xl:w-[220px]">
                       <Button disabled={processingId === request.id} onClick={() => deleteRequest(request.id)} variant="danger">
                         Odstranit žádost
                       </Button>
+                    </div>
+                  ) : (
+                    <div className="xl:w-[220px]">
+                      {request.status === "approved" ? (
+                        <Button disabled={processingId === request.id} onClick={() => reviewSeasonRosterRequest(request.id, "return")} variant="secondary">
+                          Vrátit
+                        </Button>
+                      ) : null}
                     </div>
                   )}
                 </div>

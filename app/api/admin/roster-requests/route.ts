@@ -25,6 +25,19 @@ type RosterRequest = {
   created_at: string;
 };
 
+type TeamSeasonRosterRequest = {
+  id: string;
+  team_id: string;
+  season_id: string;
+  display_name: string | null;
+  registration_status: "submitted" | "approved" | "returned" | "cancelled";
+  registration_submitted_at: string | null;
+  registration_reviewed_at: string | null;
+  registration_note: string | null;
+  registration_admin_note: string | null;
+  created_at: string;
+};
+
 const ROSTER_REQUEST_SELECT =
   "id, season_id, team_season_id, requested_by_user_id, requested_player_id, requested_player_name, requested_player_email, requested_player_phone, requested_player_residence, requested_player_date_of_birth, requested_player_note, status, admin_note, created_at";
 
@@ -80,6 +93,18 @@ function isMissingRosterRequestColumn(message: string | undefined) {
         message.includes("requested_player_phone") ||
         message.includes("requested_player_residence") ||
         message.includes("requested_player_date_of_birth")),
+  );
+}
+
+function isMissingTeamSeasonRegistrationColumn(message: string | undefined) {
+  return Boolean(
+    message &&
+      (message.includes("schema cache") || message.includes("Could not find")) &&
+      (message.includes("registration_status") ||
+        message.includes("registration_submitted_at") ||
+        message.includes("registration_reviewed_at") ||
+        message.includes("registration_note") ||
+        message.includes("registration_admin_note")),
   );
 }
 
@@ -147,12 +172,21 @@ export async function GET(request: Request) {
   if (guard.response) return guard.response;
 
   const supabase = createSupabaseAdminClient();
-  const [requests, teamSeasons, teams, seasons] = await Promise.all([
+  const [requests, teamSeasons, submittedTeamSeasons, teams, seasons] = await Promise.all([
     loadRosterRequests(supabase),
     supabase
       .from("team_seasons")
       .select("id, team_id, season_id, display_name")
       .is("deleted_at", null),
+    supabase
+      .from("team_seasons")
+      .select(
+        "id, team_id, season_id, display_name, registration_status, registration_submitted_at, registration_reviewed_at, registration_note, registration_admin_note, created_at",
+      )
+      .neq("registration_status", "draft")
+      .is("deleted_at", null)
+      .order("registration_submitted_at", { ascending: false, nullsFirst: false })
+      .returns<TeamSeasonRosterRequest[]>(),
     supabase
       .from("teams")
       .select("id, name")
@@ -163,7 +197,10 @@ export async function GET(request: Request) {
       .is("deleted_at", null),
   ]);
 
-  const error = requests.error ?? teamSeasons.error ?? teams.error ?? seasons.error;
+  const teamSeasonRegistrationError = isMissingTeamSeasonRegistrationColumn(submittedTeamSeasons.error?.message)
+    ? null
+    : submittedTeamSeasons.error;
+  const error = requests.error ?? teamSeasons.error ?? teamSeasonRegistrationError ?? teams.error ?? seasons.error;
   if (error) {
     return NextResponse.json({ error: "Žádosti se nepodařilo načíst." }, { status: 500 });
   }
@@ -176,13 +213,36 @@ export async function GET(request: Request) {
     const teamSeason = teamSeasonById.get(rosterRequest.team_season_id);
     const team = teamSeason ? teamById.get(teamSeason.team_id) : null;
     return {
+      type: "player_roster_request" as const,
       ...rosterRequest,
       teamName: teamSeason?.display_name || team?.name || "Tým",
       seasonName: seasonById.get(rosterRequest.season_id)?.name || "Sezóna",
     };
   });
 
-  return NextResponse.json({ requests: mappedRequests });
+  const mappedTeamSeasonRequests = isMissingTeamSeasonRegistrationColumn(submittedTeamSeasons.error?.message)
+    ? []
+    : (submittedTeamSeasons.data ?? []).map((teamSeason) => {
+        const team = teamById.get(teamSeason.team_id);
+        return {
+          type: "season_roster_request" as const,
+          id: teamSeason.id,
+          status: teamSeason.registration_status,
+          teamName: teamSeason.display_name || team?.name || "Tým",
+          seasonName: seasonById.get(teamSeason.season_id)?.name || "Sezóna",
+          note: teamSeason.registration_note,
+          admin_note: teamSeason.registration_admin_note,
+          created_at: teamSeason.registration_submitted_at ?? teamSeason.created_at,
+          submitted_at: teamSeason.registration_submitted_at,
+          reviewed_at: teamSeason.registration_reviewed_at,
+        };
+      });
+
+  const allRequests = [...mappedRequests, ...mappedTeamSeasonRequests].sort((first, second) =>
+    (second.created_at ?? "").localeCompare(first.created_at ?? ""),
+  );
+
+  return NextResponse.json({ requests: allRequests });
 }
 
 export async function PATCH(request: Request) {

@@ -9,11 +9,16 @@ export async function GET(request: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const [rosterRequests, teamRegistrations, playerRegistrations] = await Promise.all([
+  const [rosterRequests, submittedTeamRosters, teamRegistrations, playerRegistrations] = await Promise.all([
     supabase
       .from("team_roster_requests")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending")
+      .is("deleted_at", null),
+    supabase
+      .from("team_seasons")
+      .select("id", { count: "exact", head: true })
+      .eq("registration_status", "submitted")
       .is("deleted_at", null),
     supabase
       .from("team_registration_requests")
@@ -27,12 +32,17 @@ export async function GET(request: Request) {
       .is("deleted_at", null),
   ]);
 
-  const error = rosterRequests.error ?? teamRegistrations.error ?? playerRegistrations.error;
+  const teamRosterStatusError =
+    submittedTeamRosters.error?.message.includes("registration_status") ||
+    submittedTeamRosters.error?.message.includes("schema cache")
+      ? null
+      : submittedTeamRosters.error;
+  const error = rosterRequests.error ?? teamRosterStatusError ?? teamRegistrations.error ?? playerRegistrations.error;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const pendingRosterRequests = rosterRequests.count ?? 0;
+  const pendingRosterRequests = (rosterRequests.count ?? 0) + (submittedTeamRosters.error ? 0 : submittedTeamRosters.count ?? 0);
   const pendingRegistrationRequests = (teamRegistrations.count ?? 0) + (playerRegistrations.count ?? 0);
 
   return NextResponse.json({
