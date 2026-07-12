@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile } from "@/lib/appAuth";
+import { homepageSettingKeys, publicSettingsFromRows, SettingRow } from "@/lib/homepageSettings";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
 
@@ -10,6 +11,8 @@ type UpdateCaptainTeamBody = {
   website_url?: unknown;
   action?: unknown;
   registration_note?: unknown;
+  wants_major_tournament?: unknown;
+  rules_accepted?: unknown;
   membership_id?: unknown;
 };
 
@@ -127,6 +130,17 @@ function optionalEmail(value: unknown) {
   const email = optionalString(value);
   if (!email) return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "invalid";
+}
+
+function booleanValue(value: unknown) {
+  return value === true;
+}
+
+function registrationNoteWithMajor(note: string | null, wantsMajorTournament: boolean) {
+  const cleanNote = note?.trim() ?? "";
+  const majorLine = `Zájem pořádat Major turnaj: ${wantsMajorTournament ? "ano" : "ne"}`;
+
+  return cleanNote ? `${cleanNote}\n\n${majorLine}` : majorLine;
 }
 
 function todayIsoDate() {
@@ -406,7 +420,7 @@ export async function GET(request: Request) {
   if (context.response) return context.response;
 
   const { supabase, captainMembership, teamSeason, team } = context;
-  const [seasonResult, requestsResult, membershipsResult, assignmentResult, matchResult] = await Promise.all([
+  const [seasonResult, requestsResult, membershipsResult, assignmentResult, matchResult, settingsResult] = await Promise.all([
     supabase
       .from("seasons")
       .select("id, name, is_active")
@@ -435,6 +449,12 @@ export async function GET(request: Request) {
       .order("scheduled_at", { ascending: false })
       .limit(12)
       .returns<MatchRow[]>(),
+    supabase
+      .from("app_settings")
+      .select("key, value")
+      .in("key", Object.values(homepageSettingKeys))
+      .is("deleted_at", null)
+      .returns<SettingRow[]>(),
   ]);
 
   if (seasonResult.error) {
@@ -521,6 +541,7 @@ export async function GET(request: Request) {
       residence: player.residence,
       dateOfBirth: player.date_of_birth,
     }));
+  const publicSettings = settingsResult.error ? publicSettingsFromRows(null) : publicSettingsFromRows(settingsResult.data);
   const roleOrder = { captain: 0, assistant_captain: 1, player: 2 };
   const roster = memberships
     .map((membership) => {
@@ -590,6 +611,8 @@ export async function GET(request: Request) {
     matches,
     availablePlayers,
     requests: requestsResult.error ? [] : requestsResult.data ?? [],
+    competitionRulesFileName: publicSettings.competitionRulesFileName,
+    competitionRulesFileUrl: publicSettings.competitionRulesFileUrl,
   });
 }
 
@@ -668,12 +691,22 @@ export async function POST(request: Request) {
   }
 
   const note = optionalString(body?.registration_note);
+  const rulesAccepted = booleanValue(body?.rules_accepted);
+  const wantsMajorTournament = booleanValue(body?.wants_major_tournament);
+
+  if (!rulesAccepted) {
+    return NextResponse.json(
+      { error: "Pro odeslání soupisky je potřeba souhlas s pravidly soutěže." },
+      { status: 400 },
+    );
+  }
+
   const { error } = await supabase
     .from("team_seasons")
     .update({
       registration_status: "submitted",
       registration_submitted_at: new Date().toISOString(),
-      registration_note: note,
+      registration_note: registrationNoteWithMajor(note, wantsMajorTournament),
       registration_admin_note: null,
     })
     .eq("id", teamSeason.id)

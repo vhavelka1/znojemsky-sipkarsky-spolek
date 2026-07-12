@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { PublicHero, PublicPageShell } from "@/components/public/PublicShell";
 
 type MetaPayload = {
+  individualRegistrationIntro?: string;
   competitionRulesFileName?: string;
   competitionRulesFileUrl?: string;
 };
@@ -26,6 +27,7 @@ export default function IndividualRegistrationPage() {
   const [lookingForTeam, setLookingForTeam] = useState(true);
   const [note, setNote] = useState("");
   const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [individualRegistrationIntro, setIndividualRegistrationIntro] = useState("");
   const [competitionRulesFileName, setCompetitionRulesFileName] = useState("");
   const [competitionRulesFileUrl, setCompetitionRulesFileUrl] = useState("");
   const [website, setWebsite] = useState("");
@@ -38,6 +40,7 @@ export default function IndividualRegistrationPage() {
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as MetaPayload;
         if (!response.ok) return;
+        setIndividualRegistrationIntro(body.individualRegistrationIntro ?? "");
         setCompetitionRulesFileName(body.competitionRulesFileName ?? "");
         setCompetitionRulesFileUrl(body.competitionRulesFileUrl ?? "");
       })
@@ -103,6 +106,11 @@ export default function IndividualRegistrationPage() {
         <form className="mt-6 space-y-6 rounded-[28px] border border-[#D8E4F2] bg-white p-5 shadow-[0_18px_50px_rgba(6,26,58,0.10)] sm:p-7" onSubmit={submit}>
           {message ? <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-black text-green-800">{message}</div> : null}
           {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div> : null}
+          {individualRegistrationIntro ? (
+            <div className="whitespace-pre-line rounded-3xl border border-[#D8E4F2] bg-[#F4F8FF] p-5 text-sm font-bold leading-7 text-[#061A3A]">
+              {individualRegistrationIntro}
+            </div>
+          ) : null}
 
           <input className="hidden" onChange={(event) => setWebsite(event.target.value)} tabIndex={-1} value={website} />
 

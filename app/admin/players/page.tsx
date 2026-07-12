@@ -18,6 +18,28 @@ type Player = {
   roster_membership_count: number;
 };
 
+type Team = {
+  id: string;
+  name: string;
+};
+
+type TeamSeason = {
+  id: string;
+  team_id: string;
+};
+
+type Season = {
+  id: string;
+  is_active: boolean;
+};
+
+type Membership = {
+  player_id: string;
+  season_id: string;
+  team_season_id: string;
+  left_on: string | null;
+};
+
 type PlayerForm = {
   display_name: string;
   first_name: string;
@@ -47,6 +69,26 @@ async function fetchPlayers() {
   }
 
   return (body.players ?? []) as Player[];
+}
+
+async function fetchPlayersData() {
+  const [players, membershipsResponse] = await Promise.all([
+    fetchPlayers(),
+    adminFetch("/api/admin/memberships"),
+  ]);
+  const membershipsBody = await membershipsResponse.json();
+
+  if (!membershipsResponse.ok) {
+    throw new Error(membershipsBody.error ?? "Nepodařilo se načíst týmy.");
+  }
+
+  return {
+    players,
+    teams: (membershipsBody.teams ?? []) as Team[],
+    seasons: (membershipsBody.seasons ?? []) as Season[],
+    teamSeasons: (membershipsBody.teamSeasons ?? []) as TeamSeason[],
+    memberships: (membershipsBody.memberships ?? []) as Membership[],
+  };
 }
 
 function playerToForm(player: Player): PlayerForm {
@@ -87,8 +129,13 @@ function normalizeSearch(value: string) {
 
 export default function AdminPlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamSeasons, setTeamSeasons] = useState<TeamSeason[]>([]);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [activeSeasonId, setActiveSeasonId] = useState("");
   const [form, setForm] = useState<PlayerForm>(emptyForm);
   const [playerFilter, setPlayerFilter] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [deletingPlayerId, setDeletingPlayerId] = useState<string | null>(null);
@@ -98,24 +145,49 @@ export default function AdminPlayersPage() {
 
   const canManagePlayers = mockRole === "admin";
   const isEditing = Boolean(editingPlayerId);
+  const teamIdByTeamSeasonId = useMemo(
+    () => new Map(teamSeasons.map((teamSeason) => [teamSeason.id, teamSeason.team_id])),
+    [teamSeasons],
+  );
+  const activeTeamIdsByPlayerId = useMemo(() => {
+    const activeTeamIds = new Map<string, Set<string>>();
+
+    for (const membership of memberships) {
+      if (membership.left_on || (activeSeasonId && membership.season_id !== activeSeasonId)) {
+        continue;
+      }
+
+      const teamId = teamIdByTeamSeasonId.get(membership.team_season_id);
+      if (!teamId) {
+        continue;
+      }
+
+      const playerTeamIds = activeTeamIds.get(membership.player_id) ?? new Set<string>();
+      playerTeamIds.add(teamId);
+      activeTeamIds.set(membership.player_id, playerTeamIds);
+    }
+
+    return activeTeamIds;
+  }, [activeSeasonId, memberships, teamIdByTeamSeasonId]);
   const filteredPlayers = useMemo(() => {
     const normalizedFilter = normalizeSearch(playerFilter);
 
-    if (!normalizedFilter) {
-      return players;
-    }
-
-    return players.filter((player) =>
-      [
+    return players.filter((player) => {
+      const matchesTeam = !selectedTeamId || activeTeamIdsByPlayerId.get(player.id)?.has(selectedTeamId);
+      const matchesSearch =
+        !normalizedFilter ||
+        [
         player.display_name,
         player.first_name ?? "",
         player.last_name ?? "",
         player.residence ?? "",
         player.email ?? "",
         player.phone ?? "",
-      ].some((value) => normalizeSearch(value).includes(normalizedFilter)),
-    );
-  }, [playerFilter, players]);
+        ].some((value) => normalizeSearch(value).includes(normalizedFilter));
+
+      return matchesTeam && matchesSearch;
+    });
+  }, [activeTeamIdsByPlayerId, playerFilter, players, selectedTeamId]);
 
   async function loadPlayers(showLoading = true) {
     if (showLoading) {
@@ -125,10 +197,19 @@ export default function AdminPlayersPage() {
     setError(null);
 
     try {
-      setPlayers(await fetchPlayers());
+      const data = await fetchPlayersData();
+      setPlayers(data.players);
+      setTeams(data.teams);
+      setTeamSeasons(data.teamSeasons);
+      setMemberships(data.memberships);
+      setActiveSeasonId(data.seasons.find((season) => season.is_active)?.id ?? data.seasons[0]?.id ?? "");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Nepodařilo se načíst hráče.");
       setPlayers([]);
+      setTeams([]);
+      setTeamSeasons([]);
+      setMemberships([]);
+      setActiveSeasonId("");
     }
 
     setIsLoading(false);
@@ -137,13 +218,17 @@ export default function AdminPlayersPage() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchPlayers()
-      .then((loadedPlayers) => {
+    fetchPlayersData()
+      .then((data) => {
         if (!isMounted) {
           return;
         }
 
-        setPlayers(loadedPlayers);
+        setPlayers(data.players);
+        setTeams(data.teams);
+        setTeamSeasons(data.teamSeasons);
+        setMemberships(data.memberships);
+        setActiveSeasonId(data.seasons.find((season) => season.is_active)?.id ?? data.seasons[0]?.id ?? "");
         setIsLoading(false);
       })
       .catch((loadError) => {
@@ -153,6 +238,10 @@ export default function AdminPlayersPage() {
 
         setError(loadError instanceof Error ? loadError.message : "Nepodařilo se načíst hráče.");
         setPlayers([]);
+        setTeams([]);
+        setTeamSeasons([]);
+        setMemberships([]);
+        setActiveSeasonId("");
         setIsLoading(false);
       });
 
@@ -278,6 +367,22 @@ export default function AdminPlayersPage() {
               value={playerFilter}
               onChange={(event) => setPlayerFilter(event.target.value)}
             />
+          </label>
+
+          <label className="mt-4 flex flex-col gap-1 text-sm font-medium md:mt-0">
+            Tým
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+              value={selectedTeamId}
+              onChange={(event) => setSelectedTeamId(event.target.value)}
+            >
+              <option value="">Všechny týmy</option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
           </label>
         </section>
 

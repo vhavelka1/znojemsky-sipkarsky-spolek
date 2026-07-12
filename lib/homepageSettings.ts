@@ -6,6 +6,7 @@ export type PublicHomepageSettings = {
   title: string;
   subtitle: string;
   teamRegistrationIntro: string;
+  individualRegistrationIntro: string;
   competitionRulesFileName: string;
   competitionRulesFileUrl: string;
   competitionRulesStoragePath: string;
@@ -16,6 +17,7 @@ export type AdminHomepageSettings = {
   homepageTitle: string;
   homepageSubtitle: string;
   teamRegistrationIntro: string;
+  individualRegistrationIntro: string;
   competitionRulesFileName: string;
   competitionRulesFileUrl: string;
   competitionRulesStoragePath: string;
@@ -32,6 +34,8 @@ export const defaultHomepageSettings: PublicHomepageSettings = {
   subtitle: "Oficiální systém lig, turnajů a statistik.",
   teamRegistrationIntro:
     "Formulář pro registraci týmu do Znojemské šipkařské týmové ligy pro sezonu 2026/2027.\n\nRegistrační poplatek na sezonu je stanoven na 1500 Kč. Uhrazení proběhne na účet Znojemského šipkařského spolku. Do poznámky pro příjemce uvést název týmu.\nČ. účtu: 246898551\nKód banky: 0/600\n\nTermín odevzdání přihlášek je stanoven na 31. 7. 2026",
+  individualRegistrationIntro:
+    "Formulář pro registraci jednotlivce do Znojemského šipkařského spolku pro sezonu 2026/2027.\n\nVyplňte osobní a kontaktní údaje hráče. Po odeslání žádost zkontroluje administrace spolku a následně vás bude kontaktovat s dalším postupem.",
   competitionRulesFileName: "",
   competitionRulesFileUrl: "",
   competitionRulesStoragePath: "",
@@ -42,6 +46,7 @@ export const homepageSettingKeys = {
   title: "homepage_title",
   subtitle: "homepage_subtitle",
   teamRegistrationIntro: "team_registration_intro",
+  individualRegistrationIntro: "individual_registration_intro",
   competitionRulesFileName: "competition_rules_file_name",
   competitionRulesFileUrl: "competition_rules_file_url",
   competitionRulesStoragePath: "competition_rules_storage_path",
@@ -78,6 +83,10 @@ export function normalizePublicHomepageSettings(
       settings.teamRegistrationIntro,
       defaultHomepageSettings.teamRegistrationIntro,
     ),
+    individualRegistrationIntro: cleanLongText(
+      settings.individualRegistrationIntro,
+      defaultHomepageSettings.individualRegistrationIntro,
+    ),
     competitionRulesFileName: clean(
       settings.competitionRulesFileName,
       defaultHomepageSettings.competitionRulesFileName,
@@ -101,6 +110,7 @@ export function publicSettingsFromRows(rows: SettingRow[] | null) {
     title: values.get(homepageSettingKeys.title),
     subtitle: values.get(homepageSettingKeys.subtitle),
     teamRegistrationIntro: values.get(homepageSettingKeys.teamRegistrationIntro),
+    individualRegistrationIntro: values.get(homepageSettingKeys.individualRegistrationIntro),
     competitionRulesFileName: values.get(homepageSettingKeys.competitionRulesFileName),
     competitionRulesFileUrl: values.get(homepageSettingKeys.competitionRulesFileUrl),
     competitionRulesStoragePath: values.get(homepageSettingKeys.competitionRulesStoragePath),
@@ -115,6 +125,7 @@ export function toAdminHomepageSettings(
     homepageTitle: settings.title,
     homepageSubtitle: settings.subtitle,
     teamRegistrationIntro: settings.teamRegistrationIntro,
+    individualRegistrationIntro: settings.individualRegistrationIntro,
     competitionRulesFileName: settings.competitionRulesFileName,
     competitionRulesFileUrl: settings.competitionRulesFileUrl,
     competitionRulesStoragePath: settings.competitionRulesStoragePath,
@@ -129,6 +140,7 @@ export function toPublicHomepageSettings(
     title: settings.homepageTitle,
     subtitle: settings.homepageSubtitle,
     teamRegistrationIntro: settings.teamRegistrationIntro,
+    individualRegistrationIntro: settings.individualRegistrationIntro,
     competitionRulesFileName: settings.competitionRulesFileName,
     competitionRulesFileUrl: settings.competitionRulesFileUrl,
     competitionRulesStoragePath: settings.competitionRulesStoragePath,
@@ -141,6 +153,7 @@ export function toSettingRows(settings: PublicHomepageSettings) {
     { key: homepageSettingKeys.title, value: settings.title, deleted_at: null },
     { key: homepageSettingKeys.subtitle, value: settings.subtitle, deleted_at: null },
     { key: homepageSettingKeys.teamRegistrationIntro, value: settings.teamRegistrationIntro, deleted_at: null },
+    { key: homepageSettingKeys.individualRegistrationIntro, value: settings.individualRegistrationIntro, deleted_at: null },
     { key: homepageSettingKeys.competitionRulesFileName, value: settings.competitionRulesFileName, deleted_at: null },
     { key: homepageSettingKeys.competitionRulesFileUrl, value: settings.competitionRulesFileUrl, deleted_at: null },
     { key: homepageSettingKeys.competitionRulesStoragePath, value: settings.competitionRulesStoragePath, deleted_at: null },

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PublicHero, PublicPageShell } from "@/components/public/PublicShell";
 import { supabase } from "@/lib/supabase";
 
@@ -31,6 +31,8 @@ type CaptainTeamPayload = {
   matches?: TeamMatch[];
   requests?: RosterRequest[];
   availablePlayers?: AvailablePlayer[];
+  competitionRulesFileName?: string;
+  competitionRulesFileUrl?: string;
   error?: string;
 };
 
@@ -220,6 +222,24 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("cs-CZ")
+    .trim();
+}
+
+function parseRegistrationNote(note: string) {
+  const majorLinePattern = /(?:^|\n)\s*Zájem pořádat Major turnaj:\s*(ano|ne)\s*$/i;
+  const match = note.match(majorLinePattern);
+
+  return {
+    note: note.replace(majorLinePattern, "").trim(),
+    wantsMajorTournament: match?.[1]?.toLocaleLowerCase("cs-CZ") === "ano",
+  };
+}
+
 export default function MyTeamPage() {
   const [team, setTeam] = useState<CaptainTeamPayload["team"] | null>(null);
   const [competition, setCompetition] = useState<TeamCompetition | null>(null);
@@ -229,7 +249,12 @@ export default function MyTeamPage() {
   const [availablePlayers, setAvailablePlayers] = useState<AvailablePlayer[]>([]);
   const [teamForm, setTeamForm] = useState<TeamForm>(emptyTeamForm);
   const [requestForm, setRequestForm] = useState<RequestForm>(emptyRequestForm);
+  const [existingPlayerSearch, setExistingPlayerSearch] = useState("");
   const [registrationNote, setRegistrationNote] = useState("");
+  const [wantsMajorTournament, setWantsMajorTournament] = useState(false);
+  const [registrationRulesAccepted, setRegistrationRulesAccepted] = useState(false);
+  const [competitionRulesFileName, setCompetitionRulesFileName] = useState("");
+  const [competitionRulesFileUrl, setCompetitionRulesFileUrl] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
@@ -252,7 +277,12 @@ export default function MyTeamPage() {
         setMatches(body.matches ?? []);
         setRequests(body.requests ?? []);
         setAvailablePlayers(body.availablePlayers ?? []);
-        setRegistrationNote(body.team?.registrationNote ?? "");
+        const parsedRegistrationNote = parseRegistrationNote(body.team?.registrationNote ?? "");
+        setRegistrationNote(parsedRegistrationNote.note);
+        setWantsMajorTournament(parsedRegistrationNote.wantsMajorTournament);
+        setRegistrationRulesAccepted(false);
+        setCompetitionRulesFileName(body.competitionRulesFileName ?? "");
+        setCompetitionRulesFileUrl(body.competitionRulesFileUrl ?? "");
         setTeamForm({
           public_description: body.team?.publicDescription ?? "",
           home_venue: body.team?.homeVenue ?? "",
@@ -340,11 +370,18 @@ export default function MyTeamPage() {
     }
 
     setRequestForm(emptyRequestForm);
+    setExistingPlayerSearch("");
     setMessage("Žádost byla odeslána.");
     loadTeam();
   };
 
   const submitSeasonRegistration = async () => {
+    if (!registrationRulesAccepted) {
+      setMessage(null);
+      setError("Pro odeslání soupisky je potřeba souhlas s pravidly soutěže.");
+      return;
+    }
+
     setIsSubmittingRegistration(true);
     setMessage(null);
     setError(null);
@@ -355,6 +392,8 @@ export default function MyTeamPage() {
       body: JSON.stringify({
         action: "submit_season_registration",
         registration_note: registrationNote,
+        wants_major_tournament: wantsMajorTournament,
+        rules_accepted: registrationRulesAccepted,
       }),
     });
     const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -399,6 +438,29 @@ export default function MyTeamPage() {
   };
 
   const canEditRoster = team ? ["draft", "returned"].includes(team.registrationStatus) : false;
+  const selectedExistingPlayer = useMemo(
+    () => availablePlayers.find((player) => player.id === requestForm.existing_player_id) ?? null,
+    [availablePlayers, requestForm.existing_player_id],
+  );
+  const filteredAvailablePlayers = useMemo(() => {
+    const normalizedSearch = normalizeSearch(existingPlayerSearch);
+
+    if (!normalizedSearch) {
+      return availablePlayers.slice(0, 12);
+    }
+
+    return availablePlayers
+      .filter((player) =>
+        [
+          player.displayName,
+          player.firstName ?? "",
+          player.lastName ?? "",
+          player.email ?? "",
+          player.residence ?? "",
+        ].some((value) => normalizeSearch(value).includes(normalizedSearch)),
+      )
+      .slice(0, 12);
+  }, [availablePlayers, existingPlayerSearch]);
 
   return (
     <PublicPageShell activeHref="/tymy">
@@ -499,9 +561,46 @@ export default function MyTeamPage() {
                   />
                 </label>
 
+                <label className="mt-4 flex items-start gap-3 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-black text-[#061A3A]">
+                  <input
+                    checked={wantsMajorTournament}
+                    className="mt-1 size-4"
+                    disabled={!["draft", "returned"].includes(team.registrationStatus)}
+                    onChange={(event) => setWantsMajorTournament(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Tým má zájem pořádat Major turnaj</span>
+                </label>
+
+                <label className="mt-3 flex items-start gap-3 rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold text-slate-700">
+                  <input
+                    checked={registrationRulesAccepted}
+                    className="mt-1 size-4"
+                    disabled={!["draft", "returned"].includes(team.registrationStatus)}
+                    onChange={(event) => setRegistrationRulesAccepted(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    Souhlasím s{" "}
+                    {competitionRulesFileUrl ? (
+                      <a
+                        className="font-black text-[#0F4FA8] underline decoration-[#0F4FA8]/30 underline-offset-4 hover:text-[#EF233C]"
+                        href={competitionRulesFileUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {competitionRulesFileName || "pravidly soutěže"}
+                      </a>
+                    ) : (
+                      "pravidly soutěže"
+                    )}{" "}
+                    a potvrzuji správnost soupisky.
+                  </span>
+                </label>
+
                 <button
                   className="mt-4 rounded-full bg-[#EF233C] px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/20 transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSubmittingRegistration || !["draft", "returned"].includes(team.registrationStatus)}
+                  disabled={isSubmittingRegistration || !registrationRulesAccepted || !["draft", "returned"].includes(team.registrationStatus)}
                   onClick={submitSeasonRegistration}
                   type="button"
                 >
@@ -728,19 +827,42 @@ export default function MyTeamPage() {
                   {requestForm.request_mode === "existing" ? (
                     <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                       Hráč bez aktuálního týmu
-                      <select
+                      <input
                         className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
-                        onChange={(event) => setRequestForm((current) => ({ ...current, existing_player_id: event.target.value }))}
+                        onChange={(event) => {
+                          setExistingPlayerSearch(event.target.value);
+                          setRequestForm((current) => ({ ...current, existing_player_id: "" }));
+                        }}
+                        placeholder="Začněte psát jméno hráče"
                         required
-                        value={requestForm.existing_player_id}
-                      >
-                        <option value="">Vyberte hráče</option>
-                        {availablePlayers.map((player) => (
-                          <option key={player.id} value={player.id}>
-                            {player.displayName}{player.email ? ` / ${player.email}` : ""}
-                          </option>
-                        ))}
-                      </select>
+                        value={selectedExistingPlayer ? selectedExistingPlayer.displayName : existingPlayerSearch}
+                      />
+                      {requestForm.existing_player_id ? (
+                        <span className="rounded-2xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-black text-green-800">
+                          Vybr&aacute;no: {selectedExistingPlayer?.displayName}
+                        </span>
+                      ) : availablePlayers.length > 0 ? (
+                        <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#D8E4F2] bg-white p-2 shadow-[0_14px_36px_rgba(6,26,58,0.10)]">
+                          {filteredAvailablePlayers.length === 0 ? (
+                            <p className="px-3 py-2 text-xs font-bold text-slate-500">Nebyl nalezen &zcaron;&aacute;dn&yacute; hr&aacute;&ccaron;.</p>
+                          ) : (
+                            filteredAvailablePlayers.map((player) => (
+                              <button
+                                className="w-full rounded-xl px-3 py-2 text-left text-sm font-black text-[#061A3A] transition hover:bg-[#F4F8FF]"
+                                key={player.id}
+                                onClick={() => {
+                                  setRequestForm((current) => ({ ...current, existing_player_id: player.id }));
+                                  setExistingPlayerSearch(player.displayName);
+                                }}
+                                type="button"
+                              >
+                                {player.displayName}
+                                {player.email ? <span className="block text-xs font-bold text-slate-500">{player.email}</span> : null}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      ) : null}
                       {availablePlayers.length === 0 ? (
                         <span className="text-xs font-bold text-slate-500">Momentálně nejsou dostupní žádní hráči bez týmu v aktuální sezóně.</span>
                       ) : null}

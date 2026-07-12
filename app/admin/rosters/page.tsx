@@ -99,6 +99,14 @@ const emptyForm: RosterForm = {
   left_on: "",
 };
 
+const registrationStatusOptions: Array<{ value: TeamSeasonRegistrationStatus; label: string }> = [
+  { value: "draft", label: "Rozpracováno" },
+  { value: "submitted", label: "Odesláno ke schválení" },
+  { value: "approved", label: "Schváleno" },
+  { value: "returned", label: "Vráceno k doplnění" },
+  { value: "cancelled", label: "Zrušeno" },
+];
+
 async function readJson<T>(response: Response) {
   return (await response.json().catch(() => ({}))) as T;
 }
@@ -187,6 +195,7 @@ export default function AdminRostersPage() {
   const [selectedSeasonId, setSelectedSeasonId] = useState("");
   const [selectedLeagueId, setSelectedLeagueId] = useState("");
   const [selectedTeamSeasonId, setSelectedTeamSeasonId] = useState("");
+  const [selectedRegistrationStatus, setSelectedRegistrationStatus] = useState<TeamSeasonRegistrationStatus | "">("");
   const [form, setForm] = useState<RosterForm>(emptyForm);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<RosterForm>(emptyForm);
@@ -257,10 +266,14 @@ export default function AdminRostersPage() {
 
   const rosterTeamSeasons = useMemo(
     () =>
-      availableTeamSeasons.filter(
-        (teamSeason) => !selectedTeamSeasonId || teamSeason.id === selectedTeamSeasonId,
-      ),
-    [availableTeamSeasons, selectedTeamSeasonId],
+      availableTeamSeasons.filter((teamSeason) => {
+        const matchesTeam = !selectedTeamSeasonId || teamSeason.id === selectedTeamSeasonId;
+        const matchesRegistrationStatus =
+          !selectedRegistrationStatus || (teamSeason.registration_status ?? "draft") === selectedRegistrationStatus;
+
+        return matchesTeam && matchesRegistrationStatus;
+      }),
+    [availableTeamSeasons, selectedRegistrationStatus, selectedTeamSeasonId],
   );
 
   const rosters = useMemo(
@@ -487,7 +500,7 @@ export default function AdminRostersPage() {
       </header>
 
       <section className="rounded-lg bg-white p-6 shadow-sm">
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-4">
           <label className="flex flex-col gap-1 text-sm font-medium">
             Sezóna
             <select
@@ -544,6 +557,22 @@ export default function AdminRostersPage() {
               {availableTeamSeasons.map((teamSeason) => (
                 <option key={teamSeason.id} value={teamSeason.id}>
                   {getTeamSeasonLabel(teamSeason)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Stav soupisky
+            <select
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+              value={selectedRegistrationStatus}
+              onChange={(event) => setSelectedRegistrationStatus(event.target.value as TeamSeasonRegistrationStatus | "")}
+            >
+              <option value="">Všechny stavy</option>
+              {registrationStatusOptions.map((status) => (
+                <option key={status.value} value={status.value}>
+                  {status.label}
                 </option>
               ))}
             </select>

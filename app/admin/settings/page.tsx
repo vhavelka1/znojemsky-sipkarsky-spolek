@@ -9,6 +9,7 @@ type HomepageSettings = {
   homepageTitle: string;
   homepageSubtitle: string;
   teamRegistrationIntro: string;
+  individualRegistrationIntro: string;
   competitionRulesFileName: string;
   competitionRulesFileUrl: string;
   competitionRulesStoragePath: string;
@@ -26,6 +27,8 @@ const defaultSettings: HomepageSettings = {
   homepageSubtitle: "Oficiální systém lig, turnajů a statistik.",
   teamRegistrationIntro:
     "Formulář pro registraci týmu do Znojemské šipkařské týmové ligy pro sezonu 2026/2027.\n\nRegistrační poplatek na sezonu je stanoven na 1500 Kč. Uhrazení proběhne na účet Znojemského šipkařského spolku. Do poznámky pro příjemce uvést název týmu.\nČ. účtu: 246898551\nKód banky: 0/600\n\nTermín odevzdání přihlášek je stanoven na 31. 7. 2026",
+  individualRegistrationIntro:
+    "Formulář pro registraci jednotlivce do Znojemského šipkařského spolku pro sezonu 2026/2027.\n\nVyplňte osobní a kontaktní údaje hráče. Po odeslání žádost zkontroluje administrace spolku a následně vás bude kontaktovat s dalším postupem.",
   competitionRulesFileName: "",
   competitionRulesFileUrl: "",
   competitionRulesStoragePath: "",
@@ -221,6 +224,19 @@ export default function AdminSettingsPage() {
                 updateField("teamRegistrationIntro", event.target.value)
               }
               value={settings.teamRegistrationIntro}
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-black text-[var(--brand-navy)]">
+            Text u registrace jednotlivce
+            <textarea
+              className={`${inputClass} min-h-44 resize-y whitespace-pre-wrap`}
+              disabled={isLoading || isSaving}
+              maxLength={3000}
+              onChange={(event) =>
+                updateField("individualRegistrationIntro", event.target.value)
+              }
+              value={settings.individualRegistrationIntro}
             />
           </label>
 

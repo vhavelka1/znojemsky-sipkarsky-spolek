@@ -125,6 +125,7 @@ export async function GET() {
       teams: teams.data ?? [],
       activeSeasonId: (seasons.data ?? []).find((season) => season.is_active)?.id ?? seasons.data?.[0]?.id ?? null,
       teamRegistrationIntro: publicSettings.teamRegistrationIntro,
+      individualRegistrationIntro: publicSettings.individualRegistrationIntro,
       competitionRulesFileName: publicSettings.competitionRulesFileName,
       competitionRulesFileUrl: publicSettings.competitionRulesFileUrl,
     });
