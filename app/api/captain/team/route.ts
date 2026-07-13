@@ -45,6 +45,22 @@ type AvailablePlayerRow = {
   date_of_birth: string | null;
 };
 
+type ActivePlayerMembershipRow = {
+  player_id: string;
+  team_season_id: string;
+};
+
+type TeamSeasonNameRow = {
+  id: string;
+  team_id: string;
+  display_name: string | null;
+};
+
+type TeamNameRow = {
+  id: string;
+  name: string;
+};
+
 type MatchRow = {
   id: string;
   home_team_id: string;
@@ -504,11 +520,11 @@ export async function GET(request: Request) {
       : Promise.resolve({ data: [] as TeamSeasonRow[], error: null }),
     supabase
       .from("team_memberships")
-      .select("player_id")
+      .select("player_id, team_season_id")
       .eq("season_id", captainMembership.season_id)
       .is("left_on", null)
       .is("deleted_at", null)
-      .returns<Array<{ player_id: string }>>(),
+      .returns<ActivePlayerMembershipRow[]>(),
     supabase
       .from("players")
       .select("id, display_name, first_name, last_name, email, phone, residence, date_of_birth")
@@ -516,6 +532,24 @@ export async function GET(request: Request) {
       .order("display_name", { ascending: true })
       .returns<AvailablePlayerRow[]>(),
   ]);
+  const activeTeamSeasonIds = Array.from(new Set((seasonMembershipsResult.data ?? []).map((membership) => membership.team_season_id)));
+  const activeTeamSeasonsResult = activeTeamSeasonIds.length > 0
+    ? await supabase
+        .from("team_seasons")
+        .select("id, team_id, display_name")
+        .in("id", activeTeamSeasonIds)
+        .is("deleted_at", null)
+        .returns<TeamSeasonNameRow[]>()
+    : { data: [] as TeamSeasonNameRow[], error: null };
+  const activeTeamIds = Array.from(new Set((activeTeamSeasonsResult.data ?? []).map((teamSeason) => teamSeason.team_id)));
+  const activeTeamsResult = activeTeamIds.length > 0
+    ? await supabase
+        .from("teams")
+        .select("id, name")
+        .in("id", activeTeamIds)
+        .is("deleted_at", null)
+        .returns<TeamNameRow[]>()
+    : { data: [] as TeamNameRow[], error: null };
   const leagueResult = groupResult.data?.league_id
     ? await supabase
         .from("leagues")
@@ -528,9 +562,10 @@ export async function GET(request: Request) {
   const playerById = new Map((playersResult.data ?? []).map((player) => [player.id, player]));
   const resultsByMatchId = new Map((resultsResult.data ?? []).map((result) => [result.match_id, result]));
   const opponentById = new Map((opponentTeamSeasonsResult.data ?? []).map((opponent) => [opponent.id, opponent]));
-  const assignedPlayerIds = new Set((seasonMembershipsResult.data ?? []).map((membership) => membership.player_id));
+  const activeMembershipByPlayerId = new Map((seasonMembershipsResult.data ?? []).map((membership) => [membership.player_id, membership]));
+  const activeTeamSeasonById = new Map((activeTeamSeasonsResult.data ?? []).map((teamSeason) => [teamSeason.id, teamSeason]));
+  const activeTeamById = new Map((activeTeamsResult.data ?? []).map((activeTeam) => [activeTeam.id, activeTeam]));
   const availablePlayers = (allPlayersResult.data ?? [])
-    .filter((player) => !assignedPlayerIds.has(player.id))
     .map((player) => ({
       id: player.id,
       displayName: player.display_name,
@@ -540,6 +575,13 @@ export async function GET(request: Request) {
       phone: player.phone,
       residence: player.residence,
       dateOfBirth: player.date_of_birth,
+      currentTeamName: (() => {
+        const membership = activeMembershipByPlayerId.get(player.id);
+        if (!membership) return null;
+        const playerTeamSeason = activeTeamSeasonById.get(membership.team_season_id);
+        return playerTeamSeason?.display_name || (playerTeamSeason ? activeTeamById.get(playerTeamSeason.team_id)?.name : null) || "Jiný tým";
+      })(),
+      isCurrentTeamPlayer: activeMembershipByPlayerId.get(player.id)?.team_season_id === teamSeason.id,
     }));
   const publicSettings = settingsResult.error ? publicSettingsFromRows(null) : publicSettingsFromRows(settingsResult.data);
   const roleOrder = { captain: 0, assistant_captain: 1, player: 2 };

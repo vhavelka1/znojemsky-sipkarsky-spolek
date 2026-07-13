@@ -90,6 +90,8 @@ type AvailablePlayer = {
   phone: string | null;
   residence: string | null;
   dateOfBirth: string | null;
+  currentTeamName: string | null;
+  isCurrentTeamPlayer: boolean;
 };
 
 type TeamRegistrationStatus = "draft" | "submitted" | "approved" | "returned" | "cancelled";
@@ -444,22 +446,29 @@ export default function MyTeamPage() {
   );
   const filteredAvailablePlayers = useMemo(() => {
     const normalizedSearch = normalizeSearch(existingPlayerSearch);
+    const sortPlayers = (items: AvailablePlayer[]) =>
+      [...items].sort((first, second) => {
+        const firstHasTeam = first.currentTeamName ? 0 : 1;
+        const secondHasTeam = second.currentTeamName ? 0 : 1;
+        return firstHasTeam - secondHasTeam || first.displayName.localeCompare(second.displayName, "cs");
+      });
 
     if (!normalizedSearch) {
-      return availablePlayers.slice(0, 12);
+      return sortPlayers(availablePlayers);
     }
 
-    return availablePlayers
-      .filter((player) =>
+    return sortPlayers(
+      availablePlayers.filter((player) =>
         [
           player.displayName,
           player.firstName ?? "",
           player.lastName ?? "",
           player.email ?? "",
           player.residence ?? "",
+          player.currentTeamName ?? "",
         ].some((value) => normalizeSearch(value).includes(normalizedSearch)),
-      )
-      .slice(0, 12);
+      ),
+    );
   }, [availablePlayers, existingPlayerSearch]);
 
   return (
@@ -805,7 +814,7 @@ export default function MyTeamPage() {
             <aside className="space-y-6">
               <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
                 <h2 className="text-xl font-black text-[#061A3A]">Žádost o přidání hráče</h2>
-                <p className="mt-2 text-sm font-bold text-slate-500">Vyberte hráče bez aktuálního týmu, nebo pošlete žádost na nového hráče.</p>
+                <p className="mt-2 text-sm font-bold text-slate-500">Vyberte existujícího hráče ze seznamu. Pokud je v jiné soupisce, po schválení administrátorem se jeho původní působení ukončí.</p>
                 <form className="mt-5 grid gap-4" onSubmit={sendRequest}>
                   <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#F4F8FF] p-1">
                     <button
@@ -826,7 +835,7 @@ export default function MyTeamPage() {
 
                   {requestForm.request_mode === "existing" ? (
                     <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                      Hráč bez aktuálního týmu
+                      Existující hráč
                       <input
                         className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
                         onChange={(event) => {
@@ -843,6 +852,9 @@ export default function MyTeamPage() {
                         </span>
                       ) : availablePlayers.length > 0 ? (
                         <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#D8E4F2] bg-white p-2 shadow-[0_14px_36px_rgba(6,26,58,0.10)]">
+                          <p className="px-3 pb-2 pt-1 text-xs font-black uppercase tracking-[0.08em] text-slate-500">
+                            Zobrazeno hráčů: {filteredAvailablePlayers.length}
+                          </p>
                           {filteredAvailablePlayers.length === 0 ? (
                             <p className="px-3 py-2 text-xs font-bold text-slate-500">Nebyl nalezen &zcaron;&aacute;dn&yacute; hr&aacute;&ccaron;.</p>
                           ) : (
@@ -857,6 +869,13 @@ export default function MyTeamPage() {
                                 type="button"
                               >
                                 {player.displayName}
+                                {player.currentTeamName ? (
+                                  <span className="block text-xs font-bold text-[#0F4FA8]">
+                                    Aktuální soupiska: {player.currentTeamName}
+                                  </span>
+                                ) : (
+                                  <span className="block text-xs font-bold text-green-700">Bez aktuálního týmu</span>
+                                )}
                                 {player.email ? <span className="block text-xs font-bold text-slate-500">{player.email}</span> : null}
                               </button>
                             ))

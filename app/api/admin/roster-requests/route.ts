@@ -85,6 +85,11 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function membershipEndDate(joinedOn: string | null) {
+  const today = todayIsoDate();
+  return joinedOn && joinedOn > today ? joinedOn : today;
+}
+
 function isMissingRosterRequestColumn(message: string | undefined) {
   return Boolean(
     message &&
@@ -354,7 +359,7 @@ export async function PATCH(request: Request) {
 
   const { data: existingMembership, error: membershipLookupError } = await supabase
     .from("team_memberships")
-    .select("id, team_season_id")
+    .select("id, team_season_id, joined_on")
     .eq("player_id", playerId)
     .eq("season_id", rosterRequest.season_id)
     .is("left_on", null)
@@ -365,7 +370,19 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: membershipLookupError.message }, { status: 500 });
   }
 
-  if (!existingMembership) {
+  if (!existingMembership || existingMembership.team_season_id !== rosterRequest.team_season_id) {
+    if (existingMembership && existingMembership.team_season_id !== rosterRequest.team_season_id) {
+      const { error: closeMembershipError } = await supabase
+        .from("team_memberships")
+        .update({ left_on: membershipEndDate(existingMembership.joined_on) })
+        .eq("id", existingMembership.id)
+        .is("deleted_at", null);
+
+      if (closeMembershipError) {
+        return NextResponse.json({ error: closeMembershipError.message }, { status: 500 });
+      }
+    }
+
     const { error: membershipError } = await supabase
       .from("team_memberships")
       .insert({
@@ -379,8 +396,6 @@ export async function PATCH(request: Request) {
     if (membershipError) {
       return NextResponse.json({ error: membershipError.message }, { status: 500 });
     }
-  } else if (existingMembership.team_season_id !== rosterRequest.team_season_id) {
-    return NextResponse.json({ error: "Hráč už je v této sezóně přiřazený k jinému týmu." }, { status: 400 });
   }
 
   const { data, error } = await supabase

@@ -231,7 +231,7 @@ export async function POST(request: Request) {
 
     const { data: activeMembership, error: membershipError } = await context.supabase
       .from("team_memberships")
-      .select("id")
+      .select("id, team_season_id")
       .eq("player_id", player.id)
       .eq("season_id", context.membership.season_id)
       .is("left_on", null)
@@ -242,8 +242,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: membershipError.message }, { status: 500 });
     }
 
-    if (activeMembership) {
-      return NextResponse.json({ error: "Vybraný hráč už je v této sezóně přiřazený k týmu." }, { status: 400 });
+    if (activeMembership?.team_season_id === context.membership.team_season_id) {
+      return NextResponse.json({ error: "Vybran\u00fd hr\u00e1\u010d u\u017e je ve va\u0161\u00ed soupisce." }, { status: 400 });
     }
 
     existingPlayerName = player.display_name;
