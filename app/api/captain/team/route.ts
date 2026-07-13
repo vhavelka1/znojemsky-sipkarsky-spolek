@@ -637,7 +637,7 @@ export async function GET(request: Request) {
       registrationNote: teamSeason.registration_note ?? "",
       registrationAdminNote: teamSeason.registration_admin_note ?? "",
       publicDetailHref: `/tymy/${team.id}`,
-      rosterHref: "/muj-tym#soupiska",
+      rosterHref: "/muj-tym/soupiska",
       competitionHref: groupResult.data ? `/tabulky?season_id=${captainMembership.season_id}&league_id=${groupResult.data.league_id}&group_id=${groupResult.data.id}` : "/tabulky",
     },
     competition: groupResult.data && leagueResult.data ? {
