@@ -149,6 +149,16 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function laterIsoDate(first: string, second: string) {
+  return first > second ? first : second;
+}
+
+function memberRoleRank(role: string) {
+  if (role === "captain") return 3;
+  if (role === "assistant_captain") return 2;
+  return 1;
+}
+
 async function guardModerator(request: Request) {
   const profile = await getCurrentUserProfile(request);
   if (!profile?.isActive) {
@@ -303,21 +313,33 @@ async function ensureMembership(
 
   const { data: existing, error: lookupError } = await supabase
     .from("team_memberships")
-    .select("id, team_season_id, member_role")
+    .select("id, team_season_id, member_role, joined_on")
     .eq("player_id", playerId)
     .eq("season_id", seasonId)
     .is("left_on", null)
     .is("deleted_at", null)
-    .maybeSingle<{ id: string; team_season_id: string; member_role: string }>();
+    .maybeSingle<{ id: string; team_season_id: string; member_role: string; joined_on: string }>();
 
   if (lookupError) throw new Error(lookupError.message);
 
   if (existing) {
-    if (existing.team_season_id === teamSeasonId && existing.member_role !== memberRole) {
+    if (existing.team_season_id === teamSeasonId && memberRoleRank(existing.member_role) < memberRoleRank(memberRole)) {
       const { error } = await supabase.from("team_memberships").update({ member_role: memberRole }).eq("id", existing.id);
       if (error) throw new Error(error.message);
     }
-    return;
+    if (existing.team_season_id === teamSeasonId) return;
+  }
+
+  const { error: closeMembershipsError } = await supabase
+    .from("team_memberships")
+    .update({ left_on: laterIsoDate(todayIsoDate(), existing?.joined_on ?? todayIsoDate()) })
+    .eq("player_id", playerId)
+    .eq("season_id", seasonId)
+    .is("left_on", null)
+    .is("deleted_at", null);
+
+  if (closeMembershipsError) {
+    throw new Error(closeMembershipsError.message);
   }
 
   const { error } = await supabase.from("team_memberships").insert({
@@ -720,8 +742,26 @@ export async function PATCH(request: Request) {
           dateOfBirth: row.date_of_birth,
           matchedPlayerId,
         });
+        await ensureMembership(supabase, requestRow.season_id, teamSeasonId, playerId, "player");
         const { error } = await supabase.from("team_registration_players").update({ matched_player_id: playerId, player_status: "active" }).eq("id", row.id);
         if (error) throw new Error(error.message);
+      }
+
+      if (teamSeasonId) {
+        const teamSeasonUpdate = await supabase
+          .from("team_seasons")
+          .update({
+            registration_status: "approved",
+            registration_reviewed_at: reviewed.reviewed_at,
+            registration_reviewed_by_user_id: reviewed.reviewed_by_user_id,
+            registration_admin_note: adminNote,
+          })
+          .eq("id", teamSeasonId)
+          .is("deleted_at", null);
+
+        if (!isSchemaCacheColumnError(teamSeasonUpdate.error?.message) && teamSeasonUpdate.error) {
+          throw new Error(teamSeasonUpdate.error.message);
+        }
       }
 
       const { error } = await supabase.from("team_registration_requests").update({ status: "approved", ...reviewed }).eq("id", id);

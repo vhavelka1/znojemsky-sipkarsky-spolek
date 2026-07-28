@@ -35,6 +35,10 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function laterIsoDate(first: string, second: string) {
+  return first > second ? first : second;
+}
+
 function getAdminClientOrError() {
   try {
     return { supabase: createSupabaseAdminClient(), response: null };
@@ -220,7 +224,7 @@ export async function POST(request: Request) {
   const { data: activeMemberships, error: activeMembershipsError } =
     await supabase
       .from("team_memberships")
-      .select("id, team_season_id")
+      .select("id, team_season_id, joined_on")
       .eq("player_id", playerId)
       .eq("season_id", seasonId)
       .is("left_on", null)
@@ -255,9 +259,14 @@ export async function POST(request: Request) {
   }
 
   if (activeMemberships && activeMemberships.length > 0) {
+    const leftOn = activeMemberships.reduce(
+      (latest, membership) => laterIsoDate(latest, membership.joined_on),
+      todayIsoDate(),
+    );
+
     const { error: closeMembershipsError } = await supabase
       .from("team_memberships")
-      .update({ left_on: todayIsoDate() })
+      .update({ left_on: leftOn })
       .eq("player_id", playerId)
       .eq("season_id", seasonId)
       .is("left_on", null)
