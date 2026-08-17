@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { loadTournamentRequests } from "@/lib/tournamentRequests";
 
 export async function GET(request: Request) {
   const guard = await requireModeratorOrAdmin(request);
@@ -9,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const [rosterRequests, submittedTeamRosters, teamRegistrations, playerRegistrations] = await Promise.all([
+  const [rosterRequests, submittedTeamRosters, teamRegistrations, playerRegistrations, tournamentRequests] = await Promise.all([
     supabase
       .from("team_roster_requests")
       .select("id", { count: "exact", head: true })
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
       .select("id", { count: "exact", head: true })
       .eq("status", "pending")
       .is("deleted_at", null),
+    loadTournamentRequests().catch(() => []),
   ]);
 
   const teamRosterStatusError =
@@ -49,6 +51,7 @@ export async function GET(request: Request) {
     pending: {
       "roster-requests": pendingRosterRequests,
       registrations: pendingRegistrationRequests,
+      "tournament-requests": tournamentRequests.filter((request) => request.status === "pending").length,
     },
   });
 }
