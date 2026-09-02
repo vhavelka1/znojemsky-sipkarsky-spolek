@@ -53,6 +53,7 @@ type Match = {
   group_id: string;
   home_team_id: string;
   away_team_id: string;
+  round_number: number | null;
   scheduled_at: string;
   played_at: string | null;
   status: MatchStatus;
@@ -84,6 +85,7 @@ type MatchForm = {
   group_id: string;
   home_team_id: string;
   away_team_id: string;
+  round_number: string;
   scheduled_at: string;
 };
 
@@ -93,6 +95,7 @@ const emptyMatchForm: MatchForm = {
   group_id: "",
   home_team_id: "",
   away_team_id: "",
+  round_number: "",
   scheduled_at: "",
 };
 
@@ -389,7 +392,7 @@ export default function AdminMatchesPage() {
         ...matchForm,
         scheduled_at: new Date(matchForm.scheduled_at).toISOString(),
       });
-      setMatchForm({ ...matchForm, home_team_id: "", away_team_id: "", scheduled_at: "" });
+      setMatchForm({ ...matchForm, home_team_id: "", away_team_id: "", round_number: "", scheduled_at: "" });
       setIsMatchFormOpen(false);
       await loadMatchData(false);
     } catch (saveError) {
@@ -665,6 +668,19 @@ export default function AdminMatchesPage() {
                 ) : null}
 
                 <label className="flex flex-col gap-1 text-sm font-medium">
+                  Kolo
+                  <input
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                    min="1"
+                    type="number"
+                    value={matchForm.round_number}
+                    onChange={(event) =>
+                      setMatchForm({ ...matchForm, round_number: event.target.value })
+                    }
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm font-medium">
                   Datum a čas
                   <input
                     className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
@@ -724,14 +740,14 @@ export default function AdminMatchesPage() {
                             {getTeamSeasonLabel(match.away_team_id)}
                           </h4>
                           <p className="mt-1 text-sm text-slate-500">
-                            {formatDateTime(match.scheduled_at)}
+                            {match.round_number ? `${match.round_number}. kolo / ` : ""}{formatDateTime(match.scheduled_at)}
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Link
                               className="inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                               href={`/admin/matches/${match.id}`}
                             >
-                              Otevřít zápis
+                              Zápis utkání
                             </Link>
                             <Link
                               className="inline-flex rounded-md bg-[#EF233C] px-3 py-2 text-sm font-semibold !text-white shadow-sm hover:bg-[#c91d32]"

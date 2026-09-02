@@ -231,6 +231,7 @@ export function PublicFooter() {
           <Link href="/">Úvod</Link>
           <Link href="/tabulky">Liga</Link>
           <Link href="/tabulky">Tabulky</Link>
+          <Link href="/zapasy">Zápasy</Link>
           <Link href="/turnaje">Turnaje</Link>
           <Link href="/registrace">Registrace</Link>
           <Link href="/galerie">Galerie</Link>

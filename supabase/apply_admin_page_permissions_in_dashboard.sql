@@ -61,6 +61,8 @@ values
   ('seasons', '/admin/seasons', 'Sezóny', 'admin'),
   ('leagues', '/admin/leagues', 'Ligy', 'moderator'),
   ('matches', '/admin/matches', 'Zápasy', 'moderator'),
+  ('import', '/admin/import', 'Import', 'admin'),
+  ('import-matches', '/admin/import/zapasy', 'Import zápasů', 'admin'),
   ('tables', '/admin/tables', 'Tabulky', 'moderator'),
   ('users', '/admin/users', 'Uživatelé webu', 'admin'),
   ('permissions', '/admin/permissions', 'Práva', 'admin'),

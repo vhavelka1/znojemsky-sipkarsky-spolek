@@ -46,6 +46,7 @@ export async function GET() {
       label: page.label,
       defaultMinimumRole: page.defaultMinimumRole,
       minimumRole: configuredByKey.get(page.key) ?? page.defaultMinimumRole,
+      parentKey: page.parentKey,
     })),
   });
 }

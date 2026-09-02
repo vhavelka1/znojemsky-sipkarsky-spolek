@@ -5,6 +5,7 @@ export type AdminPageDefinition = {
   href: string;
   label: string;
   defaultMinimumRole: AdminRole;
+  parentKey?: string;
 };
 
 export const adminRoleWeight: Record<AdminRole, number> = {
@@ -38,6 +39,8 @@ export const adminPages: AdminPageDefinition[] = [
   { key: "seasons", href: "/admin/seasons", label: "Sezóny", defaultMinimumRole: "admin" },
   { key: "leagues", href: "/admin/leagues", label: "Ligy", defaultMinimumRole: "moderator" },
   { key: "matches", href: "/admin/matches", label: "Zápasy", defaultMinimumRole: "moderator" },
+  { key: "import", href: "/admin/import", label: "Import", defaultMinimumRole: "admin" },
+  { key: "import-matches", href: "/admin/import/zapasy", label: "Import zápasů", defaultMinimumRole: "admin", parentKey: "import" },
   { key: "tables", href: "/admin/tables", label: "Tabulky", defaultMinimumRole: "moderator" },
   { key: "users", href: "/admin/users", label: "Uživatelé webu", defaultMinimumRole: "admin" },
   { key: "permissions", href: "/admin/permissions", label: "Práva", defaultMinimumRole: "admin" },
@@ -75,6 +78,7 @@ export function adminPageForAdminApiPath(pathname: string) {
     { prefix: "/api/admin/seasons", key: "seasons" },
     { prefix: "/api/admin/leagues", key: "leagues" },
     { prefix: "/api/admin/matches", key: "matches" },
+    { prefix: "/api/admin/import/matches", key: "import-matches" },
     { prefix: "/api/admin/tables", key: "tables" },
     { prefix: "/api/admin/users", key: "users" },
     { prefix: "/api/admin/permissions", key: "permissions" },

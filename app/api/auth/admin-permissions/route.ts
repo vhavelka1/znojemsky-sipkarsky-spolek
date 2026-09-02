@@ -20,6 +20,7 @@ function mergePermissions(rows: PermissionRow[] | null | undefined) {
       href: page.href,
       label: page.label,
       minimumRole,
+      parentKey: page.parentKey,
     };
   });
 }

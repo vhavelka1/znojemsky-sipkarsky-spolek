@@ -10,6 +10,7 @@ type CreateMatchBody = {
   group_id?: unknown;
   home_team_id?: unknown;
   away_team_id?: unknown;
+  round_number?: unknown;
   scheduled_at?: unknown;
 };
 
@@ -92,6 +93,22 @@ function requiredNumber(value: unknown) {
   }
 
   if (typeof value === "string" && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+
+  return null;
+}
+
+function optionalPositiveNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
     return Number(value);
   }
 
@@ -197,7 +214,7 @@ export async function GET() {
     supabase
       .from("matches")
       .select(
-        "id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status, created_at",
+        "id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at, played_at, status, created_at",
       )
       .is("deleted_at", null)
       .order("scheduled_at", { ascending: false }),
@@ -257,6 +274,7 @@ export async function POST(request: Request) {
     const groupId = requiredString(body.group_id);
     const homeTeamId = requiredString(body.home_team_id);
     const awayTeamId = requiredString(body.away_team_id);
+    const roundNumber = optionalPositiveNumber(body.round_number);
     const scheduledAt = requiredString(body.scheduled_at);
 
     if (!seasonId || !leagueId || !groupId || !homeTeamId || !awayTeamId || !scheduledAt) {
@@ -367,11 +385,12 @@ export async function POST(request: Request) {
         group_id: groupId,
         home_team_id: homeTeamId,
         away_team_id: awayTeamId,
+        round_number: roundNumber,
         scheduled_at: scheduledDate.toISOString(),
         status: "scheduled",
       })
       .select(
-        "id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status, created_at",
+        "id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at, played_at, status, created_at",
       )
       .single();
 

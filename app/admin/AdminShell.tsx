@@ -18,7 +18,9 @@ export function AdminShell({ children }: AdminShellProps) {
   const [authState, setAuthState] = useState<"loading" | "allowed" | "blocked">("loading");
   const [displayName, setDisplayName] = useState("");
   const [blockMessage, setBlockMessage] = useState("");
-  const [navigationItems, setNavigationItems] = useState<Array<{ key?: string; href: string; label: string; minimumRole: AdminRole; isAlert?: boolean }>>([]);
+  const [navigationItems, setNavigationItems] = useState<
+    Array<{ key?: string; href: string; label: string; minimumRole: AdminRole; parentKey?: string; isAlert?: boolean }>
+  >([]);
   const isScoreboard = /^\/admin\/matches\/[^/]+\/scoreboard$/.test(pathname);
 
   useEffect(() => {
@@ -80,7 +82,7 @@ export function AdminShell({ children }: AdminShellProps) {
         },
       });
       const permissionsBody = (await permissionsResponse.json().catch(() => ({}))) as {
-        permissions?: Array<{ key?: string; href: string; label: string; minimumRole: AdminRole }>;
+        permissions?: Array<{ key?: string; href: string; label: string; minimumRole: AdminRole; parentKey?: string }>;
       };
       const permissions = permissionsBody.permissions ?? [];
       const currentPage = adminPageForPath(pathname);
@@ -120,6 +122,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 ? `${permission.label} (${pending[permission.key]})`
                 : permission.label,
             minimumRole: permission.minimumRole,
+            parentKey: permission.parentKey,
             isAlert: permission.key === "registrations" || permission.key === "roster-requests" || permission.key === "tournament-requests"
               ? (pending[permission.key] ?? 0) > 0
               : false,

@@ -15,6 +15,7 @@ create table if not exists public.matches (
   group_id uuid not null references public.league_groups(id) on delete restrict,
   home_team_id uuid not null references public.team_seasons(id) on delete restrict,
   away_team_id uuid not null references public.team_seasons(id) on delete restrict,
+  round_number integer,
   scheduled_at timestamptz not null,
   played_at timestamptz,
   status public.match_status not null default 'scheduled',
@@ -22,6 +23,10 @@ create table if not exists public.matches (
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,
   constraint matches_teams_different check (home_team_id <> away_team_id),
+  constraint matches_round_number_positive check (
+    round_number is null
+    or round_number > 0
+  ),
   constraint matches_played_at_required check (
     status <> 'played'
     or played_at is not null
@@ -56,6 +61,10 @@ create index if not exists matches_league_id_idx
 
 create index if not exists matches_group_id_idx
   on public.matches (group_id)
+  where deleted_at is null;
+
+create index if not exists matches_round_number_idx
+  on public.matches (season_id, league_id, group_id, round_number)
   where deleted_at is null;
 
 create index if not exists matches_scheduled_at_idx
