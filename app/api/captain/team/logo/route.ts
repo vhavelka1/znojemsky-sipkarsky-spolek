@@ -3,6 +3,12 @@ import { getCurrentUserProfile } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { removeStoredTeamLogo, teamLogosBucket, teamLogoValidationError, uploadTeamLogo } from "@/lib/teamLogoStorage";
 
+type SeasonRow = {
+  id: string;
+  is_active: boolean;
+  starts_on: string | null;
+};
+
 async function getCaptainTeamContext(request: Request) {
   const requester = await getCurrentUserProfile(request);
   if (!requester?.isActive) {
@@ -22,15 +28,35 @@ async function getCaptainTeamContext(request: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: membership, error: membershipError } = await supabase
+  const { data: seasons, error: seasonError } = await supabase
+    .from("seasons")
+    .select("id, is_active, starts_on")
+    .is("deleted_at", null)
+    .order("starts_on", { ascending: false })
+    .returns<SeasonRow[]>();
+
+  const targetSeason = seasons?.find((season) => season.is_active) ?? seasons?.[0] ?? null;
+  if (seasonError || !targetSeason) {
+    return {
+      response: NextResponse.json({ error: "Aktuální sezónu se nepodařilo načíst." }, { status: 500 }),
+      supabase,
+      teamId: null,
+    };
+  }
+
+  const { data: memberships, error: membershipError } = await supabase
     .from("team_memberships")
     .select("team_season_id")
     .eq("player_id", requester.playerId)
+    .eq("season_id", targetSeason.id)
     .in("member_role", ["captain", "assistant_captain"])
     .is("left_on", null)
     .is("deleted_at", null)
-    .maybeSingle<{ team_season_id: string }>();
+    .order("joined_on", { ascending: false })
+    .limit(1)
+    .returns<Array<{ team_season_id: string }>>();
 
+  const membership = memberships?.[0] ?? null;
   if (membershipError || !membership) {
     return {
       response: NextResponse.json({ error: "Logo může měnit pouze kapitán nebo zástupce kapitána týmu." }, { status: 403 }),
