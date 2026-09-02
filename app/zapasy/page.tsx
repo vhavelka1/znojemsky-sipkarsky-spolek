@@ -248,19 +248,21 @@ function MatchRow({ match }: { match: PublicMatch }) {
   const hasResult = Boolean(match.result);
 
   return (
-    <article className="grid gap-3 px-3 py-3 transition hover:bg-[#F7FAFF] sm:px-4 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)_116px_104px] md:items-center">
-      <p className="text-lg font-black tabular-nums text-[#061A3A] md:text-base">{formatTime(match.scheduledAt)}</p>
-      <TeamLogo compact logoUrl={match.homeTeam.logoUrl} name={match.homeTeam.name} />
-      <div className="inline-flex h-9 w-14 items-center justify-center rounded-lg bg-[#061A3A] text-center text-white shadow-sm">
-        {hasResult ? (
-          <p className="text-sm font-black leading-none">
-            {match.result?.homePoints}:{match.result?.awayPoints}
-          </p>
-        ) : (
-          <p className="text-sm font-black leading-none">VS</p>
-        )}
+    <article className="grid gap-3 md:grid-cols-[minmax(0,1fr)_116px_104px] md:items-center md:gap-4">
+      <div className="grid gap-3 border-x border-b border-[#D8E4F2] bg-white px-3 py-3 transition hover:bg-[#F7FAFF] sm:px-4 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)] md:items-center">
+        <p className="text-lg font-black tabular-nums text-[#061A3A] md:text-base">{formatTime(match.scheduledAt)}</p>
+        <TeamLogo compact logoUrl={match.homeTeam.logoUrl} name={match.homeTeam.name} />
+        <div className="inline-flex h-9 w-14 items-center justify-center rounded-lg bg-[#061A3A] text-center text-white shadow-sm">
+          {hasResult ? (
+            <p className="text-sm font-black leading-none">
+              {match.result?.homePoints}:{match.result?.awayPoints}
+            </p>
+          ) : (
+            <p className="text-sm font-black leading-none">VS</p>
+          )}
+        </div>
+        <TeamLogo compact logoUrl={match.awayTeam.logoUrl} name={match.awayTeam.name} />
       </div>
-      <TeamLogo compact logoUrl={match.awayTeam.logoUrl} name={match.awayTeam.name} />
       <span className={`inline-flex w-fit items-center justify-center rounded-lg px-3 py-1.5 text-xs font-black ${statusClassNames[match.status]}`}>
         {statusLabels[match.status]}
       </span>
@@ -276,13 +278,15 @@ function MatchRow({ match }: { match: PublicMatch }) {
 
 function ByeRow({ bye }: { bye: PublicMatchBye }) {
   return (
-    <article className="grid gap-3 bg-slate-50 px-3 py-3 transition hover:bg-slate-100 sm:px-4 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)_116px_104px] md:items-center">
-      <p className="text-lg font-black text-slate-500 md:text-base">--:--</p>
-      <TeamLogo compact logoUrl={bye.team.logoUrl} name={bye.team.name} />
-      <div className="inline-flex h-9 w-14 items-center justify-center rounded-lg border border-dashed border-[#D8E4F2] bg-white text-center text-sm font-black text-slate-500">
-        -
+    <article className="grid gap-3 md:grid-cols-[minmax(0,1fr)_116px_104px] md:items-center md:gap-4">
+      <div className="grid gap-3 border-x border-b border-[#D8E4F2] bg-slate-50 px-3 py-3 transition hover:bg-slate-100 sm:px-4 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)] md:items-center">
+        <p className="text-lg font-black text-slate-500 md:text-base">--:--</p>
+        <TeamLogo compact logoUrl={bye.team.logoUrl} name={bye.team.name} />
+        <div className="inline-flex h-9 w-14 items-center justify-center rounded-lg border border-dashed border-[#D8E4F2] bg-white text-center text-sm font-black text-slate-500">
+          -
+        </div>
+        <p className="min-w-0 text-sm font-black text-slate-500">Tým v tomto kole nehraje</p>
       </div>
-      <p className="min-w-0 text-sm font-black text-slate-500">Tým v tomto kole nehraje</p>
       <span className="inline-flex w-fit items-center justify-center rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-black text-slate-700">
         Bez zápasu
       </span>
@@ -532,12 +536,14 @@ export default function PublicMatchesPage() {
                     </p>
                   ) : null}
                 </div>
-                <div className="divide-y divide-[#D8E4F2] overflow-hidden rounded-[24px] border border-[#D8E4F2] bg-white shadow-[0_18px_48px_rgba(6,26,58,0.08)]">
-                  <div className="hidden bg-[#EEF5FF] px-4 py-3 text-xs font-black text-slate-600 md:grid md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)_116px_104px]">
-                    <span>Čas</span>
-                    <span>Domácí</span>
-                    <span className="text-center">VS</span>
-                    <span>Hosté</span>
+                <div className="grid gap-0 rounded-[24px]">
+                  <div className="hidden md:grid md:grid-cols-[minmax(0,1fr)_116px_104px] md:items-center md:gap-4">
+                    <div className="grid rounded-t-[24px] border border-[#D8E4F2] bg-[#EEF5FF] px-4 py-3 text-xs font-black text-slate-600 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)]">
+                      <span>Čas</span>
+                      <span>Domácí</span>
+                      <span className="text-center">VS</span>
+                      <span>Hosté</span>
+                    </div>
                     <span>Stav</span>
                     <span className="text-center">Detail</span>
                   </div>
