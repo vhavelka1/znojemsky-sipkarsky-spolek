@@ -166,17 +166,13 @@ function TeamLogo({
   compact = false,
   name,
   logoUrl,
-  align = "left",
 }: {
   compact?: boolean;
   name: string;
   logoUrl: string | null;
-  align?: "left" | "right";
 }) {
   return (
-    <div
-      className={`flex min-w-0 items-center gap-3 ${align === "right" ? "justify-end text-right sm:flex-row-reverse sm:text-left" : ""}`}
-    >
+    <div className="flex min-w-0 items-center gap-3">
       <div className={`${compact ? "h-10 w-10 rounded-xl p-1.5" : "h-14 w-14 rounded-2xl p-1.5"} flex shrink-0 items-center justify-center overflow-hidden border border-[#D8E4F2] bg-white shadow-sm`}>
         {logoUrl ? (
           <Image
@@ -264,7 +260,7 @@ function MatchRow({ match }: { match: PublicMatch }) {
           <p className="text-sm font-black leading-none">VS</p>
         )}
       </div>
-      <TeamLogo align="right" compact logoUrl={match.awayTeam.logoUrl} name={match.awayTeam.name} />
+      <TeamLogo compact logoUrl={match.awayTeam.logoUrl} name={match.awayTeam.name} />
       <span className={`inline-flex w-fit items-center justify-center rounded-lg px-3 py-1.5 text-xs font-black ${statusClassNames[match.status]}`}>
         {statusLabels[match.status]}
       </span>
