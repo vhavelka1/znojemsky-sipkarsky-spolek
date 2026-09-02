@@ -103,7 +103,7 @@ const statusLabels: Record<MatchStatus, string> = {
 };
 
 const statusClassNames: Record<MatchStatus, string> = {
-  scheduled: "bg-[#F4F8FF] text-[#0B2F6B]",
+  scheduled: "bg-[#EAF2FF] text-[#0B2F6B]",
   played: "bg-emerald-50 text-emerald-700",
   awaiting_confirmation: "bg-amber-50 text-amber-700",
   confirmed: "bg-emerald-50 text-emerald-700",
@@ -175,9 +175,9 @@ function TeamLogo({
 }) {
   return (
     <div
-      className={`flex min-w-0 items-center gap-2 ${align === "right" ? "justify-end text-right sm:flex-row-reverse sm:text-left" : ""}`}
+      className={`flex min-w-0 items-center gap-3 ${align === "right" ? "justify-end text-right sm:flex-row-reverse sm:text-left" : ""}`}
     >
-      <div className={`${compact ? "h-9 w-9 rounded-xl p-1" : "h-14 w-14 rounded-2xl p-1.5"} flex shrink-0 items-center justify-center overflow-hidden border border-[#D8E4F2] bg-white shadow-sm`}>
+      <div className={`${compact ? "h-10 w-10 rounded-xl p-1.5" : "h-14 w-14 rounded-2xl p-1.5"} flex shrink-0 items-center justify-center overflow-hidden border border-[#D8E4F2] bg-white shadow-sm`}>
         {logoUrl ? (
           <Image
             alt={`Logo ${name}`}
@@ -191,7 +191,7 @@ function TeamLogo({
           <span className="text-base font-black text-[#0B2F6B]">{name.charAt(0)}</span>
         )}
       </div>
-      <p className={`${compact ? "text-sm" : "text-base"} min-w-0 font-black leading-tight text-[#061A3A]`}>{name}</p>
+      <p className={`${compact ? "text-sm" : "text-base"} min-w-0 truncate font-black leading-tight text-[#061A3A]`}>{name}</p>
     </div>
   );
 }
@@ -218,7 +218,11 @@ function groupMatchesByRound(matches: PublicMatch[], byes: PublicMatchBye[]): Ro
         roundNumber,
         label: roundNumber === null ? "Bez určeného kola" : `${roundNumber}. kolo`,
         dateRange: formatRoundRange(roundMatches),
-        matches: roundMatches,
+        matches: [...roundMatches].sort((first, second) => {
+          const dateDifference = new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime();
+          if (dateDifference !== 0) return dateDifference;
+          return first.id.localeCompare(second.id);
+        }),
         byes: roundNumber === null ? [] : byesByRound.get(roundNumber) ?? [],
       };
     })
@@ -246,33 +250,26 @@ async function fetchMatches(filters: Filters) {
 
 function MatchRow({ match }: { match: PublicMatch }) {
   const hasResult = Boolean(match.result);
-  const roundLabel = match.roundNumber ? `${match.roundNumber}. kolo` : "Liga";
 
   return (
-    <article className="grid gap-3 px-4 py-3 transition hover:bg-[#F4F8FF] md:grid-cols-[6.5rem_minmax(0,1fr)_5rem_minmax(0,1fr)_8rem_8rem] md:items-center">
-      <div className="flex items-center gap-2 md:block">
-        <p className="text-xs font-black uppercase text-[#EF233C]">{roundLabel}</p>
-        <span className={`rounded-full px-3 py-1.5 text-xs font-black ${statusClassNames[match.status]}`}>
-          {statusLabels[match.status]}
-        </span>
-      </div>
+    <article className="grid gap-3 px-3 py-3 transition hover:bg-[#F7FAFF] sm:px-4 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)_116px_104px] md:items-center">
+      <p className="text-lg font-black tabular-nums text-[#061A3A] md:text-base">{formatTime(match.scheduledAt)}</p>
       <TeamLogo compact logoUrl={match.homeTeam.logoUrl} name={match.homeTeam.name} />
-      <div className="rounded-2xl bg-[#061A3A] px-3 py-2 text-center text-white">
+      <div className="inline-flex h-9 w-14 items-center justify-center rounded-lg bg-[#061A3A] text-center text-white shadow-sm">
         {hasResult ? (
-          <p className="text-2xl font-black leading-none">
+          <p className="text-sm font-black leading-none">
             {match.result?.homePoints}:{match.result?.awayPoints}
           </p>
         ) : (
-          <p className="text-xl font-black leading-none">VS</p>
+          <p className="text-sm font-black leading-none">VS</p>
         )}
       </div>
       <TeamLogo align="right" compact logoUrl={match.awayTeam.logoUrl} name={match.awayTeam.name} />
-      <div className="text-sm font-bold text-[#64748b] md:text-right">
-        <p className="text-[#061A3A]">{formatDate(match.scheduledAt)}</p>
-        <p>{formatTime(match.scheduledAt)}</p>
-      </div>
+      <span className={`inline-flex w-fit items-center justify-center rounded-lg px-3 py-1.5 text-xs font-black ${statusClassNames[match.status]}`}>
+        {statusLabels[match.status]}
+      </span>
       <Link
-        className="inline-flex items-center justify-center rounded-xl bg-[#EF233C] px-3 py-2 text-sm font-black !text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+        className="inline-flex h-9 items-center justify-center rounded-lg bg-[#EF233C] px-3 text-xs font-black !text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
         href={`/zapasy/${match.id}`}
       >
         Zápis utkání
@@ -283,22 +280,17 @@ function MatchRow({ match }: { match: PublicMatch }) {
 
 function ByeRow({ bye }: { bye: PublicMatchBye }) {
   return (
-    <article className="grid gap-3 px-4 py-3 transition hover:bg-[#F4F8FF] md:grid-cols-[6.5rem_minmax(0,1fr)_5rem_minmax(0,1fr)_8rem_8rem] md:items-center">
-      <div className="flex items-center gap-2 md:block">
-        <p className="text-xs font-black uppercase text-[#EF233C]">{bye.roundNumber}. kolo</p>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">
-          Volno
-        </span>
-      </div>
+    <article className="grid gap-3 bg-slate-50 px-3 py-3 transition hover:bg-slate-100 sm:px-4 md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)_116px_104px] md:items-center">
+      <p className="text-lg font-black text-slate-500 md:text-base">--:--</p>
       <TeamLogo compact logoUrl={bye.team.logoUrl} name={bye.team.name} />
-      <div className="rounded-2xl border border-dashed border-[#D8E4F2] bg-white px-3 py-2 text-center text-sm font-black text-slate-500">
-        volno
+      <div className="inline-flex h-9 w-14 items-center justify-center rounded-lg border border-dashed border-[#D8E4F2] bg-white text-center text-sm font-black text-slate-500">
+        -
       </div>
-      <p className="text-sm font-bold text-slate-500 md:text-right">Tým v tomto kole nehraje</p>
-      <div className="text-sm font-bold text-[#64748b] md:text-right">
-        <p className="text-[#061A3A]">Bez zápasu</p>
-      </div>
-      <span className="inline-flex items-center justify-center rounded-xl border border-[#D8E4F2] px-3 py-2 text-sm font-black text-slate-500">
+      <p className="min-w-0 text-sm font-black text-slate-500">Tým v tomto kole nehraje</p>
+      <span className="inline-flex w-fit items-center justify-center rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-black text-slate-700">
+        Bez zápasu
+      </span>
+      <span className="inline-flex h-9 items-center justify-center rounded-lg border border-[#B9C9DF] bg-white px-3 text-xs font-black text-[#0B2F6B]">
         Volno
       </span>
     </article>
@@ -534,7 +526,9 @@ export default function PublicMatchesPage() {
                 <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-[#D8E4F2] pb-4">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">Ligový program</p>
-                    <h2 className="mt-1 text-3xl font-black tracking-tight text-[#061A3A]">{section.label}</h2>
+                    <h2 className="mt-1 text-3xl font-black tracking-tight text-[#061A3A]">
+                      {section.label}{selectedGroup ? ` - ${selectedGroup.name}` : ""}
+                    </h2>
                   </div>
                   {section.dateRange ? (
                     <p className="rounded-full bg-white px-4 py-2 text-sm font-black text-[#0B2F6B] shadow-sm">
@@ -543,6 +537,14 @@ export default function PublicMatchesPage() {
                   ) : null}
                 </div>
                 <div className="divide-y divide-[#D8E4F2] overflow-hidden rounded-[24px] border border-[#D8E4F2] bg-white shadow-[0_18px_48px_rgba(6,26,58,0.08)]">
+                  <div className="hidden bg-[#EEF5FF] px-4 py-3 text-xs font-black text-slate-600 md:grid md:grid-cols-[72px_minmax(180px,1.1fr)_58px_minmax(180px,1.1fr)_116px_104px]">
+                    <span>Čas</span>
+                    <span>Domácí</span>
+                    <span className="text-center">VS</span>
+                    <span>Hosté</span>
+                    <span>Stav</span>
+                    <span className="text-center">Detail</span>
+                  </div>
                   {section.matches.map((match) => (
                     <MatchRow key={match.id} match={match} />
                   ))}

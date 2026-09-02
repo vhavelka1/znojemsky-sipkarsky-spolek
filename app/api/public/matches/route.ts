@@ -336,7 +336,9 @@ export async function GET(request: NextRequest) {
         const firstRound = first.roundNumber ?? Number.MAX_SAFE_INTEGER;
         const secondRound = second.roundNumber ?? Number.MAX_SAFE_INTEGER;
         if (firstRound !== secondRound) return firstRound - secondRound;
-        return new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime();
+        const dateDifference = new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime();
+        if (dateDifference !== 0) return dateDifference;
+        return first.id.localeCompare(second.id);
       });
     const filteredByes = byes.filter(
       (bye) => !selectedTeamSeasonId || bye.team.teamSeasonId === selectedTeamSeasonId,
