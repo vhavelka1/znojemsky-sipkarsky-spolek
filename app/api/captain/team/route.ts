@@ -63,6 +63,7 @@ type TeamNameRow = {
 
 type MatchRow = {
   id: string;
+  round_number: number | null;
   home_team_id: string;
   away_team_id: string;
   scheduled_at: string;
@@ -459,11 +460,10 @@ export async function GET(request: Request) {
       .maybeSingle<{ league_group_id: string; team_season_id: string }>(),
     supabase
       .from("matches")
-      .select("id, home_team_id, away_team_id, scheduled_at, played_at, status")
+      .select("id, round_number, home_team_id, away_team_id, scheduled_at, played_at, status")
       .or(`home_team_id.eq.${teamSeason.id},away_team_id.eq.${teamSeason.id}`)
       .is("deleted_at", null)
       .order("scheduled_at", { ascending: false })
-      .limit(12)
       .returns<MatchRow[]>(),
     supabase
       .from("app_settings")
@@ -610,6 +610,7 @@ export async function GET(request: Request) {
     const opponent = opponentById.get(opponentId);
     return {
       id: match.id,
+      roundNumber: match.round_number,
       scheduledAt: match.scheduled_at,
       playedAt: match.played_at,
       status: match.status,

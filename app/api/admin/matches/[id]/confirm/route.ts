@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { authorizeMatchAccess } from "@/lib/matchAccess";
+import { hasAtLeastRole } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type MatchSide = "home" | "away";
 
@@ -14,27 +14,6 @@ type RouteContext = {
 type ConfirmBody = {
   side?: unknown;
 };
-
-function guardRequest() {
-  if (
-    process.env.NODE_ENV !== "development" &&
-    process.env.ENABLE_DEV_ADMIN !== "true"
-  ) {
-    return NextResponse.json(
-      { error: "Potvrzení zápisu není povoleno." },
-      { status: 403 },
-    );
-  }
-
-  if (mockRole !== "admin") {
-    return NextResponse.json(
-      { error: "Pro tuto akci je potřeba role administrátora." },
-      { status: 403 },
-    );
-  }
-
-  return null;
-}
 
 function parseSide(value: unknown): MatchSide | null {
   return value === "home" || value === "away" ? value : null;
@@ -52,11 +31,6 @@ function schemaError(message: string) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
-
   const body = (await request.json().catch(() => null)) as ConfirmBody | null;
   const side = parseSide(body?.side);
   if (!side) {
@@ -64,6 +38,11 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const { id: matchId } = await context.params;
+  const access = await authorizeMatchAccess(request, matchId, { side });
+  if (access.response) {
+    return access.response;
+  }
+
   const supabase = createSupabaseAdminClient();
   const { data: match, error: matchError } = await supabase
     .from("matches")
@@ -83,6 +62,8 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  const isAdmin = hasAtLeastRole(access.requester?.role, "admin");
+  const confirmingPlayerId = isAdmin ? null : access.requester?.playerId ?? null;
   const teamSeasonId = side === "home" ? match.home_team_id : match.away_team_id;
   const { data: captain, error: captainError } = await supabase
     .from("team_memberships")
@@ -120,7 +101,7 @@ export async function POST(request: Request, context: RouteContext) {
     const { error } = await supabase.from("match_confirmations").insert({
       match_id: matchId,
       side,
-      captain_player_id: captain.player_id,
+      captain_player_id: confirmingPlayerId ?? captain.player_id,
     });
 
     if (error) {

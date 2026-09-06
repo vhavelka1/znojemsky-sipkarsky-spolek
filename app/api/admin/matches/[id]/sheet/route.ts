@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
+import { authorizeMatchAccess } from "@/lib/matchAccess";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type RouteContext = {
   params: Promise<{
@@ -176,40 +175,6 @@ const singlesSlotPairs = new Map<number, [HomeSlotCode, AwaySlotCode]>([
   [17, ["3", "B"]],
   [18, ["4", "C"]],
 ]);
-
-function developmentOnlyResponse() {
-  if (
-    process.env.NODE_ENV === "development" ||
-    process.env.ENABLE_DEV_ADMIN === "true"
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace zápisů není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
-
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
-}
 
 function getAdminClientOrError() {
   try {
@@ -600,14 +565,14 @@ async function loadSheetData(matchId: string) {
   };
 }
 
-export async function GET(_request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
-
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    const access = await authorizeMatchAccess(request, id);
+    if (access.response) {
+      return access.response;
+    }
+
     const { data, error } = await loadSheetData(id);
 
     if (error) {
@@ -629,9 +594,10 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
+  const { id: matchId } = await context.params;
+  const access = await authorizeMatchAccess(request, matchId);
+  if (access.response) {
+    return access.response;
   }
 
   const body = (await request.json().catch(() => null)) as SaveSheetBody | null;
@@ -661,7 +627,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     submittedCheckoutTotals.set(playerId, total);
   }
 
-  const { id: matchId } = await context.params;
   const { supabase, response } = getAdminClientOrError();
   if (response) {
     return response;

@@ -96,6 +96,11 @@ type SheetPayload = {
   confirmations?: MatchConfirmation[];
   error?: string;
 };
+type MatchSheetPageProps = {
+  backHref?: string;
+  backLabel?: string;
+  scoreboardHref?: ((matchId: string) => string) | null;
+};
 const statusLabels: Record<MatchStatus, string> = {
   scheduled: "naplánováno",
   played: "odehráno",
@@ -171,7 +176,11 @@ function normalizeGame(game: SheetGame): SheetGame {
   };
 }
 
-export default function AdminMatchSheetPage() {
+export default function AdminMatchSheetPage({
+  backHref = "/admin/matches",
+  backLabel = "Zpět na zápasy",
+  scoreboardHref = (currentMatchId) => `/admin/matches/${currentMatchId}/scoreboard`,
+}: MatchSheetPageProps = {}) {
   const matchId = useParams<{ id: string }>().id;
   const [payload, setPayload] = useState(emptyPayload);
   const [isLoading, setIsLoading] = useState(true);
@@ -480,15 +489,17 @@ export default function AdminMatchSheetPage() {
     <div className="flex flex-col gap-7">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <Link className="text-sm font-semibold text-[var(--brand-blue)] hover:text-[var(--brand-navy)]" href="/admin/matches">Zpět na zápasy</Link>
+          <Link className="text-sm font-semibold text-[var(--brand-blue)] hover:text-[var(--brand-navy)]" href={backHref}>{backLabel}</Link>
           <div className="mt-4"><PageHeader title="Zápis utkání" description="Oficiální zápis ZŠS podle jednotlivých bloků utkání." /></div>
         </div>
-        <Link
-          className="inline-flex w-fit items-center justify-center rounded-2xl bg-[#EF233C] px-5 py-3 text-sm font-bold !text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
-          href={`/admin/matches/${matchId}/scoreboard`}
-        >
-          Otevřít počítadlo
-        </Link>
+        {scoreboardHref ? (
+          <Link
+            className="inline-flex w-fit items-center justify-center rounded-2xl bg-[#EF233C] px-5 py-3 text-sm font-bold !text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+            href={scoreboardHref(matchId)}
+          >
+            Otevřít počítadlo
+          </Link>
+        ) : null}
       </div>
       <Card>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">

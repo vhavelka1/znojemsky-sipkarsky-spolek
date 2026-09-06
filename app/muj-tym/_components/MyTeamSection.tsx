@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PublicPageShell } from "@/components/public/PublicShell";
 import { supabase } from "@/lib/supabase";
 
-export type MyTeamSectionKey = "overview" | "roster" | "requests" | "profile" | "competition";
+export type MyTeamSectionKey = "overview" | "roster" | "matches" | "requests" | "profile" | "competition";
 
 type CaptainTeamPayload = {
   team?: {
@@ -60,6 +60,7 @@ type RosterPlayer = {
 
 type TeamMatch = {
   id: string;
+  roundNumber: number | null;
   scheduledAt: string;
   playedAt: string | null;
   status: "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
@@ -139,6 +140,7 @@ const emptyRequestForm: RequestForm = {
 const captainTabs: Array<{ key: MyTeamSectionKey; href: string; label: string }> = [
   { key: "overview", href: "/muj-tym", label: "Přehled" },
   { key: "roster", href: "/muj-tym/soupiska", label: "Soupiska" },
+  { key: "matches", href: "/muj-tym/zapasy", label: "Zápasy" },
   { key: "requests", href: "/muj-tym/zadosti", label: "Žádosti" },
   { key: "profile", href: "/muj-tym/profil", label: "Profil týmu" },
   { key: "competition", href: "/muj-tym/soutez", label: "Soutěž" },
@@ -349,6 +351,9 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [requestForm, setRequestForm] = useState<RequestForm>(emptyRequestForm);
   const [existingPlayerSearch, setExistingPlayerSearch] = useState("");
   const [debouncedExistingPlayerSearch, setDebouncedExistingPlayerSearch] = useState("");
+  const [matchSearch, setMatchSearch] = useState("");
+  const [matchStatusFilter, setMatchStatusFilter] = useState("all");
+  const [matchSideFilter, setMatchSideFilter] = useState("all");
   const [showInactiveRoster, setShowInactiveRoster] = useState(false);
   const [registrationNote, setRegistrationNote] = useState("");
   const [wantsMajorTournament, setWantsMajorTournament] = useState(false);
@@ -580,6 +585,18 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
         .sort((first, second) => new Date(second.playedAt ?? second.scheduledAt).getTime() - new Date(first.playedAt ?? first.scheduledAt).getTime()),
     [matches],
   );
+  const filteredMatches = useMemo(() => {
+    const normalizedSearch = normalizeSearch(matchSearch);
+
+    return matches
+      .filter((match) => {
+        if (matchStatusFilter !== "all" && match.status !== matchStatusFilter) return false;
+        if (matchSideFilter !== "all" && match.side !== matchSideFilter) return false;
+        if (normalizedSearch && !normalizeSearch(match.opponentName).includes(normalizedSearch)) return false;
+        return true;
+      })
+      .sort((first, second) => new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime());
+  }, [matchSearch, matchSideFilter, matchStatusFilter, matches]);
 
   const renderRosterTable = (players: RosterPlayer[]) => {
     if (players.length === 0) return <EmptyState>V této části nejsou žádní hráči.</EmptyState>;
@@ -642,11 +659,13 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
     return (
       <div className="grid gap-2">
         {items.slice(0, 6).map((match) => (
-          <Link className="rounded-2xl border border-[#D8E4F2] bg-white p-3 transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]" href={`/admin/matches/${match.id}`} key={match.id}>
+          <Link className="rounded-2xl border border-[#D8E4F2] bg-white p-3 transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]" href={`/muj-tym/zapasy/${match.id}`} key={match.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-black text-[#061A3A]">{match.side} vs. {match.opponentName}</p>
-                <p className="text-xs font-bold text-slate-500">{formatDateTime(match.playedAt ?? match.scheduledAt)}</p>
+                <p className="text-xs font-bold text-slate-500">
+                  {match.roundNumber ? `${match.roundNumber}. kolo / ` : ""}{formatDateTime(match.playedAt ?? match.scheduledAt)}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 {match.result ? <span className="rounded-full bg-[#061A3A] px-3 py-1 text-sm font-black text-white">{match.result}</span> : null}
@@ -696,7 +715,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
             <SummaryCard label="Aktivní hráči" value={String(activeRoster.length)} href="/muj-tym/soupiska" />
             <SummaryCard label="Čekající žádosti" value={String(pendingRequests.length)} href="/muj-tym/zadosti" />
             <SummaryCard label="Aktuální soutěž" value={competition ? `${competition.leagueName} / ${competition.groupName}` : "Nepřiřazeno"} href="/muj-tym/soutez" />
-            <SummaryCard label="Nejbližší zápas" value={upcomingMatches[0] ? upcomingMatches[0].opponentName : "Nenaplánován"} href="/muj-tym/soutez" />
+            <SummaryCard label="Nejbližší zápas" value={upcomingMatches[0] ? upcomingMatches[0].opponentName : "Nenaplánován"} href="/muj-tym/zapasy" />
           </div>
 
           <Card className="p-5">
@@ -795,6 +814,93 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
             </button>
           </Card>
         </div>
+      );
+    }
+
+    if (section === "matches") {
+      content = (
+        <Card className="overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D8E4F2] p-5">
+            <div>
+              <h2 className="text-2xl font-black text-[#061A3A]">Zápasy týmu</h2>
+              <p className="text-sm font-bold text-slate-500">Přehled zápasů, filtrování a vstup do zápisu utkání.</p>
+            </div>
+            <Badge className="bg-[#F4F8FF] text-[#0B2F6B]">{filteredMatches.length} zápasů</Badge>
+          </div>
+
+          <div className="border-b border-[#D8E4F2] bg-[#F4F8FF] p-4">
+            <div className="grid gap-3 md:grid-cols-[1fr_220px_220px]">
+              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                Hledat soupeře
+                <input
+                  className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                  onChange={(event) => setMatchSearch(event.target.value)}
+                  placeholder="Název soupeře"
+                  value={matchSearch}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                Stav
+                <select
+                  className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                  onChange={(event) => setMatchStatusFilter(event.target.value)}
+                  value={matchStatusFilter}
+                >
+                  <option value="all">Všechny stavy</option>
+                  <option value="scheduled">Naplánované</option>
+                  <option value="played">Odehrané</option>
+                  <option value="awaiting_confirmation">Čeká na potvrzení</option>
+                  <option value="confirmed">Potvrzené</option>
+                  <option value="cancelled">Zrušené</option>
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                Strana
+                <select
+                  className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                  onChange={(event) => setMatchSideFilter(event.target.value)}
+                  value={matchSideFilter}
+                >
+                  <option value="all">Domácí i hosté</option>
+                  <option value="Domácí">Domácí</option>
+                  <option value="Hosté">Hosté</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="divide-y divide-[#D8E4F2]">
+            {filteredMatches.length === 0 ? (
+              <div className="p-5">
+                <EmptyState>Pro zvolené filtry nebyl nalezen žádný zápas.</EmptyState>
+              </div>
+            ) : (
+              filteredMatches.map((match) => (
+                <article className="p-5" key={match.id}>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-[#0F4FA8]">
+                        {match.roundNumber ? `${match.roundNumber}. kolo / ` : ""}{match.side}
+                      </p>
+                      <h3 className="mt-1 text-xl font-black text-[#061A3A]">vs. {match.opponentName}</h3>
+                      <p className="mt-1 text-sm font-bold text-slate-500">{formatDateTime(match.playedAt ?? match.scheduledAt)}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                      {match.result ? <span className="rounded-full bg-[#061A3A] px-4 py-2 text-sm font-black text-white">{match.result}</span> : null}
+                      <Badge className={matchStatusClass(match.status)}>{match.statusLabel}</Badge>
+                      <Link
+                        className="rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500"
+                        href={`/muj-tym/zapasy/${match.id}`}
+                      >
+                        Otevřít zápis
+                      </Link>
+                    </div>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </Card>
       );
     }
 
