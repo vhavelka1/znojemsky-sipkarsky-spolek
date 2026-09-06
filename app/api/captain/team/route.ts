@@ -63,6 +63,7 @@ type TeamNameRow = {
 
 type MatchRow = {
   id: string;
+  season_id: string;
   round_number: number | null;
   home_team_id: string;
   away_team_id: string;
@@ -79,6 +80,12 @@ type MatchResultRow = {
 
 type TeamSeasonRow = {
   id: string;
+  display_name: string | null;
+};
+
+type OwnTeamSeasonRow = {
+  id: string;
+  season_id: string;
   display_name: string | null;
 };
 
@@ -437,12 +444,18 @@ export async function GET(request: Request) {
   if (context.response) return context.response;
 
   const { supabase, captainMembership, teamSeason, team } = context;
-  const [seasonResult, requestsResult, membershipsResult, assignmentResult, matchResult, settingsResult] = await Promise.all([
+  const [seasonResult, seasonsResult, requestsResult, membershipsResult, assignmentResult, ownTeamSeasonsResult, settingsResult] = await Promise.all([
     supabase
       .from("seasons")
       .select("id, name, is_active")
       .eq("id", captainMembership.season_id)
       .single(),
+    supabase
+      .from("seasons")
+      .select("id, name, is_active, starts_on")
+      .is("deleted_at", null)
+      .order("starts_on", { ascending: false })
+      .returns<SeasonRow[]>(),
     loadRosterRequests(supabase, teamSeason.id),
     supabase
       .from("team_memberships")
@@ -459,12 +472,11 @@ export async function GET(request: Request) {
       .is("deleted_at", null)
       .maybeSingle<{ league_group_id: string; team_season_id: string }>(),
     supabase
-      .from("matches")
-      .select("id, round_number, home_team_id, away_team_id, scheduled_at, played_at, status")
-      .or(`home_team_id.eq.${teamSeason.id},away_team_id.eq.${teamSeason.id}`)
+      .from("team_seasons")
+      .select("id, season_id, display_name")
+      .eq("team_id", team.id)
       .is("deleted_at", null)
-      .order("scheduled_at", { ascending: false })
-      .returns<MatchRow[]>(),
+      .returns<OwnTeamSeasonRow[]>(),
     supabase
       .from("app_settings")
       .select("key, value")
@@ -479,11 +491,25 @@ export async function GET(request: Request) {
 
   const memberships = membershipsResult.error ? [] : membershipsResult.data ?? [];
   const playerIds = memberships.map((membership) => membership.player_id);
+  const ownTeamSeasons = ownTeamSeasonsResult.error || (ownTeamSeasonsResult.data ?? []).length === 0
+    ? [{ id: teamSeason.id, season_id: captainMembership.season_id, display_name: teamSeason.display_name }]
+    : ownTeamSeasonsResult.data ?? [];
+  const ownTeamSeasonIds = ownTeamSeasons.map((item) => item.id);
+  const ownTeamSeasonIdsSet = new Set(ownTeamSeasonIds);
+  const matchResult = ownTeamSeasonIds.length > 0
+    ? await supabase
+        .from("matches")
+        .select("id, season_id, round_number, home_team_id, away_team_id, scheduled_at, played_at, status")
+        .or(`home_team_id.in.(${ownTeamSeasonIds.join(",")}),away_team_id.in.(${ownTeamSeasonIds.join(",")})`)
+        .is("deleted_at", null)
+        .order("scheduled_at", { ascending: false })
+        .returns<MatchRow[]>()
+    : { data: [] as MatchRow[], error: null };
   const matchRows = matchResult.data ?? [];
   const matchIds = matchRows.map((match) => match.id);
   const opponentTeamSeasonIds = Array.from(
     new Set(
-      matchRows.map((match) => match.home_team_id === teamSeason.id ? match.away_team_id : match.home_team_id),
+      matchRows.map((match) => ownTeamSeasonIdsSet.has(match.home_team_id) ? match.away_team_id : match.home_team_id),
     ),
   );
   const [playersResult, groupResult, resultsResult, opponentTeamSeasonsResult, seasonMembershipsResult, allPlayersResult] = await Promise.all([
@@ -560,6 +586,7 @@ export async function GET(request: Request) {
     : { data: null, error: null };
 
   const playerById = new Map((playersResult.data ?? []).map((player) => [player.id, player]));
+  const seasonById = new Map((seasonsResult.data ?? []).map((season) => [season.id, season]));
   const resultsByMatchId = new Map((resultsResult.data ?? []).map((result) => [result.match_id, result]));
   const opponentById = new Map((opponentTeamSeasonsResult.data ?? []).map((opponent) => [opponent.id, opponent]));
   const activeMembershipByPlayerId = new Map((seasonMembershipsResult.data ?? []).map((membership) => [membership.player_id, membership]));
@@ -605,11 +632,14 @@ export async function GET(request: Request) {
 
   const matches = matchRows.map((match) => {
     const result = resultsByMatchId.get(match.id) ?? null;
-    const isHome = match.home_team_id === teamSeason.id;
+    const isHome = ownTeamSeasonIdsSet.has(match.home_team_id);
     const opponentId = isHome ? match.away_team_id : match.home_team_id;
     const opponent = opponentById.get(opponentId);
+    const matchSeason = seasonById.get(match.season_id);
     return {
       id: match.id,
+      seasonId: match.season_id,
+      seasonName: matchSeason?.name ?? "Sezóna",
       roundNumber: match.round_number,
       scheduledAt: match.scheduled_at,
       playedAt: match.played_at,
@@ -622,6 +652,14 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({
+    seasons: (seasonsResult.data ?? [])
+      .filter((season) => ownTeamSeasons.some((item) => item.season_id === season.id))
+      .map((season) => ({
+        id: season.id,
+        name: season.name,
+        isActive: season.is_active,
+      })),
+    activeSeasonId: captainMembership.season_id,
     team: {
       id: team.id,
       teamSeasonId: teamSeason.id,

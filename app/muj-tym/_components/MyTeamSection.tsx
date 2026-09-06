@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabase";
 export type MyTeamSectionKey = "overview" | "roster" | "matches" | "requests" | "profile" | "competition";
 
 type CaptainTeamPayload = {
+  seasons?: TeamSeasonOption[];
+  activeSeasonId?: string;
   team?: {
     id: string;
     teamSeasonId: string;
@@ -45,6 +47,12 @@ type TeamCompetition = {
   href: string;
 };
 
+type TeamSeasonOption = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
 type RosterPlayer = {
   id: string;
   playerId: string;
@@ -60,6 +68,8 @@ type RosterPlayer = {
 
 type TeamMatch = {
   id: string;
+  seasonId: string;
+  seasonName: string;
   roundNumber: number | null;
   scheduledAt: string;
   playedAt: string | null;
@@ -342,6 +352,7 @@ function SummaryCard({ label, value, href }: { label: string; value: string; hre
 
 export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [team, setTeam] = useState<CaptainTeamPayload["team"] | null>(null);
+  const [seasons, setSeasons] = useState<TeamSeasonOption[]>([]);
   const [competition, setCompetition] = useState<TeamCompetition | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [matches, setMatches] = useState<TeamMatch[]>([]);
@@ -351,6 +362,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [requestForm, setRequestForm] = useState<RequestForm>(emptyRequestForm);
   const [existingPlayerSearch, setExistingPlayerSearch] = useState("");
   const [debouncedExistingPlayerSearch, setDebouncedExistingPlayerSearch] = useState("");
+  const [matchSeasonFilter, setMatchSeasonFilter] = useState("");
   const [matchSearch, setMatchSearch] = useState("");
   const [matchStatusFilter, setMatchStatusFilter] = useState("all");
   const [matchSideFilter, setMatchSideFilter] = useState("all");
@@ -376,10 +388,13 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as CaptainTeamPayload;
         if (!response.ok) throw new Error(body.error ?? "Můj tým se nepodařilo načíst.");
+        const loadedSeasons = body.seasons ?? [];
         setTeam(body.team ?? null);
+        setSeasons(loadedSeasons);
         setCompetition(body.competition ?? null);
         setRoster(body.roster ?? []);
         setMatches(body.matches ?? []);
+        setMatchSeasonFilter((current) => current || body.activeSeasonId || loadedSeasons.find((season) => season.isActive)?.id || loadedSeasons[0]?.id || "");
         setRequests(body.requests ?? []);
         setAvailablePlayers(body.availablePlayers ?? []);
         const parsedRegistrationNote = parseRegistrationNote(body.team?.registrationNote ?? "");
@@ -590,13 +605,14 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
 
     return matches
       .filter((match) => {
+        if (matchSeasonFilter && match.seasonId !== matchSeasonFilter) return false;
         if (matchStatusFilter !== "all" && match.status !== matchStatusFilter) return false;
         if (matchSideFilter !== "all" && match.side !== matchSideFilter) return false;
         if (normalizedSearch && !normalizeSearch(match.opponentName).includes(normalizedSearch)) return false;
         return true;
       })
       .sort((first, second) => new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime());
-  }, [matchSearch, matchSideFilter, matchStatusFilter, matches]);
+  }, [matchSearch, matchSeasonFilter, matchSideFilter, matchStatusFilter, matches]);
 
   const renderRosterTable = (players: RosterPlayer[]) => {
     if (players.length === 0) return <EmptyState>V této části nejsou žádní hráči.</EmptyState>;
@@ -829,7 +845,22 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
           </div>
 
           <div className="border-b border-[#D8E4F2] bg-[#F4F8FF] p-4">
-            <div className="grid gap-3 md:grid-cols-[1fr_220px_220px]">
+            <div className="grid gap-3 md:grid-cols-[220px_1fr_220px_220px]">
+              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                Sezóna
+                <select
+                  className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                  onChange={(event) => setMatchSeasonFilter(event.target.value)}
+                  value={matchSeasonFilter}
+                >
+                  <option value="">Všechny sezóny</option>
+                  {seasons.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}{season.isActive ? " - aktivní" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                 Hledat soupeře
                 <input
@@ -880,7 +911,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-sm font-black text-[#0F4FA8]">
-                        {match.roundNumber ? `${match.roundNumber}. kolo / ` : ""}{match.side}
+                        {match.seasonName} / {match.roundNumber ? `${match.roundNumber}. kolo / ` : ""}{match.side}
                       </p>
                       <h3 className="mt-1 text-xl font-black text-[#061A3A]">vs. {match.opponentName}</h3>
                       <p className="mt-1 text-sm font-bold text-slate-500">{formatDateTime(match.playedAt ?? match.scheduledAt)}</p>
