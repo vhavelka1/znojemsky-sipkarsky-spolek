@@ -250,6 +250,33 @@ export default function AdminPlayersPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isFormOpen) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isSaving) {
+        resetForm();
+      }
+    }
+
+    document.body.classList.add("overflow-hidden");
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.body.classList.remove("overflow-hidden");
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isFormOpen, isSaving]);
+
+  function startCreating() {
+    setEditingPlayerId(null);
+    setForm(emptyForm);
+    setIsFormOpen(true);
+    setError(null);
+  }
+
   function startEditing(player: Player) {
     setEditingPlayerId(player.id);
     setForm(playerToForm(player));
@@ -342,7 +369,7 @@ export default function AdminPlayersPage() {
         {canManagePlayers ? (
           <button
             className="rounded-xl bg-[#EF233C] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
-            onClick={() => setIsFormOpen(true)}
+            onClick={startCreating}
             type="button"
           >
             Vytvořit hráče
@@ -387,104 +414,135 @@ export default function AdminPlayersPage() {
         </section>
 
         {isFormOpen ? (
-          <section className="rounded-lg bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {isEditing ? "Upravit hráče" : "Vytvořit hráče"}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Povinné je pouze zobrazované jméno.
-                  </p>
-                </div>
+          <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/45">
+            <button
+              aria-label="Zavřít úpravu hráče"
+              className="hidden flex-1 cursor-default md:block"
+              disabled={isSaving}
+              onClick={resetForm}
+              type="button"
+            />
+            <aside
+              aria-label={isEditing ? "Upravit hráče" : "Vytvořit hráče"}
+              className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
+            >
+              <div className="border-b border-slate-200 px-6 py-5">
                 <button
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="mb-4 text-sm font-semibold text-slate-600 hover:text-slate-950 disabled:cursor-not-allowed disabled:text-slate-300"
+                  disabled={isSaving}
                   onClick={resetForm}
                   type="button"
                 >
-                  Zrušit
+                  ← Zpět na seznam
                 </button>
+                <h3 className="text-xl font-semibold text-slate-950">
+                  {isEditing ? "Upravit hráče" : "Vytvořit hráče"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Povinné je pouze zobrazované jméno.
+                </p>
               </div>
 
-              <form className="mt-5 flex flex-col gap-4" onSubmit={handleSubmit}>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Zobrazované jméno
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    required
-                    value={form.display_name}
-                    onChange={(event) => setForm({ ...form, display_name: event.target.value })}
-                  />
-                </label>
+              <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+                <div className="flex-1 overflow-y-auto px-6 py-5">
+                  {error ? (
+                    <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {error}
+                    </div>
+                  ) : null}
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-sm font-medium">
-                    Jméno
-                    <input
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                      value={form.first_name}
-                      onChange={(event) => setForm({ ...form, first_name: event.target.value })}
-                    />
-                  </label>
+                  <div className="flex flex-col gap-4">
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Zobrazované jméno
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        required
+                        value={form.display_name}
+                        onChange={(event) => setForm({ ...form, display_name: event.target.value })}
+                      />
+                    </label>
 
-                  <label className="flex flex-col gap-1 text-sm font-medium">
-                    Příjmení
-                    <input
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                      value={form.last_name}
-                      onChange={(event) => setForm({ ...form, last_name: event.target.value })}
-                    />
-                  </label>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1 text-sm font-medium">
+                        Jméno
+                        <input
+                          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                          value={form.first_name}
+                          onChange={(event) => setForm({ ...form, first_name: event.target.value })}
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-1 text-sm font-medium">
+                        Příjmení
+                        <input
+                          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                          value={form.last_name}
+                          onChange={(event) => setForm({ ...form, last_name: event.target.value })}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Datum narození
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        type="date"
+                        value={form.date_of_birth}
+                        onChange={(event) => setForm({ ...form, date_of_birth: event.target.value })}
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Bydliště
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        value={form.residence}
+                        onChange={(event) => setForm({ ...form, residence: event.target.value })}
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Email
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        type="email"
+                        value={form.email}
+                        onChange={(event) => setForm({ ...form, email: event.target.value })}
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-sm font-medium">
+                      Telefonní číslo
+                      <input
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                        type="tel"
+                        value={form.phone}
+                        onChange={(event) => setForm({ ...form, phone: event.target.value })}
+                      />
+                    </label>
+                  </div>
                 </div>
 
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Datum narození
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    type="date"
-                    value={form.date_of_birth}
-                    onChange={(event) => setForm({ ...form, date_of_birth: event.target.value })}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Bydliště
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    value={form.residence}
-                    onChange={(event) => setForm({ ...form, residence: event.target.value })}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Email
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    type="email"
-                    value={form.email}
-                    onChange={(event) => setForm({ ...form, email: event.target.value })}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Telefonní číslo
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
-                    type="tel"
-                    value={form.phone}
-                    onChange={(event) => setForm({ ...form, phone: event.target.value })}
-                  />
-                </label>
-
-                <button
-                  className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={isSaving}
-                  type="submit"
-                >
-                  {isSaving ? "Ukládám..." : isEditing ? "Uložit změny" : "Uložit hráče"}
-                </button>
+                <div className="flex flex-col-reverse gap-3 border-t border-slate-200 px-6 py-4 sm:flex-row sm:justify-end">
+                  <button
+                    className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                    disabled={isSaving}
+                    onClick={resetForm}
+                    type="button"
+                  >
+                    Zrušit
+                  </button>
+                  <button
+                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                    disabled={isSaving}
+                    type="submit"
+                  >
+                    {isSaving ? "Ukládám..." : isEditing ? "Uložit změny" : "Uložit hráče"}
+                  </button>
+                </div>
               </form>
-          </section>
+            </aside>
+          </div>
         ) : null}
 
           <section className="rounded-lg bg-white shadow-sm">
