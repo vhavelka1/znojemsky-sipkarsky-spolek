@@ -63,6 +63,8 @@ values
   ('matches', '/admin/matches', 'Zápasy', 'moderator'),
   ('import', '/admin/import', 'Import', 'admin'),
   ('import-matches', '/admin/import/zapasy', 'Import zápasů', 'admin'),
+  ('export', '/admin/export', 'Export', 'admin'),
+  ('export-players-all', '/admin/export/hraci-vsichni', 'Hráči - všichni', 'admin'),
   ('tables', '/admin/tables', 'Tabulky', 'moderator'),
   ('users', '/admin/users', 'Uživatelé webu', 'admin'),
   ('permissions', '/admin/permissions', 'Práva', 'admin'),
