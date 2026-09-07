@@ -57,6 +57,7 @@ export default function AdminUsersPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -168,6 +169,36 @@ export default function AdminUsersPage() {
     setMessage("Obnova hesla byla odeslána.");
   }
 
+  async function deleteUser(user: ManagedUser) {
+    if (!window.confirm(`Opravdu chcete smazat uživatele ${user.displayName || user.email}? Tato akce smaže i jeho přihlášení do webu.`)) {
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setDeletingUserId(user.id);
+
+    const response = await adminFetch(`/api/admin/users/${user.id}`, {
+      method: "DELETE",
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+
+    setDeletingUserId(null);
+
+    if (!response.ok) {
+      setError(body.error ?? "Uživatele se nepodařilo smazat.");
+      return;
+    }
+
+    setUsers((current) => current.filter((item) => item.id !== user.id));
+    setDrafts((current) => {
+      const nextDrafts = { ...current };
+      delete nextDrafts[user.id];
+      return nextDrafts;
+    });
+    setMessage("Uživatel byl smazán.");
+  }
+
   function updateDraft(userId: string, patch: Partial<ManagedUser>) {
     setDrafts((current) => ({ ...current, [userId]: { ...current[userId], ...patch } }));
   }
@@ -257,6 +288,7 @@ export default function AdminUsersPage() {
               {users.map((user) => {
                 const draft = drafts[user.id] ?? user;
                 const isResetting = resettingUserId === user.id;
+                const isDeleting = deletingUserId === user.id;
                 return (
                   <tr key={user.id}>
                     <td className="px-4 py-4">
@@ -298,6 +330,12 @@ export default function AdminUsersPage() {
                           <span className="inline-flex items-center gap-2">
                             {isResetting ? <Spinner /> : null}
                             {isResetting ? "Odesílám..." : "Odeslat obnovu hesla"}
+                          </span>
+                        </Button>
+                        <Button disabled={isDeleting} onClick={() => void deleteUser(user)} variant="danger">
+                          <span className="inline-flex items-center gap-2">
+                            {isDeleting ? <Spinner /> : null}
+                            {isDeleting ? "Mažu..." : "Smazat"}
                           </span>
                         </Button>
                       </div>

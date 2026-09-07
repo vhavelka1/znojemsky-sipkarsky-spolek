@@ -149,3 +149,61 @@ export async function POST(request: Request, context: RouteContext) {
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const requester = await getCurrentUserProfile(request);
+  if (!requester || requester.role !== "admin") {
+    return NextResponse.json({ error: "Uživatele může spravovat pouze administrátor." }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  const supabase = createSupabaseAdminClient();
+  const { data: profile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("id, user_id, player_id")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .single();
+
+  if (profileError || !profile) {
+    return NextResponse.json({ error: schemaError(profileError) || "Uživatel nebyl nalezen." }, { status: 404 });
+  }
+
+  if (requester.userId === profile.user_id) {
+    return NextResponse.json({ error: "Vlastní uživatelský účet si nemůžete smazat." }, { status: 400 });
+  }
+
+  const deletedAt = new Date().toISOString();
+  const { error: profileDeleteError } = await supabase
+    .from("user_profiles")
+    .update({ deleted_at: deletedAt, is_active: false })
+    .eq("id", profile.id)
+    .is("deleted_at", null);
+
+  if (profileDeleteError) {
+    return NextResponse.json({ error: schemaError(profileDeleteError) }, { status: 500 });
+  }
+
+  if (profile.player_id) {
+    const { error: playerUpdateError } = await supabase
+      .from("players")
+      .update({ user_id: null, role: "player" })
+      .eq("id", profile.player_id)
+      .eq("user_id", profile.user_id)
+      .is("deleted_at", null);
+
+    if (playerUpdateError) {
+      return NextResponse.json({ error: playerUpdateError.message }, { status: 500 });
+    }
+  }
+
+  const { error: authDeleteError } = await supabase.auth.admin.deleteUser(profile.user_id);
+  if (authDeleteError) {
+    return NextResponse.json(
+      { error: `Profil byl deaktivován, ale Auth účet se nepodařilo smazat. ${authDeleteError.message}` },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ ok: true });
+}
