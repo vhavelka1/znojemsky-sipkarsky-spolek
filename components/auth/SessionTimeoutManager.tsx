@@ -12,6 +12,10 @@ function authenticatedRedirect(pathname: string) {
   return pathname.startsWith("/admin") || pathname.startsWith("/muj-tym") || pathname.startsWith("/muj-ucet");
 }
 
+function isPasswordSetupPath(pathname: string) {
+  return pathname.startsWith("/nastavit-heslo");
+}
+
 export function SessionTimeoutManager() {
   const pathname = usePathname();
   const router = useRouter();
@@ -53,6 +57,11 @@ export function SessionTimeoutManager() {
         return;
       }
 
+      if (isPasswordSetupPath(pathname)) {
+        markActivity();
+        return;
+      }
+
       const lastActivity = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY));
       if (!Number.isFinite(lastActivity) || lastActivity <= 0) {
         markActivity();
@@ -76,7 +85,7 @@ export function SessionTimeoutManager() {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       isSignedIn = Boolean(session);
 
-      if (event === "SIGNED_IN") {
+      if (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY") {
         window.localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
       }
 

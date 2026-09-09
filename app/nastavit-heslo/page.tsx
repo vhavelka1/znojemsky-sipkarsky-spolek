@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function SetPasswordPage() {
@@ -9,6 +9,49 @@ export default function SetPasswordPage() {
   const [passwordAgain, setPasswordAgain] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRecoveryReady, setIsRecoveryReady] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRecoverySession() {
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (exchangeError) {
+          if (isMounted) {
+            setIsRecoveryReady(false);
+            setError("Odkaz pro nastavení hesla není platný nebo už byl použit. Požádejte o nový email.");
+          }
+          return;
+        }
+      }
+
+      const { data } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      setIsRecoveryReady(Boolean(data.session));
+      if (!data.session) {
+        setError("Odkaz pro nastavení hesla není aktivní. Otevřete odkaz z emailu znovu nebo požádejte o nový.");
+      }
+    }
+
+    void loadRecoverySession();
+
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        setIsRecoveryReady(Boolean(session));
+        if (session) setError(null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,6 +65,13 @@ export default function SetPasswordPage() {
 
     if (password !== passwordAgain) {
       setError("Hesla se neshodují.");
+      return;
+    }
+
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      setIsRecoveryReady(false);
+      setError("Odkaz pro nastavení hesla není aktivní. Otevřete odkaz z emailu znovu nebo požádejte o nový.");
       return;
     }
 
@@ -51,7 +101,7 @@ export default function SetPasswordPage() {
             <input className="min-h-12 rounded-2xl border border-[#D8E4F2] px-4 py-3 font-bold outline-none focus:border-[#0F4FA8]" onChange={(event) => setPasswordAgain(event.target.value)} type="password" value={passwordAgain} />
           </label>
         </div>
-        <button className="mt-6 w-full rounded-full bg-[#EF233C] px-6 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500" type="submit">
+        <button className="mt-6 w-full rounded-full bg-[#EF233C] px-6 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60" disabled={!isRecoveryReady} type="submit">
           Nastavit heslo
         </button>
         <Link className="mt-5 inline-flex text-sm font-bold text-[#0F4FA8]" href="/prihlaseni">Přejít na přihlášení</Link>
