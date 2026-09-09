@@ -223,6 +223,7 @@ export default function AdminMatchSheetPage({
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rescheduleNotice, setRescheduleNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const autosaveRequestId = useRef(0);
   const didAutoOpenRescheduleForm = useRef(false);
 
@@ -324,8 +325,15 @@ export default function AdminMatchSheetPage({
 
   async function handleRescheduleRequest() {
     if (!payload.match) return;
+    const requestedScheduledAt = new Date(rescheduleForm.requested_scheduled_at);
+    if (Number.isNaN(requestedScheduledAt.getTime())) {
+      setRescheduleNotice({ type: "error", text: "Vyberte platný nový termín." });
+      return;
+    }
+
     setIsSubmittingReschedule(true);
     setError(null);
+    setRescheduleNotice({ type: "info", text: "Odesílám žádost o změnu termínu..." });
 
     try {
       const response = await adminFetch("/api/admin/match-reschedule-requests", {
@@ -333,7 +341,7 @@ export default function AdminMatchSheetPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           match_id: payload.match.id,
-          requested_scheduled_at: new Date(rescheduleForm.requested_scheduled_at).toISOString(),
+          requested_scheduled_at: requestedScheduledAt.toISOString(),
           reason: rescheduleForm.reason,
         }),
       });
@@ -342,11 +350,14 @@ export default function AdminMatchSheetPage({
       setRescheduleForm(emptyRescheduleForm);
       setIsRescheduleFormOpen(false);
       await loadRescheduleRequests();
+      setRescheduleNotice({ type: "success", text: "Žádost byla odeslána. Teď čeká na schválení moderátorem." });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Žádost o změnu termínu se nepodařilo odeslat.");
+      const message = requestError instanceof Error ? requestError.message : "Žádost o změnu termínu se nepodařilo odeslat.";
+      setError(message);
+      setRescheduleNotice({ type: "error", text: message });
+    } finally {
+      setIsSubmittingReschedule(false);
     }
-
-    setIsSubmittingReschedule(false);
   }
 
   function openRescheduleForm() {
@@ -684,6 +695,19 @@ export default function AdminMatchSheetPage({
             Změnit termín
           </Button>
         </div>
+        {rescheduleNotice ? (
+          <p
+            className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${
+              rescheduleNotice.type === "success"
+                ? "border-green-200 bg-green-50 text-green-800"
+                : rescheduleNotice.type === "error"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-blue-200 bg-blue-50 text-blue-800"
+            }`}
+          >
+            {rescheduleNotice.text}
+          </p>
+        ) : null}
 
         {isRescheduleFormOpen ? (
           <div className="mt-5 grid gap-4 border-t border-[var(--admin-border)] pt-5">
@@ -709,7 +733,8 @@ export default function AdminMatchSheetPage({
             </label>
             <div className="flex flex-wrap gap-2">
               <Button
-                disabled={isSubmittingReschedule || !rescheduleForm.requested_scheduled_at || !rescheduleForm.reason.trim()}
+                disabled={!rescheduleForm.requested_scheduled_at || !rescheduleForm.reason.trim()}
+                isLoading={isSubmittingReschedule}
                 onClick={() => void handleRescheduleRequest()}
                 type="button"
               >

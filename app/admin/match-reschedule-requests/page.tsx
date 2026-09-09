@@ -57,7 +57,7 @@ export default function AdminMatchRescheduleRequestsPage() {
   const [requests, setRequests] = useState<MatchRescheduleRequest[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [processingRequest, setProcessingRequest] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -80,29 +80,34 @@ export default function AdminMatchRescheduleRequestsPage() {
   }, []);
 
   const reviewRequest = async (id: string, action: "approve" | "reject") => {
-    setProcessingId(id);
+    setProcessingRequest({ id, action });
     setError(null);
     setMessage(null);
 
-    const response = await adminFetch("/api/admin/match-reschedule-requests", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id,
-        action,
-        review_note: notes[id] ?? "",
-      }),
-    });
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    setProcessingId(null);
+    try {
+      const response = await adminFetch("/api/admin/match-reschedule-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          action,
+          review_note: notes[id] ?? "",
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
 
-    if (!response.ok) {
-      setError(body.error ?? "Žádost se nepodařilo zpracovat.");
-      return;
+      if (!response.ok) {
+        setError(body.error ?? "Žádost se nepodařilo zpracovat.");
+        return;
+      }
+
+      setMessage(action === "approve" ? "Termín byl změněn." : "Žádost byla zamítnuta.");
+      loadRequests();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Žádost se nepodařilo zpracovat.");
+    } finally {
+      setProcessingRequest(null);
     }
-
-    setMessage(action === "approve" ? "Termín byl změněn." : "Žádost byla zamítnuta.");
-    loadRequests();
   };
 
   return (
@@ -167,11 +172,21 @@ export default function AdminMatchRescheduleRequestsPage() {
                         value={notes[request.id] ?? ""}
                       />
                       <div className="flex flex-wrap gap-2">
-                        <Button disabled={processingId === request.id} onClick={() => reviewRequest(request.id, "approve")} variant="primary">
-                          Schválit změnu
+                        <Button
+                          disabled={Boolean(processingRequest)}
+                          isLoading={processingRequest?.id === request.id && processingRequest.action === "approve"}
+                          onClick={() => reviewRequest(request.id, "approve")}
+                          variant="primary"
+                        >
+                          {processingRequest?.id === request.id && processingRequest.action === "approve" ? "Schvaluji..." : "Schválit změnu"}
                         </Button>
-                        <Button disabled={processingId === request.id} onClick={() => reviewRequest(request.id, "reject")} variant="danger">
-                          Zamítnout
+                        <Button
+                          disabled={Boolean(processingRequest)}
+                          isLoading={processingRequest?.id === request.id && processingRequest.action === "reject"}
+                          onClick={() => reviewRequest(request.id, "reject")}
+                          variant="danger"
+                        >
+                          {processingRequest?.id === request.id && processingRequest.action === "reject" ? "Zamítám..." : "Zamítnout"}
                         </Button>
                       </div>
                     </div>

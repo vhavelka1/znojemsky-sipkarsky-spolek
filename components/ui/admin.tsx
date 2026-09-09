@@ -5,12 +5,14 @@ type ButtonProps = {
   type?: "button" | "submit" | "reset";
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
+  isLoading?: boolean;
   onClick?: () => void;
 };
 
 export function Button({
   children,
   disabled = false,
+  isLoading = false,
   onClick,
   type = "button",
   variant = "primary",
@@ -25,11 +27,13 @@ export function Button({
 
   return (
     <button
-      className={`rounded-2xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}
-      disabled={disabled}
+      aria-busy={isLoading}
+      className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}
+      disabled={disabled || isLoading}
       onClick={onClick}
       type={type}
     >
+      {isLoading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : null}
       {children}
     </button>
   );
