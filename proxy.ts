@@ -15,8 +15,16 @@ function errorResponse(error: string, status: number, extra?: Record<string, unk
   return NextResponse.json({ error, ...extra }, { status });
 }
 
+function isMatchSheetApi(pathname: string) {
+  return /^\/api\/admin\/matches\/[^/]+\/(?:sheet|confirm)$/.test(pathname);
+}
+
 export async function proxy(request: NextRequest) {
   if (!request.nextUrl.pathname.startsWith("/api/admin")) {
+    return NextResponse.next();
+  }
+
+  if (isMatchSheetApi(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
 
