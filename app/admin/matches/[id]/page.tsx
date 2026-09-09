@@ -81,6 +81,14 @@ type PlayerStatistics = {
   lost_legs: number;
 };
 type Score = { home_points: number; away_points: number; home_legs: number; away_legs: number };
+type MatchRescheduleRequest = {
+  id: string;
+  requested_scheduled_at: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  review_note: string | null;
+  created_at: string;
+};
 type SheetPayload = {
   match?: MatchDetail;
   season?: NamedEntity;
@@ -99,6 +107,10 @@ type SheetPayload = {
 };
 type AutosaveResponse = {
   game?: SheetGame;
+  error?: string;
+};
+type RescheduleRequestsPayload = {
+  requests?: MatchRescheduleRequest[];
   error?: string;
 };
 type MatchSheetPageProps = {
@@ -133,6 +145,10 @@ const emptyPayload = {
   statistics: [] as PlayerStatistics[],
   slots: [] as MatchPlayerSlot[],
   confirmations: [] as MatchConfirmation[],
+};
+const emptyRescheduleForm = {
+  requested_scheduled_at: "",
+  reason: "",
 };
 function getWinner(game: Pick<SheetGame, "game_type" | "home_legs" | "away_legs">): MatchSide | null {
   const winningLegs = game.game_type === "tiebreak_701" ? 1 : 3;
@@ -199,11 +215,16 @@ export default function AdminMatchSheetPage({
 }: MatchSheetPageProps = {}) {
   const matchId = useParams<{ id: string }>().id;
   const [payload, setPayload] = useState(emptyPayload);
+  const [rescheduleRequests, setRescheduleRequests] = useState<MatchRescheduleRequest[]>([]);
+  const [rescheduleForm, setRescheduleForm] = useState(emptyRescheduleForm);
+  const [isRescheduleFormOpen, setIsRescheduleFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAutosaving, setIsAutosaving] = useState(false);
+  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [error, setError] = useState<string | null>(null);
   const autosaveRequestId = useRef(0);
+  const didAutoOpenRescheduleForm = useRef(false);
 
   const playerById = useMemo(() => new Map(payload.players.map((player) => [player.id, player])), [payload.players]);
   const teamById = useMemo(() => new Map(payload.teams.map((team) => [team.id, team])), [payload.teams]);
@@ -230,6 +251,7 @@ export default function AdminMatchSheetPage({
   const confirmationBySide = new Map(
     payload.confirmations.map((confirmation) => [confirmation.side, confirmation]),
   );
+  const pendingRescheduleRequest = rescheduleRequests.find((request) => request.status === "pending");
   const captainForSide = (side: MatchSide) => {
     const teamSeasonId = side === "home" ? payload.match?.home_team_id : payload.match?.away_team_id;
     const membership = payload.memberships.find(
@@ -237,6 +259,17 @@ export default function AdminMatchSheetPage({
     );
     return membership ? playerById.get(membership.player_id) : undefined;
   };
+
+  async function loadRescheduleRequests() {
+    const response = await adminFetch(`/api/admin/match-reschedule-requests?match_id=${matchId}`, { cache: "no-store" });
+    const body = (await response.json().catch(() => ({}))) as RescheduleRequestsPayload;
+    if (!response.ok) {
+      throw new Error(body.error ?? "Žádosti o změnu termínu se nepodařilo načíst.");
+    }
+    const requests = body.requests ?? [];
+    setRescheduleRequests(requests);
+    return requests;
+  }
 
   async function loadSheet() {
     setIsLoading(true);
@@ -265,10 +298,63 @@ export default function AdminMatchSheetPage({
         slots,
         confirmations: body.confirmations ?? [],
       });
+      const loadedRequests = await loadRescheduleRequests().catch((requestError) => {
+        setError(requestError instanceof Error ? requestError.message : "Žádosti o změnu termínu se nepodařilo načíst.");
+        return null;
+      });
+      if (
+        new URLSearchParams(window.location.search).get("reschedule") === "1" &&
+        body.match &&
+        loadedRequests &&
+        !didAutoOpenRescheduleForm.current &&
+        !loadedRequests.some((request) => request.status === "pending")
+      ) {
+        setRescheduleForm({
+          requested_scheduled_at: dateTimeLocalValue(body.match.scheduled_at),
+          reason: "",
+        });
+        setIsRescheduleFormOpen(true);
+        didAutoOpenRescheduleForm.current = true;
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Zápis utkání se nepodařilo načíst.");
     }
     setIsLoading(false);
+  }
+
+  async function handleRescheduleRequest() {
+    if (!payload.match) return;
+    setIsSubmittingReschedule(true);
+    setError(null);
+
+    try {
+      const response = await adminFetch("/api/admin/match-reschedule-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          match_id: payload.match.id,
+          requested_scheduled_at: new Date(rescheduleForm.requested_scheduled_at).toISOString(),
+          reason: rescheduleForm.reason,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as RescheduleRequestsPayload;
+      if (!response.ok) throw new Error(body.error ?? "Žádost o změnu termínu se nepodařilo odeslat.");
+      setRescheduleForm(emptyRescheduleForm);
+      setIsRescheduleFormOpen(false);
+      await loadRescheduleRequests();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Žádost o změnu termínu se nepodařilo odeslat.");
+    }
+
+    setIsSubmittingReschedule(false);
+  }
+
+  function openRescheduleForm() {
+    setRescheduleForm({
+      requested_scheduled_at: payload.match ? dateTimeLocalValue(payload.match.scheduled_at) : "",
+      reason: "",
+    });
+    setIsRescheduleFormOpen(true);
   }
 
   async function handleConfirm(side: MatchSide) {
@@ -576,6 +662,71 @@ export default function AdminMatchSheetPage({
           <MatchInfo label="Skóre legů"><span className="text-3xl">{totalScore.home_legs}:{totalScore.away_legs}</span></MatchInfo>
         </div>
       </Card>
+      <Card>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-[var(--brand-navy)]">Termín zápasu</h3>
+            <p className="mt-1 text-sm font-semibold text-[var(--admin-muted)]">
+              Aktuální termín: {formatDateTime(payload.match.scheduled_at)}
+            </p>
+            {pendingRescheduleRequest ? (
+              <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                Čeká žádost o změnu na {formatDateTime(pendingRescheduleRequest.requested_scheduled_at)}.
+              </p>
+            ) : null}
+          </div>
+          <Button
+            disabled={Boolean(pendingRescheduleRequest)}
+            onClick={openRescheduleForm}
+            type="button"
+            variant="secondary"
+          >
+            Změnit termín
+          </Button>
+        </div>
+
+        {isRescheduleFormOpen ? (
+          <div className="mt-5 grid gap-4 border-t border-[var(--admin-border)] pt-5">
+            <label className="flex flex-col gap-1 text-sm font-bold text-[var(--brand-navy)]">
+              Nový termín
+              <input
+                className="rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--brand-blue)]"
+                min={dateTimeLocalValue(new Date().toISOString())}
+                required
+                type="datetime-local"
+                value={rescheduleForm.requested_scheduled_at}
+                onChange={(event) => setRescheduleForm((current) => ({ ...current, requested_scheduled_at: event.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-bold text-[var(--brand-navy)]">
+              Důvod
+              <textarea
+                className="min-h-24 rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--brand-blue)]"
+                required
+                value={rescheduleForm.reason}
+                onChange={(event) => setRescheduleForm((current) => ({ ...current, reason: event.target.value }))}
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={isSubmittingReschedule || !rescheduleForm.requested_scheduled_at || !rescheduleForm.reason.trim()}
+                onClick={() => void handleRescheduleRequest()}
+                type="button"
+              >
+                {isSubmittingReschedule ? "Odesílám..." : "Odeslat žádost"}
+              </Button>
+              <Button
+                disabled={isSubmittingReschedule}
+                onClick={() => setIsRescheduleFormOpen(false)}
+                type="button"
+                variant="secondary"
+              >
+                Zrušit
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Card>
       {error ? <Card><p className="text-sm text-red-700">{error}</p></Card> : null}
       <div className="flex flex-col gap-6">
         <MatchSheet
@@ -638,4 +789,10 @@ export default function AdminMatchSheetPage({
       </div>
     </div>
   );
+}
+
+function dateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
