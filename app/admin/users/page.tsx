@@ -82,6 +82,7 @@ export default function AdminUsersPage() {
   const [drafts, setDrafts] = useState<Record<string, ManagedUser>>({});
 
   const playerById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const selectedCreatePlayer = form.player_id ? playerById.get(form.player_id) : null;
   const teamOptions = useMemo(
     () =>
       Array.from(new Set(players.flatMap((player) => player.teamNames)))
@@ -277,12 +278,8 @@ export default function AdminUsersPage() {
                 <input className={inputClass} onChange={(event) => setForm({ ...form, email: event.target.value })} type="email" value={form.email} />
               </label>
               <label className="grid gap-2 text-sm font-bold">
-                Zobrazované jméno
-                <input className={inputClass} onChange={(event) => setForm({ ...form, display_name: event.target.value })} value={form.display_name} />
-              </label>
-              <label className="grid gap-2 text-sm font-bold">
                 Propojit s hráčem
-                <select className={inputClass} onChange={(event) => setForm({ ...form, player_id: event.target.value })} value={form.player_id}>
+                <select className={inputClass} onChange={(event) => setForm({ ...form, player_id: event.target.value, display_name: "" })} value={form.player_id}>
                   <option value="">Bez propojení</option>
                   {players.map((player) => (
                     <option key={player.id} value={player.id}>
@@ -290,7 +287,18 @@ export default function AdminUsersPage() {
                     </option>
                   ))}
                 </select>
+                {selectedCreatePlayer ? (
+                  <span className="text-xs font-bold text-slate-500">
+                    Zobrazované jméno bude použito z hráče: {selectedCreatePlayer.display_name}
+                  </span>
+                ) : null}
               </label>
+              {!selectedCreatePlayer ? (
+                <label className="grid gap-2 text-sm font-bold">
+                  Zobrazované jméno
+                  <input className={inputClass} onChange={(event) => setForm({ ...form, display_name: event.target.value })} value={form.display_name} />
+                </label>
+              ) : null}
               <label className="grid gap-2 text-sm font-bold">
                 Role
                 <select className={inputClass} onChange={(event) => setForm({ ...form, app_role: event.target.value as AppRole })} value={form.app_role}>

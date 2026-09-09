@@ -139,16 +139,12 @@ export async function POST(request: Request) {
   };
 
   const email = stringValue(body.email).toLowerCase();
-  const displayName = stringValue(body.display_name);
   const playerId = stringValue(body.player_id);
+  let displayName = stringValue(body.display_name);
   const appRole = stringValue(body.app_role) || "player";
 
   if (!email.includes("@")) {
     return NextResponse.json({ error: "Zadejte platný email." }, { status: 400 });
-  }
-
-  if (!displayName) {
-    return NextResponse.json({ error: "Zadejte zobrazované jméno." }, { status: 400 });
   }
 
   if (!allowedRoles.has(appRole)) {
@@ -156,6 +152,25 @@ export async function POST(request: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
+  if (playerId) {
+    const { data: player, error: playerError } = await supabase
+      .from("players")
+      .select("display_name")
+      .eq("id", playerId)
+      .is("deleted_at", null)
+      .single<{ display_name: string }>();
+
+    if (playerError || !player) {
+      return NextResponse.json({ error: "Vybraný hráč nebyl nalezen." }, { status: 404 });
+    }
+
+    displayName = player.display_name;
+  }
+
+  if (!displayName) {
+    return NextResponse.json({ error: "Zadejte zobrazované jméno." }, { status: 400 });
+  }
+
   const invite = await supabase.auth.admin.inviteUserByEmail(email, {
     redirectTo: passwordSetupRedirectTo(request),
   });
