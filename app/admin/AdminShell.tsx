@@ -12,6 +12,8 @@ type AdminShellProps = {
   children: ReactNode;
 };
 
+const pendingRequestPageKeys = ["registrations", "roster-requests", "match-reschedule-requests", "tournament-requests"];
+
 export function AdminShell({ children }: AdminShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -117,13 +119,14 @@ export function AdminShell({ children }: AdminShellProps) {
             key: permission.key,
             href: permission.href,
             label:
-              (permission.key === "registrations" || permission.key === "roster-requests" || permission.key === "tournament-requests") &&
+              permission.key &&
+              pendingRequestPageKeys.includes(permission.key) &&
               (pending[permission.key] ?? 0) > 0
                 ? `${permission.label} (${pending[permission.key]})`
                 : permission.label,
             minimumRole: permission.minimumRole,
             parentKey: permission.parentKey,
-            isAlert: permission.key === "registrations" || permission.key === "roster-requests" || permission.key === "tournament-requests"
+            isAlert: permission.key && pendingRequestPageKeys.includes(permission.key)
               ? (pending[permission.key] ?? 0) > 0
               : false,
           })),

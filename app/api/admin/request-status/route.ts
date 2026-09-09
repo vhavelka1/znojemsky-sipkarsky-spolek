@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const [rosterRequests, submittedTeamRosters, teamRegistrations, playerRegistrations, tournamentRequests] = await Promise.all([
+  const [rosterRequests, submittedTeamRosters, teamRegistrations, playerRegistrations, matchRescheduleRequests, tournamentRequests] = await Promise.all([
     supabase
       .from("team_roster_requests")
       .select("id", { count: "exact", head: true })
@@ -31,6 +31,11 @@ export async function GET(request: Request) {
       .select("id", { count: "exact", head: true })
       .eq("status", "pending")
       .is("deleted_at", null),
+    supabase
+      .from("match_reschedule_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .is("deleted_at", null),
     loadTournamentRequests().catch(() => []),
   ]);
 
@@ -39,7 +44,12 @@ export async function GET(request: Request) {
     submittedTeamRosters.error?.message.includes("schema cache")
       ? null
       : submittedTeamRosters.error;
-  const error = rosterRequests.error ?? teamRosterStatusError ?? teamRegistrations.error ?? playerRegistrations.error;
+  const matchRescheduleRequestsError =
+    matchRescheduleRequests.error?.message.includes("match_reschedule_requests") ||
+    matchRescheduleRequests.error?.message.includes("schema cache")
+      ? null
+      : matchRescheduleRequests.error;
+  const error = rosterRequests.error ?? teamRosterStatusError ?? teamRegistrations.error ?? playerRegistrations.error ?? matchRescheduleRequestsError;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -51,6 +61,7 @@ export async function GET(request: Request) {
     pending: {
       "roster-requests": pendingRosterRequests,
       registrations: pendingRegistrationRequests,
+      "match-reschedule-requests": matchRescheduleRequests.error ? 0 : matchRescheduleRequests.count ?? 0,
       "tournament-requests": tournamentRequests.filter((request) => request.status === "pending").length,
     },
   });
