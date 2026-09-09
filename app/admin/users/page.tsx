@@ -15,12 +15,14 @@ type ManagedUser = {
   appRole: AppRole;
   isActive: boolean;
   createdAt: string;
+  teamNames: string[];
 };
 
 type Player = {
   id: string;
   display_name: string;
   email: string | null;
+  teamNames: string[];
 };
 
 type UsersPayload = {
@@ -42,6 +44,14 @@ function roleLabel(role: AppRole) {
   return roleOptions.find((option) => option.value === role)?.label ?? role;
 }
 
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("cs-CZ")
+    .trim();
+}
+
 function Spinner() {
   return (
     <span
@@ -60,6 +70,9 @@ export default function AdminUsersPage() {
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nameFilter, setNameFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [form, setForm] = useState({
     email: "",
     display_name: "",
@@ -69,6 +82,33 @@ export default function AdminUsersPage() {
   const [drafts, setDrafts] = useState<Record<string, ManagedUser>>({});
 
   const playerById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const teamOptions = useMemo(
+    () =>
+      Array.from(new Set(players.flatMap((player) => player.teamNames)))
+        .sort((first, second) => first.localeCompare(second, "cs")),
+    [players],
+  );
+  const visibleUsers = useMemo(() => {
+    const normalizedNameFilter = normalizeSearch(nameFilter);
+
+    return users.filter((user) => {
+      const draft = drafts[user.id] ?? user;
+      const player = draft.playerId ? playerById.get(draft.playerId) : null;
+      const teamNames = player?.teamNames ?? user.teamNames ?? [];
+      const searchableName = normalizeSearch([
+        draft.displayName,
+        user.email,
+        player?.display_name,
+        player?.email,
+      ].filter(Boolean).join(" "));
+
+      if (normalizedNameFilter && !searchableName.includes(normalizedNameFilter)) return false;
+      if (teamFilter !== "all" && !teamNames.includes(teamFilter)) return false;
+      if (roleFilter !== "all" && draft.appRole !== roleFilter) return false;
+
+      return true;
+    });
+  }, [drafts, nameFilter, playerById, roleFilter, teamFilter, users]);
 
   async function loadUsers() {
     setIsLoading(true);
@@ -113,8 +153,9 @@ export default function AdminUsersPage() {
       return;
     }
 
-    setUsers((current) => [body.user!, ...current]);
-    setDrafts((current) => ({ ...current, [body.user!.id]: body.user! }));
+    const createdUser = { ...body.user!, teamNames: body.user!.teamNames ?? [] };
+    setUsers((current) => [createdUser, ...current]);
+    setDrafts((current) => ({ ...current, [createdUser.id]: createdUser }));
     setForm({ email: "", display_name: "", player_id: "", app_role: "player" });
     setIsCreateOpen(false);
     setMessage("Pozvánka byla odeslána.");
@@ -273,6 +314,48 @@ export default function AdminUsersPage() {
       <Card className="mt-6">
         {isLoading ? <p className="text-sm text-[var(--admin-muted)]">Načítám uživatele...</p> : null}
         {!isLoading && users.length === 0 ? <p className="text-sm text-[var(--admin-muted)]">Zatím nejsou vytvoření žádní uživatelé.</p> : null}
+        {!isLoading && users.length > 0 ? (
+          <div className="grid gap-4 border-b border-[var(--admin-border)] bg-[var(--admin-soft-blue)] p-4 lg:grid-cols-[1fr_260px_220px]">
+            <label className="grid gap-2 text-sm font-bold">
+              Jméno
+              <input
+                className={inputClass}
+                onChange={(event) => setNameFilter(event.target.value)}
+                placeholder="Jméno nebo email"
+                value={nameFilter}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-bold">
+              Tým
+              <select className={inputClass} onChange={(event) => setTeamFilter(event.target.value)} value={teamFilter}>
+                <option value="all">Všechny týmy</option>
+                {teamOptions.map((teamName) => (
+                  <option key={teamName} value={teamName}>
+                    {teamName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-bold">
+              Funkce
+              <select className={inputClass} onChange={(event) => setRoleFilter(event.target.value)} value={roleFilter}>
+                <option value="all">Všechny funkce</option>
+                {roleOptions.map((role) => (
+                  <option key={role.value} value={role.value}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        {!isLoading && users.length > 0 && visibleUsers.length === 0 ? (
+          <div className="p-4">
+            <p className="rounded-2xl border border-[var(--admin-border)] bg-white px-4 py-3 text-sm font-bold text-[var(--admin-muted)]">
+              Pro zvolené filtry nebyl nalezen žádný uživatel.
+            </p>
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-left text-sm">
             <thead className="bg-[var(--admin-soft-blue)] text-[var(--admin-muted)]">
@@ -285,8 +368,9 @@ export default function AdminUsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--admin-border)]">
-              {users.map((user) => {
+              {visibleUsers.map((user) => {
                 const draft = drafts[user.id] ?? user;
+                const player = draft.playerId ? playerById.get(draft.playerId) : null;
                 const isResetting = resettingUserId === user.id;
                 const isDeleting = deletingUserId === user.id;
                 return (
@@ -304,7 +388,11 @@ export default function AdminUsersPage() {
                           </option>
                         ))}
                       </select>
-                      {draft.playerId ? <p className="mt-1 text-xs font-bold text-slate-500">{playerById.get(draft.playerId)?.email ?? ""}</p> : null}
+                      {draft.playerId ? (
+                        <p className="mt-1 text-xs font-bold text-slate-500">
+                          {[player?.email, ...(player?.teamNames ?? [])].filter(Boolean).join(" · ")}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-4">
                       <select className={inputClass} onChange={(event) => updateDraft(user.id, { appRole: event.target.value as AppRole })} value={draft.appRole}>

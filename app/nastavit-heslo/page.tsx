@@ -4,6 +4,17 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+function isSamePasswordError(error: { message?: string }) {
+  const message = error.message?.toLocaleLowerCase("cs-CZ") ?? "";
+  return (
+    (message.includes("same") && message.includes("password")) ||
+    (message.includes("different") && message.includes("password")) ||
+    message.includes("old password") ||
+    message.includes("stejné heslo") ||
+    message.includes("stejne heslo")
+  );
+}
+
 export default function SetPasswordPage() {
   const [password, setPassword] = useState("");
   const [passwordAgain, setPasswordAgain] = useState("");
@@ -77,6 +88,11 @@ export default function SetPasswordPage() {
 
     const { error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) {
+      if (isSamePasswordError(updateError)) {
+        setError("Nové heslo nemůže být stejné jako původní. Zvolte prosím jiné heslo.");
+        return;
+      }
+
       setError("Nové heslo se nepodařilo nastavit. Otevřete odkaz z emailu znovu.");
       return;
     }
