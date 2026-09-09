@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeMatchAccess } from "@/lib/matchAccess";
 import { hasAtLeastRole } from "@/lib/appAuth";
-import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 type MatchSide = "home" | "away";
 
@@ -38,12 +37,15 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const { id: matchId } = await context.params;
-  const access = await authorizeMatchAccess(request, matchId, { side });
+  const access = await authorizeMatchAccess(request, matchId, {
+    globalMinimumRole: "moderator",
+    side,
+  });
   if (access.response) {
     return access.response;
   }
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = access.supabase;
   const { data: match, error: matchError } = await supabase
     .from("matches")
     .select("id, home_team_id, away_team_id, status")
@@ -62,8 +64,8 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const isAdmin = hasAtLeastRole(access.requester?.role, "admin");
-  const confirmingPlayerId = isAdmin ? null : access.requester?.playerId ?? null;
+  const isModeratorOrAdmin = hasAtLeastRole(access.requester?.role, "moderator");
+  const confirmingPlayerId = isModeratorOrAdmin ? null : access.requester?.playerId ?? null;
   const teamSeasonId = side === "home" ? match.home_team_id : match.away_team_id;
   const { data: captain, error: captainError } = await supabase
     .from("team_memberships")

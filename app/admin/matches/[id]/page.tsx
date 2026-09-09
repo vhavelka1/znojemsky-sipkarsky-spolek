@@ -3,7 +3,7 @@
 import { adminFetch } from "@/lib/adminFetch";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, PageHeader } from "@/components/ui/admin";
 import { MatchInfo, MatchSheet, MatchStatisticsSection } from "@/components/matches/MatchSheet";
 
@@ -38,6 +38,7 @@ type Membership = {
 type Player = { id: string; display_name: string };
 type SheetGame = {
   id: string | null;
+  updated_at: string | null;
   game_type: MatchGameType;
   order_number: number;
   home_legs: number;
@@ -96,6 +97,10 @@ type SheetPayload = {
   confirmations?: MatchConfirmation[];
   error?: string;
 };
+type AutosaveResponse = {
+  game?: SheetGame;
+  error?: string;
+};
 type MatchSheetPageProps = {
   backHref?: string;
   backLabel?: string;
@@ -129,7 +134,7 @@ const emptyPayload = {
   slots: [] as MatchPlayerSlot[],
   confirmations: [] as MatchConfirmation[],
 };
-function getWinner(game: Pick<SheetGame, "game_type" | "home_legs" | "away_legs">) {
+function getWinner(game: Pick<SheetGame, "game_type" | "home_legs" | "away_legs">): MatchSide | null {
   const winningLegs = game.game_type === "tiebreak_701" ? 1 : 3;
   if (game.home_legs === winningLegs && game.away_legs < winningLegs) return "home";
   if (game.away_legs === winningLegs && game.home_legs < winningLegs) return "away";
@@ -148,6 +153,17 @@ function calculateScore(games: SheetGame[]): Score {
     },
     { home_points: 0, away_points: 0, home_legs: 0, away_legs: 0 },
   );
+}
+
+function matchStatusForGames(games: SheetGame[]): MatchStatus {
+  const coreGames = games.filter((game) => game.order_number <= 18);
+  const coreScore = calculateScore(coreGames);
+  const tiebreakNeeded = coreScore.home_points === 9 && coreScore.away_points === 9;
+  const completedCoreGames = coreGames.filter((game) => Boolean(game.winner_side)).length;
+  const tiebreak = games.find((game) => game.game_type === "tiebreak_701");
+  return completedCoreGames === 18 && (!tiebreakNeeded || Boolean(tiebreak?.winner_side))
+    ? "awaiting_confirmation"
+    : "scheduled";
 }
 
 function formatDateTime(value: string) {
@@ -184,9 +200,10 @@ export default function AdminMatchSheetPage({
   const matchId = useParams<{ id: string }>().id;
   const [payload, setPayload] = useState(emptyPayload);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isAutosaving, setIsAutosaving] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autosaveRequestId = useRef(0);
 
   const playerById = useMemo(() => new Map(payload.players.map((player) => [player.id, player])), [payload.players]);
   const teamById = useMemo(() => new Map(payload.teams.map((team) => [team.id, team])), [payload.teams]);
@@ -288,6 +305,103 @@ export default function AdminMatchSheetPage({
     }));
   }
 
+  async function saveGameCell(game: SheetGame) {
+    const requestId = autosaveRequestId.current + 1;
+    autosaveRequestId.current = requestId;
+    setIsAutosaving(true);
+    setError(null);
+
+    try {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cell: {
+            type: "game",
+            expected_updated_at: game.updated_at,
+            game,
+          },
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as AutosaveResponse;
+      if (!response.ok) {
+        throw new Error(body.error ?? "Změnu zápisu se nepodařilo uložit.");
+      }
+
+      if (body.game) {
+        setPayload((current) => {
+          const games = current.games.map((currentGame) => (
+            currentGame.order_number === body.game?.order_number
+              ? normalizeGame({
+                  ...currentGame,
+                  id: body.game.id,
+                  updated_at: body.game.updated_at,
+                  winner_side: body.game.winner_side,
+                })
+              : currentGame
+          ));
+          return {
+            ...current,
+            confirmations: [],
+            games,
+            match: current.match
+              ? { ...current.match, status: matchStatusForGames(games) }
+              : current.match,
+          };
+        });
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Změnu zápisu se nepodařilo uložit.");
+      await loadSheet();
+    } finally {
+      if (autosaveRequestId.current === requestId) {
+        setIsAutosaving(false);
+      }
+    }
+  }
+
+  async function saveAchievementCell(
+    orderNumber: number,
+    playerId: string,
+    type: AchievementType,
+    count: number,
+  ) {
+    const requestId = autosaveRequestId.current + 1;
+    autosaveRequestId.current = requestId;
+    setIsAutosaving(true);
+    setError(null);
+
+    try {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cell: {
+            type: "achievement",
+            achievement: {
+              order_number: orderNumber,
+              player_id: playerId,
+              achievement_type: type,
+              achievement_count: count,
+            },
+          },
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as AutosaveResponse;
+      if (!response.ok) {
+        throw new Error(body.error ?? "Statistiku se nepodařilo uložit.");
+      }
+      setPayload((current) => ({ ...current, confirmations: [] }));
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Statistiku se nepodařilo uložit.");
+      await loadSheet();
+    } finally {
+      if (autosaveRequestId.current === requestId) {
+        setIsAutosaving(false);
+      }
+    }
+  }
+
   function updateLegs(game: SheetGame, side: "home_legs" | "away_legs", value: number) {
     const maximumLegs = game.game_type === "tiebreak_701" ? 1 : 3;
     const normalizedValue = Math.min(maximumLegs, Math.max(0, value));
@@ -298,17 +412,23 @@ export default function AdminMatchSheetPage({
         : normalizedValue === maximumLegs && game[otherSide] === maximumLegs
           ? 0
           : game[otherSide];
+    const winnerSide = getWinner({
+      ...game,
+      [side]: normalizedValue,
+      [otherSide]: otherValue,
+    });
     const updated = {
       ...game,
       [side]: normalizedValue,
       [otherSide]: otherValue,
-      winner_side: null,
+      winner_side: winnerSide,
     };
     updateGame(game.order_number, {
       [side]: normalizedValue,
       [otherSide]: otherValue,
-      winner_side: getWinner(updated),
+      winner_side: winnerSide,
     });
+    void saveGameCell(normalizeGame(updated));
   }
 
   function firstBlockSuggestion(side: MatchSide, slotCode: SlotCode) {
@@ -352,6 +472,7 @@ export default function AdminMatchSheetPage({
     const playerIds = [...game[key]];
     playerIds[index] = suggestedPlayerId;
     updateGame(game.order_number, { [key]: playerIds } as Partial<SheetGame>);
+    void saveGameCell(normalizeGame({ ...game, [key]: playerIds }));
   }
 
   function updateRowPlayer(game: SheetGame, side: MatchSide, index: number, playerId: string) {
@@ -370,6 +491,7 @@ export default function AdminMatchSheetPage({
       removePlayerAchievements(game.order_number, previousPlayerId);
     }
     updateGame(game.order_number, { [key]: playerIds } as Partial<SheetGame>);
+    void saveGameCell(normalizeGame({ ...game, [key]: playerIds }));
   }
 
   function removePlayerAchievements(orderNumber: number, playerId: string) {
@@ -421,41 +543,7 @@ export default function AdminMatchSheetPage({
           : achievements,
       };
     });
-  }
-
-  async function handleSave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSaving(true);
-    setError(null);
-    try {
-      const games = payload.games.filter((game) => game.order_number <= 18 || tiebreakNeeded);
-      const achievements = payload.achievements.filter((achievement) => (achievement.order_number ?? 0) <= 18);
-      const slots = games
-        .filter((game) => game.order_number <= 4)
-        .flatMap((game) => {
-          const pair = singlesSlotPairs.get(game.order_number);
-          if (!pair) return [];
-          return [
-            game.home_player_ids[0]
-              ? { side: "home" as const, slot_code: pair[0], player_id: game.home_player_ids[0] }
-              : null,
-            game.away_player_ids[0]
-              ? { side: "away" as const, slot_code: pair[1], player_id: game.away_player_ids[0] }
-              : null,
-          ].filter((slot) => Boolean(slot));
-        });
-      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ games, achievements, slots }),
-      });
-      const body = (await response.json().catch(() => ({}))) as SheetPayload;
-      if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo uložit.");
-      await loadSheet();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Zápis utkání se nepodařilo uložit.");
-    }
-    setIsSaving(false);
+    void saveAchievementCell(orderNumber, playerId, type, normalizedCount);
   }
 
   if (isLoading) return <Card><p className="text-sm text-[var(--admin-muted)]">Načítám zápis utkání...</p></Card>;
@@ -489,7 +577,7 @@ export default function AdminMatchSheetPage({
         </div>
       </Card>
       {error ? <Card><p className="text-sm text-red-700">{error}</p></Card> : null}
-      <form className="flex flex-col gap-6" onSubmit={handleSave}>
+      <div className="flex flex-col gap-6">
         <MatchSheet
           achievements={payload.achievements}
           awayPlayers={awayPlayers}
@@ -501,7 +589,7 @@ export default function AdminMatchSheetPage({
           onPlayerFocus={prefillRowPlayer}
           playerUsesDifferentSlot={playerUsesDifferentSlot}
         />
-        <div className="flex justify-end"><Button disabled={isSaving} type="submit">{isSaving ? "Ukládám..." : "Uložit zápis"}</Button></div>
+        {isAutosaving ? <div className="flex justify-end"><Badge>Ukládám...</Badge></div> : null}
         <Card>
           <h3 className="text-lg font-bold text-[var(--brand-navy)]">Potvrzení kapitány</h3>
           <p className="mt-2 text-sm text-[var(--admin-muted)]">
@@ -547,7 +635,7 @@ export default function AdminMatchSheetPage({
             statistics={payload.statistics}
           />
         </Card>
-      </form>
+      </div>
     </div>
   );
 }

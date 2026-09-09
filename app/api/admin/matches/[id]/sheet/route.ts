@@ -20,6 +20,7 @@ type AchievementType =
   | "checkout_100_plus";
 
 type SubmittedGame = {
+  id?: unknown;
   game_type?: unknown;
   order_number?: unknown;
   home_legs?: unknown;
@@ -31,6 +32,17 @@ type SubmittedGame = {
   away_slot_codes?: unknown;
 };
 
+type AutosaveCell =
+  | {
+      type?: "game";
+      expected_updated_at?: unknown;
+      game?: unknown;
+    }
+  | {
+      type?: "achievement";
+      achievement?: unknown;
+    };
+
 type SubmittedAchievement = {
   order_number?: unknown;
   player_id?: unknown;
@@ -39,6 +51,7 @@ type SubmittedAchievement = {
 };
 
 type SaveSheetBody = {
+  cell?: unknown;
   games?: unknown;
   achievements?: unknown;
   slots?: unknown;
@@ -95,6 +108,7 @@ type MatchGameRow = {
   home_legs: number;
   away_legs: number;
   winner_side: MatchSide | null;
+  updated_at: string;
 };
 
 type MatchGamePlayerRow = {
@@ -240,6 +254,7 @@ function getDefaultGames() {
     return {
       id: null as string | null,
       match_id: null as string | null,
+      updated_at: null as string | null,
       game_type: gameType,
       order_number: orderNumber,
       home_legs: 0,
@@ -433,7 +448,7 @@ async function loadSheetData(matchId: string) {
         .returns<PlayerRow[]>(),
       supabase
         .from("match_games")
-        .select("id, match_id, game_type, order_number, home_legs, away_legs, winner_side")
+        .select("id, match_id, game_type, order_number, home_legs, away_legs, winner_side, updated_at")
         .eq("match_id", matchId)
         .is("deleted_at", null)
         .order("order_number", { ascending: true })
@@ -565,6 +580,430 @@ async function loadSheetData(matchId: string) {
   };
 }
 
+async function updateMatchSummary(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  matchId: string,
+) {
+  const { data: games, error: gamesError } = await supabase
+    .from("match_games")
+    .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
+    .eq("match_id", matchId)
+    .is("deleted_at", null)
+    .returns<MatchGameRow[]>();
+
+  if (gamesError) {
+    return NextResponse.json({ error: gamesError.message }, { status: 500 });
+  }
+
+  const matchScore = calculateMatchScore(games ?? []);
+  const completedCoreGames = (games ?? []).filter(
+    (game) => game.order_number <= 18 && Boolean(game.winner_side),
+  ).length;
+  const coreScore = calculateMatchScore((games ?? []).filter((game) => game.order_number <= 18));
+  const tiebreakRequired = coreScore.home_points === 9 && coreScore.away_points === 9;
+  const tiebreak = (games ?? []).find((game) => game.game_type === "tiebreak_701");
+  const isComplete =
+    completedCoreGames === 18 &&
+    (!tiebreakRequired || Boolean(tiebreak?.winner_side));
+
+  const { data: existingResult, error: existingResultError } = await supabase
+    .from("match_results")
+    .select("id")
+    .eq("match_id", matchId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (existingResultError) {
+    return NextResponse.json({ error: existingResultError.message }, { status: 500 });
+  }
+
+  const resultQuery = existingResult
+    ? supabase
+        .from("match_results")
+        .update({
+          home_points: matchScore.home_points,
+          away_points: matchScore.away_points,
+        })
+        .eq("id", existingResult.id)
+    : supabase.from("match_results").insert({
+        match_id: matchId,
+        home_points: matchScore.home_points,
+        away_points: matchScore.away_points,
+      });
+
+  const { error: resultError } = await resultQuery;
+  if (resultError) {
+    return NextResponse.json({ error: resultError.message }, { status: 500 });
+  }
+
+  const { error: matchUpdateError } = await supabase
+    .from("matches")
+    .update({
+      status: isComplete ? "awaiting_confirmation" : "scheduled",
+      played_at: isComplete ? new Date().toISOString() : null,
+    })
+    .eq("id", matchId);
+
+  if (matchUpdateError) {
+    return NextResponse.json(
+      {
+        error: matchUpdateError.message.includes("awaiting_confirmation")
+          ? "Nejprve spusťte SQL soubor supabase/apply_match_captain_confirmations_in_dashboard.sql v Supabase SQL Editoru."
+          : matchUpdateError.message,
+      },
+      { status: 500 },
+    );
+  }
+
+  const { error: confirmationsDeleteError } = await supabase
+    .from("match_confirmations")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("match_id", matchId)
+    .is("deleted_at", null);
+
+  if (confirmationsDeleteError) {
+    const schemaResponse = missingSheetSchemaResponse(confirmationsDeleteError.message);
+    return schemaResponse ?? NextResponse.json({ error: confirmationsDeleteError.message }, { status: 500 });
+  }
+
+  return null;
+}
+
+async function handleAutosaveCell(
+  request: Request,
+  matchId: string,
+  cell: AutosaveCell,
+) {
+  const access = await authorizeMatchAccess(request, matchId);
+  if (access.response) {
+    return access.response;
+  }
+
+  const supabase = access.supabase;
+
+  if (cell.type === "game") {
+    const game = typeof cell.game === "object" && cell.game !== null
+      ? cell.game as SubmittedGame
+      : {};
+    const orderNumber = parseInteger(game.order_number);
+    const gameType = parseString(game.game_type);
+    const normalizedGameType = gameType as MatchGameType;
+    const homeLegs = parseInteger(game.home_legs) ?? 0;
+    const awayLegs = parseInteger(game.away_legs) ?? 0;
+    const expectedUpdatedAt = parseString(cell.expected_updated_at);
+
+    if (!orderNumber || !gameType || !gameTypes.includes(normalizedGameType)) {
+      return NextResponse.json({ error: "Hra není platná." }, { status: 400 });
+    }
+
+    const winningLegs = normalizedGameType === "tiebreak_701" ? 1 : 3;
+    if (
+      homeLegs > winningLegs ||
+      awayLegs > winningLegs ||
+      (homeLegs === winningLegs && awayLegs === winningLegs)
+    ) {
+      return NextResponse.json(
+        { error: "Hra musí mít platný počet legů." },
+        { status: 400 },
+      );
+    }
+
+    const [matchResult, membershipsResult, existingGameResult] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("id, home_team_id, away_team_id")
+        .eq("id", matchId)
+        .is("deleted_at", null)
+        .single(),
+      supabase
+        .from("team_memberships")
+        .select("team_season_id, player_id, member_role")
+        .is("deleted_at", null)
+        .is("left_on", null)
+        .returns<MembershipRow[]>(),
+      supabase
+        .from("match_games")
+        .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
+        .eq("match_id", matchId)
+        .eq("order_number", orderNumber)
+        .is("deleted_at", null)
+        .maybeSingle<MatchGameRow>(),
+    ]);
+
+    const lookupError = matchResult.error ?? membershipsResult.error ?? existingGameResult.error;
+    if (lookupError || !matchResult.data) {
+      return NextResponse.json(
+        { error: lookupError?.message ?? "Zápas nebyl nalezen." },
+        { status: 500 },
+      );
+    }
+
+    const existingGame = existingGameResult.data;
+    if (
+      existingGame &&
+      (!expectedUpdatedAt || existingGame.updated_at !== expectedUpdatedAt)
+    ) {
+      return NextResponse.json(
+        { error: "Tuto hru mezitím upravil někdo jiný. Načítám aktuální zápis." },
+        { status: 409 },
+      );
+    }
+
+    const homeTeamPlayerIds = new Set(
+      (membershipsResult.data ?? [])
+        .filter((membership) => membership.team_season_id === matchResult.data.home_team_id)
+        .map((membership) => membership.player_id),
+    );
+    const awayTeamPlayerIds = new Set(
+      (membershipsResult.data ?? [])
+        .filter((membership) => membership.team_season_id === matchResult.data.away_team_id)
+        .map((membership) => membership.player_id),
+    );
+    const fixedPair = singlesSlotPairs.get(orderNumber);
+    const homeSlotCodes = fixedPair ? fixedPair.slice(0, 1) : [];
+    const awaySlotCodes = fixedPair ? fixedPair.slice(1, 2) : [];
+    const playerLimit = playerLimitForGame(normalizedGameType);
+    const homePlayerIds = Array.isArray(game.home_player_ids)
+      ? game.home_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
+      : [];
+    const awayPlayerIds = Array.isArray(game.away_player_ids)
+      ? game.away_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
+      : [];
+
+    for (const [playerIds, teamPlayerIds] of [
+      [homePlayerIds, homeTeamPlayerIds],
+      [awayPlayerIds, awayTeamPlayerIds],
+    ] as const) {
+      const usedPlayers = new Set<string>();
+      for (const playerId of playerIds) {
+        if (!playerId) continue;
+        if (usedPlayers.has(playerId)) {
+          return NextResponse.json(
+            { error: "Stejný hráč nemůže být ve stejné hře vybraný dvakrát." },
+            { status: 400 },
+          );
+        }
+        if (!teamPlayerIds.has(playerId)) {
+          return NextResponse.json(
+            { error: "Vybraný hráč nepatří do příslušného týmu." },
+            { status: 400 },
+          );
+        }
+        usedPlayers.add(playerId);
+      }
+    }
+
+    const values = {
+      match_id: matchId,
+      game_type: normalizedGameType,
+      order_number: orderNumber,
+      home_legs: homeLegs,
+      away_legs: awayLegs,
+      winner_side: calculateWinner(normalizedGameType, homeLegs, awayLegs),
+    };
+    const query = existingGame
+      ? supabase.from("match_games").update(values).eq("id", existingGame.id)
+      : supabase.from("match_games").insert(values);
+    const { data: savedGame, error: saveGameError } = await query
+      .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
+      .single<MatchGameRow>();
+
+    if (saveGameError || !savedGame) {
+      return NextResponse.json({ error: saveGameError?.message ?? "Hru se nepodařilo uložit." }, { status: 500 });
+    }
+
+    const deletedAt = new Date().toISOString();
+    const { error: playersDeleteError } = await supabase
+      .from("match_game_players")
+      .update({ deleted_at: deletedAt })
+      .eq("match_game_id", savedGame.id)
+      .is("deleted_at", null);
+
+    if (playersDeleteError) {
+      return NextResponse.json({ error: playersDeleteError.message }, { status: 500 });
+    }
+
+    const playerRows = [
+      ...homePlayerIds.flatMap((playerId, index) => playerId ? [{
+        match_game_id: savedGame.id,
+        side: "home" as const,
+        player_id: playerId,
+        position: index + 1,
+        slot_code: homeSlotCodes[index] ?? null,
+      }] : []),
+      ...awayPlayerIds.flatMap((playerId, index) => playerId ? [{
+        match_game_id: savedGame.id,
+        side: "away" as const,
+        player_id: playerId,
+        position: index + 1,
+        slot_code: awaySlotCodes[index] ?? null,
+      }] : []),
+    ];
+
+    if (playerRows.length > 0) {
+      const { error: playersInsertError } = await supabase
+        .from("match_game_players")
+        .insert(playerRows);
+      if (playersInsertError) {
+        return NextResponse.json({ error: playersInsertError.message }, { status: 500 });
+      }
+    }
+
+    const activePlayerIds = [...homePlayerIds, ...awayPlayerIds].filter(Boolean);
+    const achievementsDeleteQuery = supabase
+      .from("match_game_achievements")
+      .update({ deleted_at: deletedAt })
+      .eq("match_game_id", savedGame.id)
+      .is("deleted_at", null);
+    const { error: achievementsDeleteError } = activePlayerIds.length > 0
+      ? await achievementsDeleteQuery.not("player_id", "in", `(${activePlayerIds.join(",")})`)
+      : await achievementsDeleteQuery;
+
+    if (achievementsDeleteError) {
+      return NextResponse.json({ error: achievementsDeleteError.message }, { status: 500 });
+    }
+
+    const summaryError = await updateMatchSummary(supabase, matchId);
+    if (summaryError) {
+      return summaryError;
+    }
+
+    return NextResponse.json({ game: savedGame });
+  }
+
+  if (cell.type === "achievement") {
+    const achievement = typeof cell.achievement === "object" && cell.achievement !== null
+      ? cell.achievement as SubmittedAchievement
+      : {};
+    const orderNumber = parseInteger(achievement.order_number);
+    const playerId = parseString(achievement.player_id);
+    const achievementType = parseString(achievement.achievement_type);
+    const achievementCount = parseInteger(achievement.achievement_count) ?? 0;
+
+    if (
+      !orderNumber ||
+      !playerId ||
+      !achievementType ||
+      !achievementTypes.includes(achievementType as AchievementType)
+    ) {
+      return NextResponse.json({ error: "Statistika není platná." }, { status: 400 });
+    }
+
+    const { data: game, error: gameError } = await supabase
+      .from("match_games")
+      .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
+      .eq("match_id", matchId)
+      .eq("order_number", orderNumber)
+      .is("deleted_at", null)
+      .maybeSingle<MatchGameRow>();
+
+    if (gameError || !game) {
+      return NextResponse.json(
+        { error: gameError?.message ?? "Nejprve uložte hráče pro tuto hru." },
+        { status: gameError ? 500 : 400 },
+      );
+    }
+
+    if (game.game_type !== "singles") {
+      return NextResponse.json({ error: "Statistiky lze zapisovat jen u dvouher." }, { status: 400 });
+    }
+
+    const { data: assignedPlayer, error: assignedPlayerError } = await supabase
+      .from("match_game_players")
+      .select("id")
+      .eq("match_game_id", game.id)
+      .eq("player_id", playerId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (assignedPlayerError) {
+      return NextResponse.json({ error: assignedPlayerError.message }, { status: 500 });
+    }
+
+    if (!assignedPlayer) {
+      return NextResponse.json(
+        { error: "Vybraný hráč není v této hře nasazený." },
+        { status: 400 },
+      );
+    }
+
+    if (achievementType === "checkout_100_plus" && achievementCount > 3) {
+      return NextResponse.json(
+        { error: "Zavření 100+ může mít jeden hráč v zápasu nejvýše 3×." },
+        { status: 400 },
+      );
+    }
+
+    const deletedAt = new Date().toISOString();
+    const { error: deleteError } = await supabase
+      .from("match_game_achievements")
+      .update({ deleted_at: deletedAt })
+      .eq("match_id", matchId)
+      .eq("match_game_id", game.id)
+      .eq("player_id", playerId)
+      .eq("achievement_type", achievementType)
+      .is("deleted_at", null);
+
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    }
+
+    if (achievementCount > 0) {
+      const { data: otherCheckouts, error: checkoutsError } = achievementType === "checkout_100_plus"
+        ? await supabase
+            .from("match_game_achievements")
+            .select("achievement_count")
+            .eq("match_id", matchId)
+            .eq("player_id", playerId)
+            .eq("achievement_type", achievementType)
+            .is("deleted_at", null)
+        : { data: [], error: null };
+
+      if (checkoutsError) {
+        return NextResponse.json({ error: checkoutsError.message }, { status: 500 });
+      }
+
+      const checkoutTotal = (otherCheckouts ?? []).reduce(
+        (sum, item) => sum + (Number(item.achievement_count) || 0),
+        0,
+      );
+      if (achievementType === "checkout_100_plus" && checkoutTotal + achievementCount > 3) {
+        return NextResponse.json(
+          { error: "Zavření 100+ může mít jeden hráč v zápasu nejvýše 3×." },
+          { status: 400 },
+        );
+      }
+
+      const { error: insertError } = await supabase.from("match_game_achievements").insert({
+        match_id: matchId,
+        match_game_id: game.id,
+        player_id: playerId,
+        achievement_type: achievementType,
+        achievement_count: achievementCount,
+      });
+
+      if (insertError) {
+        return NextResponse.json({ error: insertError.message }, { status: 500 });
+      }
+    }
+
+    const { error: confirmationsDeleteError } = await supabase
+      .from("match_confirmations")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("match_id", matchId)
+      .is("deleted_at", null);
+
+    if (confirmationsDeleteError) {
+      const schemaResponse = missingSheetSchemaResponse(confirmationsDeleteError.message);
+      return schemaResponse ?? NextResponse.json({ error: confirmationsDeleteError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  return NextResponse.json({ error: "Změna zápisu není platná." }, { status: 400 });
+}
+
 export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
@@ -595,12 +1034,20 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { id: matchId } = await context.params;
+  const body = (await request.json().catch(() => null)) as SaveSheetBody | null;
+  const cell = typeof body?.cell === "object" && body.cell !== null
+    ? body.cell as AutosaveCell
+    : null;
+
+  if (cell) {
+    return handleAutosaveCell(request, matchId, cell);
+  }
+
   const access = await authorizeMatchAccess(request, matchId);
   if (access.response) {
     return access.response;
   }
 
-  const body = (await request.json().catch(() => null)) as SaveSheetBody | null;
   const submittedGames = Array.isArray(body?.games) ? body.games : [];
   const submittedAchievements = Array.isArray(body?.achievements)
     ? body.achievements
@@ -702,7 +1149,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         .returns<MembershipRow[]>(),
       supabase
         .from("match_games")
-        .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side")
+        .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
         .eq("match_id", matchId)
         .is("deleted_at", null)
         .returns<MatchGameRow[]>(),
@@ -901,7 +1348,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           .from("match_games")
           .insert(values);
     const { data, error } = await query
-      .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side")
+      .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
       .single<MatchGameRow>();
 
     if (error) {

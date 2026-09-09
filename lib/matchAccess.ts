@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserProfile, hasAtLeastRole } from "@/lib/appAuth";
+import { getCurrentUserProfile, hasAtLeastRole, type AppRole } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export type MatchSide = "home" | "away";
@@ -19,7 +19,7 @@ type CaptainMembershipRow = {
 export async function authorizeMatchAccess(
   request: Request,
   matchId: string,
-  options: { side?: MatchSide } = {},
+  options: { globalMinimumRole?: AppRole; side?: MatchSide } = {},
 ) {
   const supabase = createSupabaseAdminClient();
 
@@ -53,7 +53,7 @@ export async function authorizeMatchAccess(
     };
   }
 
-  if (hasAtLeastRole(requester.role, "admin")) {
+  if (hasAtLeastRole(requester.role, options.globalMinimumRole ?? "admin")) {
     return { supabase, requester, match, response: null };
   }
 

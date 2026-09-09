@@ -15,6 +15,7 @@ export type AchievementType =
 
 export type SheetGame = {
   id: string | null;
+  updated_at: string | null;
   game_type: MatchGameType;
   order_number: number;
   home_legs: number;
