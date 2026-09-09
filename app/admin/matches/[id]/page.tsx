@@ -332,6 +332,7 @@ export default function AdminMatchSheetPage({
   function playerUsesDifferentSlot(side: MatchSide, slotCode: SlotCode, playerId: string) {
     if (!playerId) return false;
     return payload.games.some((game) => {
+      if (game.game_type !== "singles") return false;
       const playerIds = side === "home" ? game.home_player_ids : game.away_player_ids;
       return playerIds.some(
         (rowPlayerId, index) =>
@@ -341,6 +342,7 @@ export default function AdminMatchSheetPage({
   }
 
   function prefillRowPlayer(game: SheetGame, side: MatchSide, index: number) {
+    if (game.game_type !== "singles") return;
     if (game.order_number <= 4) return;
     const slotCode = slotCodesForGame(game, side)[index];
     const key = side === "home" ? "home_player_ids" : "away_player_ids";
@@ -353,12 +355,9 @@ export default function AdminMatchSheetPage({
   }
 
   function updateRowPlayer(game: SheetGame, side: MatchSide, index: number, playerId: string) {
-    const slotCode = slotCodesForGame(game, side)[index];
-    if (!slotCode) {
-      setError("Nejprve vyberte pozici hráče.");
-      return;
-    }
-    if (playerUsesDifferentSlot(side, slotCode, playerId)) {
+    const fixedPair = singlesSlotPairs.get(game.order_number);
+    const slotCode = fixedPair ? slotCodesForGame(game, side)[index] : null;
+    if (slotCode && playerUsesDifferentSlot(side, slotCode, playerId)) {
       setError("Tento hráč už je nasazený na jiné pozici.");
       return;
     }
@@ -371,29 +370,6 @@ export default function AdminMatchSheetPage({
       removePlayerAchievements(game.order_number, previousPlayerId);
     }
     updateGame(game.order_number, { [key]: playerIds } as Partial<SheetGame>);
-  }
-
-  function updatePairGameSlot(
-    game: SheetGame,
-    side: MatchSide,
-    index: number,
-    slotCode: string,
-  ) {
-    const key = side === "home" ? "home_slot_codes" : "away_slot_codes";
-    const slotCodes = [...game[key]];
-    if (slotCode && slotCodes.some((value, itemIndex) => value === slotCode && itemIndex !== index)) {
-      setError(`Pozice ${slotCode} už je v této hře vybraná.`);
-      return;
-    }
-    slotCodes[index] = slotCode as SlotCode;
-    const playerKey = side === "home" ? "home_player_ids" : "away_player_ids";
-    const playerIds = [...game[playerKey]];
-    playerIds[index] = slotCode ? firstBlockSuggestion(side, slotCode as SlotCode) : "";
-    setError(null);
-    updateGame(game.order_number, {
-      [key]: slotCodes,
-      [playerKey]: playerIds,
-    } as Partial<SheetGame>);
   }
 
   function removePlayerAchievements(orderNumber: number, playerId: string) {
@@ -521,7 +497,6 @@ export default function AdminMatchSheetPage({
           homePlayers={homePlayers}
           onAchievementChange={updateInlineAchievement}
           onLegsChange={updateLegs}
-          onPairSlotChange={updatePairGameSlot}
           onPlayerChange={updateRowPlayer}
           onPlayerFocus={prefillRowPlayer}
           playerUsesDifferentSlot={playerUsesDifferentSlot}

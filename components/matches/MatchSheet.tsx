@@ -55,7 +55,6 @@ type MatchSheetProps = {
   error?: string | null;
   onAchievementChange?: (orderNumber: number, playerId: string, type: AchievementType, count: number) => void;
   onLegsChange?: (game: SheetGame, side: "home_legs" | "away_legs", value: number) => void;
-  onPairSlotChange?: (game: SheetGame, side: MatchSide, index: number, slotCode: string) => void;
   onPlayerChange?: (game: SheetGame, side: MatchSide, index: number, playerId: string) => void;
   onPlayerFocus?: (game: SheetGame, side: MatchSide, index: number) => void;
   playerUsesDifferentSlot?: (side: MatchSide, slotCode: SlotCode, playerId: string) => boolean;
@@ -205,7 +204,6 @@ export function MatchSheet({
   readOnly = false,
   onAchievementChange,
   onLegsChange,
-  onPairSlotChange,
   onPlayerChange,
   onPlayerFocus,
   playerUsesDifferentSlot = () => false,
@@ -238,6 +236,7 @@ export function MatchSheet({
         pattern="[0-9]*"
         type="text"
         value={playerId ? value : 0}
+        onFocus={(event) => event.currentTarget.select()}
         onChange={(event) =>
           onAchievementChange?.(
             game.order_number,
@@ -280,38 +279,26 @@ export function MatchSheet({
   }
 
   function renderPairSlots(game: SheetGame, side: MatchSide) {
-    const allSlotCodes = side === "home" ? homeSlotCodes : awaySlotCodes;
-    const selectedCodes = side === "home" ? game.home_slot_codes : game.away_slot_codes;
     const playerIds = side === "home" ? game.home_player_ids : game.away_player_ids;
     const players = side === "home" ? homePlayers : awayPlayers;
 
     return (
       <div className="grid gap-2">
         {[0, 1].map((index) => {
-          const selectedCode = selectedCodes[index] ?? "";
           const selectedPlayer = players.find((player) => player.id === playerIds[index]);
 
           if (readOnly) {
             return (
               <div className="grid grid-cols-[28px_minmax(0,1fr)] items-center gap-1" key={index}>
-                <span className="text-center text-[11px] font-bold text-[var(--admin-muted)]">{selectedCode || "-"}</span>
+                <span className="text-center text-[11px] font-bold text-[var(--admin-muted)]">{index + 1}.</span>
                 <ReadOnlyValue>{selectedPlayer ? playerLabel(selectedPlayer) : ""}</ReadOnlyValue>
               </div>
             );
           }
 
           return (
-            <div className="grid grid-cols-[18px_72px_minmax(0,1fr)] items-center gap-1" key={index}>
+            <div className="grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1" key={index}>
               <span className="text-center text-[11px] font-bold text-[var(--admin-muted)]">{index + 1}.</span>
-              <select
-                aria-label={`${side === "home" ? "Domácí" : "Hosté"} pozice ${index + 1}`}
-                className={`${inputClass} min-w-0 px-1 py-1 text-[11px]`}
-                value={selectedCode}
-                onChange={(event) => onPairSlotChange?.(game, side, index, event.target.value)}
-              >
-                <option value="">Pozice</option>
-                {allSlotCodes.map((slotCode) => <option key={slotCode} value={slotCode}>{slotCode}</option>)}
-              </select>
               <select
                 aria-label={`${side === "home" ? "Domácí" : "Hosté"} hráč ${index + 1}`}
                 className={`${inputClass} min-w-0 px-1 py-1 text-[11px]`}
@@ -321,7 +308,7 @@ export function MatchSheet({
               >
                 <option value="">Vyberte hráče</option>
                 {players
-                  .filter((player) => player.id === playerIds[index] || !selectedCode || !playerUsesDifferentSlot(side, selectedCode, player.id))
+                  .filter((player) => player.id === playerIds[index] || !playerIds.includes(player.id))
                   .map((player) => <option key={player.id} value={player.id}>{playerLabel(player)}</option>)}
               </select>
             </div>
@@ -339,9 +326,9 @@ export function MatchSheet({
 
     return (
       <div className="grid grid-cols-[46px_8px_46px] items-center justify-center gap-0.5">
-        <input className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`} inputMode="numeric" maxLength={1} pattern={legsPattern} type="text" value={game.home_legs} onChange={(event) => onLegsChange?.(game, "home_legs", Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0))} />
+        <input className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`} inputMode="numeric" maxLength={1} pattern={legsPattern} type="text" value={game.home_legs} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onLegsChange?.(game, "home_legs", Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0))} />
         <span className="text-center">:</span>
-        <input className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`} inputMode="numeric" maxLength={1} pattern={legsPattern} type="text" value={game.away_legs} onChange={(event) => onLegsChange?.(game, "away_legs", Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0))} />
+        <input className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`} inputMode="numeric" maxLength={1} pattern={legsPattern} type="text" value={game.away_legs} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onLegsChange?.(game, "away_legs", Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0))} />
       </div>
     );
   }

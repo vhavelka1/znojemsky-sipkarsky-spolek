@@ -754,18 +754,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       const winningLegs = normalizedGameType === "tiebreak_701" ? 1 : 3;
       const winnerSide = calculateWinner(normalizedGameType, homeLegs, awayLegs);
       const fixedPair = orderNumber ? singlesSlotPairs.get(orderNumber) : null;
-      const submittedHomeSlotCodes = Array.isArray(game.home_slot_codes)
-        ? game.home_slot_codes.map(parseString).filter((value): value is string => Boolean(value))
-        : [];
-      const submittedAwaySlotCodes = Array.isArray(game.away_slot_codes)
-        ? game.away_slot_codes.map(parseString).filter((value): value is string => Boolean(value))
-        : [];
       const homeSlotCodes: SlotCode[] = fixedPair
         ? fixedPair.slice(0, 1)
-        : submittedHomeSlotCodes.slice(0, 2) as SlotCode[];
+        : [];
       const awaySlotCodes: SlotCode[] = fixedPair
         ? fixedPair.slice(1, 2)
-        : submittedAwaySlotCodes.slice(0, 2) as SlotCode[];
+        : [];
       const playerLimit = playerLimitForGame(normalizedGameType);
       const homePlayerIds = Array.isArray(game.home_player_ids)
         ? game.home_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
@@ -838,19 +832,22 @@ export async function PATCH(request: Request, context: RouteContext) {
       const slotCodes = side === "home" ? game.home_slot_codes : game.away_slot_codes;
       const playerIds = side === "home" ? game.home_player_ids : game.away_player_ids;
       const teamPlayerIds = side === "home" ? homePlayerIds : awayPlayerIds;
+      const usedPlayersInGame = new Set<string>();
 
       for (const [index, playerId] of playerIds.entries()) {
         if (!playerId) {
           continue;
         }
 
-        const slotCode = slotCodes[index];
-        if (!slotCode) {
+        if (usedPlayersInGame.has(playerId)) {
           return NextResponse.json(
-            { error: "Vyberte pozici pro každého hráče v párové hře." },
+            { error: "Stejný hráč nemůže být ve stejné hře vybraný dvakrát." },
             { status: 400 },
           );
         }
+        usedPlayersInGame.add(playerId);
+
+        const slotCode = slotCodes[index];
 
         if (!teamPlayerIds.has(playerId)) {
           return NextResponse.json(
@@ -861,14 +858,16 @@ export async function PATCH(request: Request, context: RouteContext) {
 
         const playerKey = `${side}:${playerId}`;
         const usedSlot = usedSlotBySideAndPlayer.get(playerKey);
-        if (usedSlot && usedSlot !== slotCode) {
+        if (slotCode && usedSlot && usedSlot !== slotCode) {
           return NextResponse.json(
             { error: "Tento hráč už je nasazený na jiné pozici." },
             { status: 400 },
           );
         }
 
-        usedSlotBySideAndPlayer.set(playerKey, slotCode);
+        if (slotCode) {
+          usedSlotBySideAndPlayer.set(playerKey, slotCode);
+        }
       }
     }
   }
