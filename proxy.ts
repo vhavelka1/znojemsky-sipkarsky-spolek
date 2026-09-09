@@ -19,12 +19,16 @@ function isMatchSheetApi(pathname: string) {
   return /^\/api\/admin\/matches\/[^/]+\/(?:sheet|confirm)$/.test(pathname);
 }
 
+function isCaptainMatchApi(pathname: string) {
+  return isMatchSheetApi(pathname) || pathname === "/api/admin/match-reschedule-requests";
+}
+
 export async function proxy(request: NextRequest) {
   if (!request.nextUrl.pathname.startsWith("/api/admin")) {
     return NextResponse.next();
   }
 
-  if (isMatchSheetApi(request.nextUrl.pathname)) {
+  if (isCaptainMatchApi(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
 
