@@ -544,6 +544,7 @@ async function loadSheetData(matchId: string) {
     return {
       id: savedGame.id,
       match_id: savedGame.match_id,
+      updated_at: savedGame.updated_at,
       game_type: normalizeGameType(savedGame.game_type),
       order_number: savedGame.order_number,
       home_legs: savedGame.home_legs,

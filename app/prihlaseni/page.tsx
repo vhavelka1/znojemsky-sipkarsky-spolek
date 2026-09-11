@@ -30,29 +30,34 @@ export default function LoginPage() {
       return;
     }
 
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError || !data.session) {
-      setError("Přihlášení se nepodařilo. Zkontrolujte email a heslo.");
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !data.session) {
+        setError("Přihlášení se nepodařilo. Zkontrolujte email a heslo.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const response = await fetch("/api/auth/me", {
+        headers: {
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        user?: { canAccessAdmin: boolean; role: string } | null;
+      };
+
+      const redirect = new URLSearchParams(window.location.search).get("redirect");
+      if (redirect?.startsWith("/admin") && body.user?.canAccessAdmin) {
+        router.replace(redirect);
+        return;
+      }
+
+      router.replace(body.user?.canAccessAdmin ? "/admin" : "/muj-ucet");
+    } catch {
+      setError("Přihlášení se nepodařilo. Zkontrolujte připojení k internetu a zkuste to znovu.");
       setIsSubmitting(false);
-      return;
     }
-
-    const response = await fetch("/api/auth/me", {
-      headers: {
-        Authorization: `Bearer ${data.session.access_token}`,
-      },
-    });
-    const body = (await response.json().catch(() => ({}))) as {
-      user?: { canAccessAdmin: boolean; role: string } | null;
-    };
-
-    const redirect = new URLSearchParams(window.location.search).get("redirect");
-    if (redirect?.startsWith("/admin") && body.user?.canAccessAdmin) {
-      router.replace(redirect);
-      return;
-    }
-
-    router.replace(body.user?.canAccessAdmin ? "/admin" : "/muj-ucet");
   }
 
   return (

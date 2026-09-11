@@ -19,9 +19,15 @@ export default function PasswordResetPage() {
       return;
     }
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/nastavit-heslo`,
-    });
+    let resetError: unknown = null;
+    try {
+      const result = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/nastavit-heslo`,
+      });
+      resetError = result.error;
+    } catch {
+      resetError = true;
+    }
 
     if (resetError) {
       setError("Email pro obnovu hesla se nepodařilo odeslat.");

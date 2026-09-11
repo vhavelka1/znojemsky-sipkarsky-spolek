@@ -28,8 +28,14 @@ export default function SetPasswordPage() {
     async function loadRecoverySession() {
       const code = new URLSearchParams(window.location.search).get("code");
       if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        window.history.replaceState({}, document.title, window.location.pathname);
+        let exchangeError: unknown = null;
+        try {
+          const result = await supabase.auth.exchangeCodeForSession(code);
+          exchangeError = result.error;
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch {
+          exchangeError = true;
+        }
 
         if (exchangeError) {
           if (isMounted) {
@@ -40,7 +46,7 @@ export default function SetPasswordPage() {
         }
       }
 
-      const { data } = await supabase.auth.getSession();
+      const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
       if (!isMounted) return;
 
       setIsRecoveryReady(Boolean(data.session));
@@ -79,14 +85,20 @@ export default function SetPasswordPage() {
       return;
     }
 
-    const { data } = await supabase.auth.getSession();
+    const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
     if (!data.session) {
       setIsRecoveryReady(false);
       setError("Odkaz pro nastavení hesla není aktivní. Otevřete odkaz z emailu znovu nebo požádejte o nový.");
       return;
     }
 
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    let updateError: { message?: string } | null = null;
+    try {
+      const result = await supabase.auth.updateUser({ password });
+      updateError = result.error;
+    } catch {
+      updateError = {};
+    }
     if (updateError) {
       if (isSamePasswordError(updateError)) {
         setError("Nové heslo nemůže být stejné jako původní. Zvolte prosím jiné heslo.");

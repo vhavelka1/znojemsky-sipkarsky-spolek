@@ -431,6 +431,7 @@ export default function AdminMatchSheetPage({
             currentGame.order_number === body.game?.order_number
               ? normalizeGame({
                   ...currentGame,
+                  ...body.game,
                   id: body.game.id,
                   updated_at: body.game.updated_at,
                   winner_side: body.game.winner_side,

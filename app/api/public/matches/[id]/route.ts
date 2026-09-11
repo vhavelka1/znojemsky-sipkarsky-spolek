@@ -59,6 +59,7 @@ type MatchGameRow = {
   home_legs: number;
   away_legs: number;
   winner_side: MatchSide | null;
+  updated_at: string;
 };
 
 type MatchGamePlayerRow = {
@@ -241,7 +242,7 @@ export async function GET(_request: Request, context: RouteContext) {
         supabase.from("teams").select("id, name, slug, logo_url").is("deleted_at", null).returns<TeamRow[]>(),
         supabase.from("team_memberships").select("team_season_id, player_id, member_role").in("team_season_id", [match.home_team_id, match.away_team_id]).is("deleted_at", null).is("left_on", null).returns<MembershipRow[]>(),
         supabase.from("players").select("id, display_name").is("deleted_at", null).order("display_name", { ascending: true }).returns<PlayerRow[]>(),
-        supabase.from("match_games").select("id, match_id, game_type, order_number, home_legs, away_legs, winner_side").eq("match_id", id).is("deleted_at", null).order("order_number", { ascending: true }).returns<MatchGameRow[]>(),
+        supabase.from("match_games").select("id, match_id, game_type, order_number, home_legs, away_legs, winner_side, updated_at").eq("match_id", id).is("deleted_at", null).order("order_number", { ascending: true }).returns<MatchGameRow[]>(),
         supabase.from("match_game_players").select("match_game_id, side, player_id, position, slot_code").is("deleted_at", null).returns<MatchGamePlayerRow[]>(),
         supabase.from("match_game_achievements").select("id, match_id, match_game_id, player_id, achievement_type, achievement_count").eq("match_id", id).is("deleted_at", null).returns<MatchAchievementRow[]>(),
         supabase.from("match_results").select("match_id, home_points, away_points").eq("match_id", id).is("deleted_at", null).maybeSingle<MatchResultRow>(),
@@ -312,6 +313,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
       return {
         id: savedGame.id,
+        updated_at: savedGame.updated_at,
         game_type: gameType,
         order_number: savedGame.order_number,
         home_legs: savedGame.home_legs,
