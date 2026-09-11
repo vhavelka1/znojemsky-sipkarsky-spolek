@@ -4,7 +4,7 @@ import { adminFetch } from "@/lib/adminFetch";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-const mockRole = "admin";
+type AppRole = "guest" | "player" | "moderator" | "admin";
 
 type Season = {
   id: string;
@@ -79,6 +79,14 @@ type MatchPayload = {
   error?: string;
 };
 
+type MePayload = {
+  user?: {
+    role: AppRole;
+    isActive: boolean;
+  } | null;
+  error?: string;
+};
+
 type MatchForm = {
   season_id: string;
   league_id: string;
@@ -131,6 +139,17 @@ async function fetchMatchData() {
   };
 }
 
+async function fetchCurrentUserRole() {
+  const response = await adminFetch("/api/auth/me");
+  const body = (await response.json().catch(() => ({}))) as MePayload;
+
+  if (!response.ok) {
+    throw new Error(body.error ?? "Nepodařilo se ověřit přihlášeného uživatele.");
+  }
+
+  return body.user?.isActive ? body.user.role : "guest";
+}
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("cs-CZ", {
     dateStyle: "medium",
@@ -156,9 +175,12 @@ export default function AdminMatchesPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingTeams, setIsPreparingTeams] = useState(false);
   const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
+  const [resettingMatchId, setResettingMatchId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<AppRole | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canManageMatches = mockRole === "admin";
+  const canViewMatches = currentUserRole === "admin" || currentUserRole === "moderator";
+  const canManageMatches = currentUserRole === "admin";
 
   const seasonById = useMemo(
     () => new Map(seasons.map((season) => [season.id, season])),
@@ -260,12 +282,13 @@ export default function AdminMatchesPage() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchMatchData()
-      .then((loadedData) => {
+    Promise.all([fetchMatchData(), fetchCurrentUserRole()])
+      .then(([loadedData, userRole]) => {
         if (!isMounted) {
           return;
         }
 
+        setCurrentUserRole(userRole);
         setSeasons(loadedData.seasons);
         setLeagues(loadedData.leagues);
         setGroups(loadedData.groups);
@@ -425,6 +448,31 @@ export default function AdminMatchesPage() {
     setDeletingMatchId(null);
   }
 
+  async function handleResetMatch(matchId: string) {
+    if (!window.confirm("Opravdu chcete vyčistit zápis tohoto zápasu? Zápas zůstane naplánovaný.")) {
+      return;
+    }
+
+    setResettingMatchId(matchId);
+    setError(null);
+    const response = await adminFetch(`/api/admin/matches/${matchId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "reset_match" }),
+    });
+    const body = await readJson(response);
+
+    if (!response.ok) {
+      setError(body.error ?? "Zápas se nepodařilo resetovat.");
+    } else {
+      await loadMatchData(false);
+    }
+
+    setResettingMatchId(null);
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -445,7 +493,11 @@ export default function AdminMatchesPage() {
         ) : null}
       </header>
 
-      {!canManageMatches ? (
+      {currentUserRole === null ? (
+        <section className="rounded-lg bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-600">Ověřuji oprávnění...</p>
+        </section>
+      ) : !canViewMatches ? (
         <section className="rounded-lg bg-white p-6 shadow-sm">
           <p className="text-sm text-slate-600">
             Aktuální testovací role neumožňuje správu zápasů.
@@ -755,14 +807,26 @@ export default function AdminMatchesPage() {
                             >
                               Počítadlo
                             </Link>
-                            <button
+                            {canManageMatches ? (
+                              <button
+                                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={resettingMatchId === match.id}
+                                onClick={() => void handleResetMatch(match.id)}
+                                type="button"
+                              >
+                                {resettingMatchId === match.id ? "Resetuji..." : "Resetovat zápas"}
+                              </button>
+                            ) : null}
+                            {canManageMatches ? (
+                              <button
                               className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                               disabled={deletingMatchId === match.id}
                               onClick={() => void handleDeleteMatch(match.id)}
                               type="button"
                             >
                               {deletingMatchId === match.id ? "Mažu..." : "Smazat zápas"}
-                            </button>
+                              </button>
+                            ) : null}
                           </div>
                         </div>
 
