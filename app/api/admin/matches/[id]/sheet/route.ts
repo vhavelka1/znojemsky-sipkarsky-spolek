@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { hasAtLeastRole, type AppRole } from "@/lib/appAuth";
 import { authorizeMatchAccess } from "@/lib/matchAccess";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { teamLogoUrl } from "@/lib/teamLogos";
 
 type RouteContext = {
   params: Promise<{
@@ -41,6 +43,11 @@ type AutosaveCell =
   | {
       type?: "achievement";
       achievement?: unknown;
+    }
+  | {
+      type?: "lineup_reveal";
+      side?: unknown;
+      block_number?: unknown;
     };
 
 type SubmittedAchievement = {
@@ -85,6 +92,8 @@ type TeamSeasonRow = {
 type TeamRow = {
   id: string;
   name: string;
+  slug: string;
+  logo_url?: string | null;
 };
 
 type PlayerRow = {
@@ -143,6 +152,20 @@ type MatchConfirmationRow = {
   side: MatchSide;
   captain_player_id: string;
   confirmed_at: string;
+};
+
+type MatchBlockLineupRevealRow = {
+  id: string;
+  match_id: string;
+  side: MatchSide;
+  block_number: number;
+  revealed_by_player_id: string | null;
+  revealed_at: string;
+};
+
+type SheetViewerContext = {
+  side: MatchSide | null;
+  canManageBothSides: boolean;
 };
 
 type PlayerStatistics = {
@@ -223,6 +246,68 @@ function parseInteger(value: unknown) {
   }
 
   return null;
+}
+
+function parseSide(value: unknown): MatchSide | null {
+  return value === "home" || value === "away" ? value : null;
+}
+
+function blockNumberForOrder(orderNumber: number) {
+  if (orderNumber >= 1 && orderNumber <= 4) return 1;
+  if (orderNumber >= 5 && orderNumber <= 8) return 2;
+  if (orderNumber >= 9 && orderNumber <= 10) return 3;
+  if (orderNumber >= 11 && orderNumber <= 14) return 4;
+  if (orderNumber >= 15 && orderNumber <= 18) return 5;
+  if (orderNumber === 19) return 6;
+  return null;
+}
+
+function revealKey(side: MatchSide, blockNumber: number) {
+  return `${side}:${blockNumber}`;
+}
+
+function isMissingLineupRevealSchema(message: string) {
+  return message.includes("match_block_lineup_reveals") || message.includes("schema cache");
+}
+
+function viewerContextForMatch(
+  requester: { role?: AppRole; playerId?: string | null } | null,
+  match: Pick<MatchRow, "home_team_id" | "away_team_id">,
+  memberships: MembershipRow[],
+): SheetViewerContext {
+  if (!requester || hasAtLeastRole(requester.role, "moderator")) {
+    return { side: null, canManageBothSides: true };
+  }
+
+  const membership = memberships.find(
+    (item) =>
+      item.player_id === requester.playerId &&
+      (item.member_role === "captain" || item.member_role === "assistant_captain") &&
+      (item.team_season_id === match.home_team_id || item.team_season_id === match.away_team_id),
+  );
+
+  if (!membership) {
+    return { side: null, canManageBothSides: false };
+  }
+
+  return {
+    side: membership.team_season_id === match.home_team_id ? "home" : "away",
+    canManageBothSides: false,
+  };
+}
+
+function canViewerSeeSideInBlock(
+  viewer: SheetViewerContext,
+  revealSchemaReady: boolean,
+  reveals: Set<string>,
+  side: MatchSide,
+  blockNumber: number | null,
+) {
+  if (viewer.canManageBothSides || viewer.side === side || !revealSchemaReady || !blockNumber) {
+    return true;
+  }
+
+  return reveals.has(revealKey(side, blockNumber));
 }
 
 function isSlotForSide(side: MatchSide, slotCode: string): slotCode is SlotCode {
@@ -377,6 +462,8 @@ function missingSheetSchemaResponse(errorMessage: string) {
     errorMessage.includes("public.match_game_players") ||
     errorMessage.includes("public.match_game_achievements") ||
     errorMessage.includes("public.match_player_slots") ||
+    errorMessage.includes("public.match_block_lineup_reveals") ||
+    errorMessage.includes("match_block_lineup_reveals") ||
     errorMessage.includes("match_game_players.slot_code") ||
     errorMessage.includes("schema cache")
   ) {
@@ -392,7 +479,10 @@ function missingSheetSchemaResponse(errorMessage: string) {
   return null;
 }
 
-async function loadSheetData(matchId: string) {
+async function loadSheetData(
+  matchId: string,
+  requester: { role?: AppRole; playerId?: string | null } | null = null,
+) {
   const supabase = createSupabaseAdminClient();
 
   const { data: match, error: matchError } = await supabase
@@ -406,7 +496,7 @@ async function loadSheetData(matchId: string) {
     return { data: null, error: matchError?.message ?? "Zápas nebyl nalezen." };
   }
 
-  const [seasons, leagues, groups, teamSeasons, teams, memberships, players, games, gamePlayers, achievements, slots, confirmations] =
+  const [seasons, leagues, groups, teamSeasons, teamsWithOptionalColumns, memberships, players, games, gamePlayers, achievements, slots, confirmations, revealResult] =
     await Promise.all([
       supabase
         .from("seasons")
@@ -432,7 +522,7 @@ async function loadSheetData(matchId: string) {
         .in("id", [match.home_team_id, match.away_team_id])
         .is("deleted_at", null)
         .returns<TeamSeasonRow[]>(),
-      supabase.from("teams").select("id, name").is("deleted_at", null).returns<TeamRow[]>(),
+      supabase.from("teams").select("id, name, slug, logo_url").is("deleted_at", null).returns<TeamRow[]>(),
       supabase
         .from("team_memberships")
         .select("team_season_id, player_id, member_role")
@@ -476,7 +566,29 @@ async function loadSheetData(matchId: string) {
         .eq("match_id", matchId)
         .is("deleted_at", null)
         .returns<MatchConfirmationRow[]>(),
+      supabase
+        .from("match_block_lineup_reveals")
+        .select("id, match_id, side, block_number, revealed_by_player_id, revealed_at")
+        .eq("match_id", matchId)
+        .is("deleted_at", null)
+        .returns<MatchBlockLineupRevealRow[]>(),
     ]);
+
+  let teams = teamsWithOptionalColumns;
+  if (
+    teamsWithOptionalColumns.error?.message &&
+    teamsWithOptionalColumns.error.message.includes("logo_url")
+  ) {
+    const fallback = await supabase
+      .from("teams")
+      .select("id, name, slug")
+      .is("deleted_at", null)
+      .returns<TeamRow[]>();
+    teams = fallback;
+  }
+
+  const revealSchemaReady = !revealResult.error || !isMissingLineupRevealSchema(revealResult.error.message);
+  const lineupReveals = revealResult.error && !revealSchemaReady ? [] : revealResult.data ?? [];
 
   const error =
     seasons.error ??
@@ -490,18 +602,22 @@ async function loadSheetData(matchId: string) {
     gamePlayers.error ??
     achievements.error ??
     slots.error ??
-    confirmations.error;
+    confirmations.error ??
+    (revealResult.error && revealSchemaReady ? revealResult.error : null);
 
   if (error) {
     return { data: null, error: error.message };
   }
 
+  const viewer = viewerContextForMatch(requester, match, memberships.data ?? []);
   const activeGameIds = new Set((games.data ?? []).map((game) => game.id));
   const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) =>
     activeGameIds.has(gamePlayer.match_game_id),
   );
+  const revealSet = new Set(lineupReveals.map((reveal) => revealKey(reveal.side, reveal.block_number)));
   const gamesByOrder = new Map((games.data ?? []).map((game) => [game.order_number, game]));
   const playersByGame = new Map<string, MatchGamePlayerRow[]>();
+  const visiblePlayerIds = new Set<string>();
 
   relevantGamePlayers.forEach((gamePlayer) => {
     playersByGame.set(gamePlayer.match_game_id, [
@@ -541,24 +657,48 @@ async function loadSheetData(matchId: string) {
       );
     };
 
+    const normalizedGameType = normalizeGameType(savedGame.game_type);
+    const blockNumber = blockNumberForOrder(savedGame.order_number);
+    const canSeeHome = canViewerSeeSideInBlock(viewer, revealSchemaReady, revealSet, "home", blockNumber);
+    const canSeeAway = canViewerSeeSideInBlock(viewer, revealSchemaReady, revealSet, "away", blockNumber);
+    const homePlayerIds = canSeeHome
+      ? playerIdsForSide("home", homeSlotCodes, normalizedGameType)
+      : Array.from({ length: playerLimitForGame(normalizedGameType) }, () => "");
+    const awayPlayerIds = canSeeAway
+      ? playerIdsForSide("away", awaySlotCodes, normalizedGameType)
+      : Array.from({ length: playerLimitForGame(normalizedGameType) }, () => "");
+
+    homePlayerIds.filter(Boolean).forEach((playerId) => visiblePlayerIds.add(playerId));
+    awayPlayerIds.filter(Boolean).forEach((playerId) => visiblePlayerIds.add(playerId));
+
     return {
       id: savedGame.id,
       match_id: savedGame.match_id,
       updated_at: savedGame.updated_at,
-      game_type: normalizeGameType(savedGame.game_type),
+      game_type: normalizedGameType,
       order_number: savedGame.order_number,
       home_legs: savedGame.home_legs,
       away_legs: savedGame.away_legs,
       winner_side: savedGame.winner_side,
-      home_player_ids: playerIdsForSide("home", homeSlotCodes, normalizeGameType(savedGame.game_type)),
-      away_player_ids: playerIdsForSide("away", awaySlotCodes, normalizeGameType(savedGame.game_type)),
+      home_player_ids: homePlayerIds,
+      away_player_ids: awayPlayerIds,
       home_slot_codes: homeSlotCodes,
       away_slot_codes: awaySlotCodes,
     };
   });
 
   const matchScore = calculateMatchScore(sheetGames);
-  const statistics = buildStatistics(games.data ?? [], relevantGamePlayers);
+  const visibleGamePlayers = viewer.canManageBothSides || !revealSchemaReady
+    ? relevantGamePlayers
+    : relevantGamePlayers.filter((gamePlayer) => visiblePlayerIds.has(gamePlayer.player_id));
+  const visibleAchievements = viewer.canManageBothSides || !revealSchemaReady
+    ? achievements.data ?? []
+    : (achievements.data ?? []).filter((achievement) => visiblePlayerIds.has(achievement.player_id));
+  const statistics = buildStatistics(games.data ?? [], visibleGamePlayers);
+  const teamsWithLogos = (teams.data ?? []).map((team) => ({
+    ...team,
+    logo_url: teamLogoUrl(team.slug, team.logo_url),
+  }));
 
   return {
     data: {
@@ -567,13 +707,16 @@ async function loadSheetData(matchId: string) {
       league: leagues.data,
       group: groups.data,
       teamSeasons: teamSeasons.data ?? [],
-      teams: teams.data ?? [],
+      teams: teamsWithLogos,
       memberships: memberships.data ?? [],
       players: players.data ?? [],
       games: sheetGames,
-      achievements: achievements.data ?? [],
+      achievements: visibleAchievements,
       slots: slots.data ?? [],
       confirmations: confirmations.data ?? [],
+      lineupReveals,
+      lineupRevealSchemaReady: revealSchemaReady,
+      viewer,
       matchScore,
       statistics,
     },
@@ -682,6 +825,46 @@ async function handleAutosaveCell(
 
   const supabase = access.supabase;
 
+  if (cell.type === "lineup_reveal") {
+    const side = parseSide(cell.side);
+    const blockNumber = parseInteger(cell.block_number);
+    if (!side || !blockNumber || blockNumber < 1 || blockNumber > 6) {
+      return NextResponse.json({ error: "Blok nasazení není platný." }, { status: 400 });
+    }
+
+    const { data: existingReveal, error: revealLookupError } = await supabase
+      .from("match_block_lineup_reveals")
+      .select("id")
+      .eq("match_id", matchId)
+      .eq("side", side)
+      .eq("block_number", blockNumber)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (revealLookupError) {
+      const schemaResponse = missingSheetSchemaResponse(revealLookupError.message);
+      return schemaResponse ?? NextResponse.json({ error: revealLookupError.message }, { status: 500 });
+    }
+
+    if (!existingReveal) {
+      const { error: revealInsertError } = await supabase
+        .from("match_block_lineup_reveals")
+        .insert({
+          match_id: matchId,
+          side,
+          block_number: blockNumber,
+          revealed_by_player_id: access.requester?.playerId ?? null,
+        });
+
+      if (revealInsertError) {
+        const schemaResponse = missingSheetSchemaResponse(revealInsertError.message);
+        return schemaResponse ?? NextResponse.json({ error: revealInsertError.message }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
   if (cell.type === "game") {
     const game = typeof cell.game === "object" && cell.game !== null
       ? cell.game as SubmittedGame
@@ -750,6 +933,28 @@ async function handleAutosaveCell(
       );
     }
 
+    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? []);
+    const canEditSide = (side: MatchSide) => viewer.canManageBothSides || viewer.side === side;
+    const existingGamePlayers = existingGame
+      ? await supabase
+          .from("match_game_players")
+          .select("id, match_game_id, side, player_id, position, slot_code")
+          .eq("match_game_id", existingGame.id)
+          .is("deleted_at", null)
+          .returns<MatchGamePlayerRow[]>()
+      : { data: [], error: null };
+
+    if (existingGamePlayers.error) {
+      return NextResponse.json({ error: existingGamePlayers.error.message }, { status: 500 });
+    }
+
+    const existingPlayerIdsForSide = (side: MatchSide, limit: number) => {
+      const sidePlayers = (existingGamePlayers.data ?? [])
+        .filter((player) => player.side === side)
+        .sort((first, second) => first.position - second.position);
+      return Array.from({ length: limit }, (_, index) => sidePlayers[index]?.player_id ?? "");
+    };
+
     const homeTeamPlayerIds = new Set(
       (membershipsResult.data ?? [])
         .filter((membership) => membership.team_season_id === matchResult.data.home_team_id)
@@ -764,12 +969,18 @@ async function handleAutosaveCell(
     const homeSlotCodes = fixedPair ? fixedPair.slice(0, 1) : [];
     const awaySlotCodes = fixedPair ? fixedPair.slice(1, 2) : [];
     const playerLimit = playerLimitForGame(normalizedGameType);
-    const homePlayerIds = Array.isArray(game.home_player_ids)
+    const submittedHomePlayerIds = Array.isArray(game.home_player_ids)
       ? game.home_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
       : [];
-    const awayPlayerIds = Array.isArray(game.away_player_ids)
+    const submittedAwayPlayerIds = Array.isArray(game.away_player_ids)
       ? game.away_player_ids.map((playerId) => parseString(playerId) ?? "").slice(0, playerLimit)
       : [];
+    const homePlayerIds = canEditSide("home")
+      ? submittedHomePlayerIds
+      : existingPlayerIdsForSide("home", playerLimit);
+    const awayPlayerIds = canEditSide("away")
+      ? submittedAwayPlayerIds
+      : existingPlayerIdsForSide("away", playerLimit);
 
     for (const [playerIds, teamPlayerIds] of [
       [homePlayerIds, homeTeamPlayerIds],
@@ -1013,7 +1224,7 @@ export async function GET(request: Request, context: RouteContext) {
       return access.response;
     }
 
-    const { data, error } = await loadSheetData(id);
+    const { data, error } = await loadSheetData(id, access.requester);
 
     if (error) {
       const schemaResponse = missingSheetSchemaResponse(error);
@@ -1047,6 +1258,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   const access = await authorizeMatchAccess(request, matchId);
   if (access.response) {
     return access.response;
+  }
+
+  if (access.requester && !hasAtLeastRole(access.requester.role, "moderator")) {
+    return NextResponse.json(
+      { error: "Kapitánské úpravy zápisu se ukládají průběžně po jednotlivých polích." },
+      { status: 400 },
+    );
   }
 
   const submittedGames = Array.isArray(body?.games) ? body.games : [];
@@ -1577,7 +1795,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return schemaResponse ?? NextResponse.json({ error: confirmationsDeleteError.message }, { status: 500 });
   }
 
-  const { data, error } = await loadSheetData(matchId);
+  const { data, error } = await loadSheetData(matchId, access.requester);
   if (error) {
     return NextResponse.json({ error }, { status: 500 });
   }

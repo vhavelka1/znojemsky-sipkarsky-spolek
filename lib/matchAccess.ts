@@ -23,7 +23,7 @@ export async function authorizeMatchAccess(
 ) {
   const supabase = createSupabaseAdminClient();
 
-  if (process.env.NODE_ENV === "development" || process.env.ENABLE_DEV_ADMIN === "true") {
+  if (process.env.ENABLE_DEV_ADMIN === "true") {
     return { supabase, requester: null, match: null as MatchAccessRow | null, response: null };
   }
 

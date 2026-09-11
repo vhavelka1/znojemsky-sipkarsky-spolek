@@ -29,7 +29,7 @@ type MatchDetail = {
 
 type NamedEntity = { id: string; name: string };
 type TeamSeason = { id: string; team_id: string; display_name: string | null };
-type Team = { id: string; name: string };
+type Team = { id: string; name: string; slug?: string; logo_url?: string | null };
 type Membership = {
   team_season_id: string;
   player_id: string;
@@ -71,6 +71,14 @@ type MatchConfirmation = {
   captain_player_id: string;
   confirmed_at: string;
 };
+type MatchBlockLineupReveal = {
+  id?: string;
+  match_id?: string;
+  side: MatchSide;
+  block_number: number;
+  revealed_by_player_id?: string | null;
+  revealed_at: string;
+};
 type PlayerStatistics = {
   player_id: string;
   played_matches: number;
@@ -103,6 +111,12 @@ type SheetPayload = {
   statistics?: PlayerStatistics[];
   slots?: MatchPlayerSlot[];
   confirmations?: MatchConfirmation[];
+  lineupReveals?: MatchBlockLineupReveal[];
+  lineupRevealSchemaReady?: boolean;
+  viewer?: {
+    side: MatchSide | null;
+    canManageBothSides: boolean;
+  };
   error?: string;
 };
 type AutosaveResponse = {
@@ -145,6 +159,9 @@ const emptyPayload = {
   statistics: [] as PlayerStatistics[],
   slots: [] as MatchPlayerSlot[],
   confirmations: [] as MatchConfirmation[],
+  lineupReveals: [] as MatchBlockLineupReveal[],
+  lineupRevealSchemaReady: true,
+  viewer: { side: null as MatchSide | null, canManageBothSides: true },
 };
 const emptyRescheduleForm = {
   requested_scheduled_at: "",
@@ -220,6 +237,7 @@ export default function AdminMatchSheetPage({
   const [isRescheduleFormOpen, setIsRescheduleFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAutosaving, setIsAutosaving] = useState(false);
+  const [revealingLineup, setRevealingLineup] = useState<{ side: MatchSide; blockNumber: number } | null>(null);
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -234,6 +252,8 @@ export default function AdminMatchSheetPage({
   const awayTeamSeason = payload.match ? teamSeasonById.get(payload.match.away_team_id) : undefined;
   const homeTeamName = homeTeamSeason?.display_name || (homeTeamSeason ? teamById.get(homeTeamSeason.team_id)?.name : null) || "Domácí";
   const awayTeamName = awayTeamSeason?.display_name || (awayTeamSeason ? teamById.get(awayTeamSeason.team_id)?.name : null) || "Hosté";
+  const homeTeamLogoUrl = homeTeamSeason ? teamById.get(homeTeamSeason.team_id)?.logo_url ?? null : null;
+  const awayTeamLogoUrl = awayTeamSeason ? teamById.get(awayTeamSeason.team_id)?.logo_url ?? null : null;
   const homePlayers = payload.memberships
     .filter((membership) => membership.team_season_id === payload.match?.home_team_id)
     .map((membership) => playerById.get(membership.player_id))
@@ -298,6 +318,9 @@ export default function AdminMatchSheetPage({
         statistics: body.statistics ?? [],
         slots,
         confirmations: body.confirmations ?? [],
+        lineupReveals: body.lineupReveals ?? [],
+        lineupRevealSchemaReady: body.lineupRevealSchemaReady ?? false,
+        viewer: body.viewer ?? { side: null, canManageBothSides: true },
       });
       const loadedRequests = await loadRescheduleRequests().catch((requestError) => {
         setError(requestError instanceof Error ? requestError.message : "Žádosti o změnu termínu se nepodařilo načíst.");
@@ -384,6 +407,34 @@ export default function AdminMatchSheetPage({
       setError(confirmError instanceof Error ? confirmError.message : "Potvrzení zápisu se nepodařilo uložit.");
     }
     setConfirmingSide(null);
+  }
+
+  async function handleRevealLineup(side: MatchSide, blockNumber: number) {
+    setRevealingLineup({ side, blockNumber });
+    setError(null);
+
+    try {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cell: {
+            type: "lineup_reveal",
+            side,
+            block_number: blockNumber,
+          },
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as SheetPayload;
+      if (!response.ok) {
+        throw new Error(body.error ?? "Nasazení se nepodařilo zobrazit soupeři.");
+      }
+      await loadSheet();
+    } catch (revealError) {
+      setError(revealError instanceof Error ? revealError.message : "Nasazení se nepodařilo zobrazit soupeři.");
+    } finally {
+      setRevealingLineup(null);
+    }
   }
 
   useEffect(() => {
@@ -758,13 +809,21 @@ export default function AdminMatchSheetPage({
         <MatchSheet
           achievements={payload.achievements}
           awayPlayers={awayPlayers}
+          awayTeamLogoUrl={awayTeamLogoUrl}
+          blockReveals={payload.lineupReveals}
+          canManageBothSides={payload.viewer.canManageBothSides}
           games={payload.games}
           homePlayers={homePlayers}
+          homeTeamLogoUrl={homeTeamLogoUrl}
+          isRevealSaving={revealingLineup !== null}
+          lineupRevealSchemaReady={payload.lineupRevealSchemaReady}
           onAchievementChange={updateInlineAchievement}
           onLegsChange={updateLegs}
           onPlayerChange={updateRowPlayer}
           onPlayerFocus={prefillRowPlayer}
+          onRevealLineup={handleRevealLineup}
           playerUsesDifferentSlot={playerUsesDifferentSlot}
+          viewerSide={payload.viewer.side}
         />
         {isAutosaving ? <div className="flex justify-end"><Badge>Ukládám...</Badge></div> : null}
         <Card>
