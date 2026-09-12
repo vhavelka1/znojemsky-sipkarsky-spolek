@@ -76,6 +76,8 @@ type TeamMatch = {
   status: "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
   statusLabel: string;
   side: string;
+  homeTeamName: string;
+  awayTeamName: string;
   opponentName: string;
   result: string | null;
 };
@@ -251,6 +253,10 @@ function normalizeSearch(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("cs-CZ")
     .trim();
+}
+
+function matchTitle(match: Pick<TeamMatch, "homeTeamName" | "awayTeamName">) {
+  return `${match.homeTeamName} vs. ${match.awayTeamName}`;
 }
 
 function parseRegistrationNote(note: string) {
@@ -608,7 +614,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
         if (matchSeasonFilter && match.seasonId !== matchSeasonFilter) return false;
         if (matchStatusFilter !== "all" && match.status !== matchStatusFilter) return false;
         if (matchSideFilter !== "all" && match.side !== matchSideFilter) return false;
-        if (normalizedSearch && !normalizeSearch(match.opponentName).includes(normalizedSearch)) return false;
+        if (normalizedSearch && !normalizeSearch(matchTitle(match)).includes(normalizedSearch)) return false;
         return true;
       })
       .sort((first, second) => new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime());
@@ -678,7 +684,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
           <Link className="rounded-2xl border border-[#D8E4F2] bg-white p-3 transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]" href={`/muj-tym/zapasy/${match.id}`} key={match.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="font-black text-[#061A3A]">{match.side} vs. {match.opponentName}</p>
+                <p className="font-black text-[#061A3A]">{matchTitle(match)}</p>
                 <p className="text-xs font-bold text-slate-500">
                   {match.roundNumber ? `${match.roundNumber}. kolo / ` : ""}{formatDateTime(match.playedAt ?? match.scheduledAt)}
                 </p>
@@ -731,7 +737,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
             <SummaryCard label="Aktivní hráči" value={String(activeRoster.length)} href="/muj-tym/soupiska" />
             <SummaryCard label="Čekající žádosti" value={String(pendingRequests.length)} href="/muj-tym/zadosti" />
             <SummaryCard label="Aktuální soutěž" value={competition ? `${competition.leagueName} / ${competition.groupName}` : "Nepřiřazeno"} href="/muj-tym/soutez" />
-            <SummaryCard label="Nejbližší zápas" value={upcomingMatches[0] ? upcomingMatches[0].opponentName : "Nenaplánován"} href="/muj-tym/zapasy" />
+            <SummaryCard label="Nejbližší zápas" value={upcomingMatches[0] ? matchTitle(upcomingMatches[0]) : "Nenaplánován"} href="/muj-tym/zapasy" />
           </div>
 
           <Card className="p-5">
@@ -913,7 +919,9 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
                       <p className="text-sm font-black text-[#0F4FA8]">
                         {match.seasonName} / {match.roundNumber ? `${match.roundNumber}. kolo / ` : ""}{match.side}
                       </p>
-                      <h3 className="mt-1 text-xl font-black text-[#061A3A]">vs. {match.opponentName}</h3>
+                      <h3 className="mt-1 text-xl font-black text-[#061A3A]">
+                        {matchTitle(match)}
+                      </h3>
                       <p className="mt-1 text-sm font-bold text-slate-500">{formatDateTime(match.playedAt ?? match.scheduledAt)}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">

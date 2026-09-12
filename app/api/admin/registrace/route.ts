@@ -69,6 +69,12 @@ type PlayerRow = {
   email: string | null;
 };
 
+type PlayerProfileRow = PlayerRow & {
+  phone: string | null;
+  residence: string | null;
+  date_of_birth: string | null;
+};
+
 type TeamRow = {
   id: string;
   name: string;
@@ -261,28 +267,65 @@ async function createOrFindPlayer(
     matchedPlayerId?: string | null;
   },
 ) {
-  if (data.matchedPlayerId) return data.matchedPlayerId;
+  async function fillMissingPlayerData(player: PlayerProfileRow) {
+    const update: Partial<Omit<PlayerProfileRow, "id">> = {};
+
+    if (!player.first_name?.trim() && data.firstName.trim()) update.first_name = data.firstName;
+    if (!player.last_name?.trim() && data.lastName.trim()) update.last_name = data.lastName;
+    if (!player.email?.trim() && data.email?.trim()) update.email = data.email;
+    if (!player.phone?.trim() && data.phone?.trim()) update.phone = data.phone;
+    if (!player.residence?.trim() && data.residence?.trim()) update.residence = data.residence;
+    if (!player.date_of_birth?.trim() && data.dateOfBirth?.trim()) update.date_of_birth = data.dateOfBirth;
+
+    if (Object.keys(update).length === 0) return;
+
+    const { error } = await supabase
+      .from("players")
+      .update(update)
+      .eq("id", player.id)
+      .is("deleted_at", null);
+
+    if (error) throw new Error(`Údaje hráče ${player.display_name} se nepodařilo doplnit: ${error.message}`);
+  }
+
+  if (data.matchedPlayerId) {
+    const { data: existing, error } = await supabase
+      .from("players")
+      .select("id, display_name, first_name, last_name, email, phone, residence, date_of_birth")
+      .eq("id", data.matchedPlayerId)
+      .is("deleted_at", null)
+      .maybeSingle<PlayerProfileRow>();
+    if (error) throw new Error(error.message);
+    if (existing) await fillMissingPlayerData(existing);
+    return data.matchedPlayerId;
+  }
 
   if (data.email) {
     const { data: existing, error } = await supabase
       .from("players")
-      .select("id")
+      .select("id, display_name, first_name, last_name, email, phone, residence, date_of_birth")
       .ilike("email", data.email)
       .is("deleted_at", null)
-      .maybeSingle<{ id: string }>();
+      .maybeSingle<PlayerProfileRow>();
     if (error) throw new Error(error.message);
-    if (existing) return existing.id;
+    if (existing) {
+      await fillMissingPlayerData(existing);
+      return existing.id;
+    }
   }
 
   const name = fullName(data.firstName, data.lastName);
   const { data: byName, error: byNameError } = await supabase
     .from("players")
-    .select("id")
+    .select("id, display_name, first_name, last_name, email, phone, residence, date_of_birth")
     .ilike("display_name", name)
     .is("deleted_at", null)
-    .maybeSingle<{ id: string }>();
+    .maybeSingle<PlayerProfileRow>();
   if (byNameError) throw new Error(byNameError.message);
-  if (byName) return byName.id;
+  if (byName) {
+    await fillMissingPlayerData(byName);
+    return byName.id;
+  }
 
   const { data: created, error } = await supabase
     .from("players")
