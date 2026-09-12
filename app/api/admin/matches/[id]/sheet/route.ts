@@ -270,6 +270,24 @@ function isMissingLineupRevealSchema(message: string) {
   return message.includes("match_block_lineup_reveals") || message.includes("schema cache");
 }
 
+function preferTeamSideForRequest(request: Request) {
+  const requestUrl = new URL(request.url);
+  if (requestUrl.searchParams.get("view") === "team") {
+    return true;
+  }
+
+  const referer = request.headers.get("referer");
+  if (!referer) {
+    return false;
+  }
+
+  try {
+    return new URL(referer).pathname.startsWith("/muj-tym/zapasy/");
+  } catch {
+    return false;
+  }
+}
+
 function viewerContextForMatch(
   requester: { role?: AppRole; playerId?: string | null } | null,
   match: Pick<MatchRow, "home_team_id" | "away_team_id">,
@@ -827,7 +845,7 @@ async function handleAutosaveCell(
   matchId: string,
   cell: AutosaveCell,
 ) {
-  const preferTeamSide = new URL(request.url).searchParams.get("view") === "team";
+  const preferTeamSide = preferTeamSideForRequest(request);
   const access = await authorizeMatchAccess(request, matchId);
   if (access.response) {
     return access.response;
@@ -1229,7 +1247,7 @@ async function handleAutosaveCell(
 export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const preferTeamSide = new URL(request.url).searchParams.get("view") === "team";
+    const preferTeamSide = preferTeamSideForRequest(request);
     const access = await authorizeMatchAccess(request, id);
     if (access.response) {
       return access.response;
