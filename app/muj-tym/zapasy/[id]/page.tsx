@@ -12,7 +12,7 @@ export default function MyTeamMatchSheetPage() {
         </div>
       </section>
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <AdminMatchSheetPage backHref="/muj-tym/zapasy" backLabel="Zpět na zápasy týmu" scoreboardHref={null} />
+        <AdminMatchSheetPage backHref="/muj-tym/zapasy" backLabel="Zpět na zápasy týmu" scoreboardHref={null} teamView />
       </section>
     </PublicPageShell>
   );

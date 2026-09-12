@@ -274,17 +274,25 @@ function viewerContextForMatch(
   requester: { role?: AppRole; playerId?: string | null } | null,
   match: Pick<MatchRow, "home_team_id" | "away_team_id">,
   memberships: MembershipRow[],
+  options: { preferTeamSide?: boolean } = {},
 ): SheetViewerContext {
-  if (!requester || hasAtLeastRole(requester.role, "moderator")) {
-    return { side: null, canManageBothSides: true };
-  }
-
   const membership = memberships.find(
     (item) =>
-      item.player_id === requester.playerId &&
+      item.player_id === requester?.playerId &&
       (item.member_role === "captain" || item.member_role === "assistant_captain") &&
       (item.team_season_id === match.home_team_id || item.team_season_id === match.away_team_id),
   );
+
+  if (membership && options.preferTeamSide) {
+    return {
+      side: membership.team_season_id === match.home_team_id ? "home" : "away",
+      canManageBothSides: false,
+    };
+  }
+
+  if (!requester || hasAtLeastRole(requester.role, "moderator")) {
+    return { side: null, canManageBothSides: true };
+  }
 
   if (!membership) {
     return { side: null, canManageBothSides: false };
@@ -482,6 +490,7 @@ function missingSheetSchemaResponse(errorMessage: string) {
 async function loadSheetData(
   matchId: string,
   requester: { role?: AppRole; playerId?: string | null } | null = null,
+  options: { preferTeamSide?: boolean } = {},
 ) {
   const supabase = createSupabaseAdminClient();
 
@@ -609,7 +618,7 @@ async function loadSheetData(
     return { data: null, error: error.message };
   }
 
-  const viewer = viewerContextForMatch(requester, match, memberships.data ?? []);
+  const viewer = viewerContextForMatch(requester, match, memberships.data ?? [], options);
   const activeGameIds = new Set((games.data ?? []).map((game) => game.id));
   const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) =>
     activeGameIds.has(gamePlayer.match_game_id),
@@ -818,6 +827,7 @@ async function handleAutosaveCell(
   matchId: string,
   cell: AutosaveCell,
 ) {
+  const preferTeamSide = new URL(request.url).searchParams.get("view") === "team";
   const access = await authorizeMatchAccess(request, matchId);
   if (access.response) {
     return access.response;
@@ -933,7 +943,7 @@ async function handleAutosaveCell(
       );
     }
 
-    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? []);
+    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { preferTeamSide });
     const canEditSide = (side: MatchSide) => viewer.canManageBothSides || viewer.side === side;
     const existingGamePlayers = existingGame
       ? await supabase
@@ -1219,12 +1229,13 @@ async function handleAutosaveCell(
 export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    const preferTeamSide = new URL(request.url).searchParams.get("view") === "team";
     const access = await authorizeMatchAccess(request, id);
     if (access.response) {
       return access.response;
     }
 
-    const { data, error } = await loadSheetData(id, access.requester);
+    const { data, error } = await loadSheetData(id, access.requester, { preferTeamSide });
 
     if (error) {
       const schemaResponse = missingSheetSchemaResponse(error);

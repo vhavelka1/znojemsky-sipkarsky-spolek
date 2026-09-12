@@ -9,6 +9,17 @@ type SeasonRow = {
   starts_on: string | null;
 };
 
+function missingTeamLogoSchemaResponse(message: string) {
+  if (message.includes("logo_url")) {
+    return NextResponse.json(
+      { error: "Nejprve spusťte SQL soubor supabase/apply_team_logos_in_dashboard.sql v Supabase SQL Editoru." },
+      { status: 500 },
+    );
+  }
+
+  return null;
+}
+
 async function getCaptainTeamContext(request: Request) {
   const requester = await getCurrentUserProfile(request);
   if (!requester?.isActive) {
@@ -107,7 +118,8 @@ export async function POST(request: Request) {
     .single<{ id: string; name: string; slug: string; logo_url: string | null }>();
 
   if (readError || !existingTeam) {
-    return NextResponse.json({ error: readError?.message ?? "Tým se nepodařilo načíst." }, { status: 500 });
+    const schemaResponse = readError ? missingTeamLogoSchemaResponse(readError.message) : null;
+    return schemaResponse ?? NextResponse.json({ error: readError?.message ?? "Tým se nepodařilo načíst." }, { status: 500 });
   }
 
   let uploadedLogo: Awaited<ReturnType<typeof uploadTeamLogo>>;
@@ -130,7 +142,8 @@ export async function POST(request: Request) {
 
   if (updateError || !updatedTeam) {
     await context.supabase.storage.from(teamLogosBucket).remove([uploadedLogo.storagePath]).catch(() => undefined);
-    return NextResponse.json({ error: updateError?.message ?? "Logo se nepodařilo uložit." }, { status: 500 });
+    const schemaResponse = updateError ? missingTeamLogoSchemaResponse(updateError.message) : null;
+    return schemaResponse ?? NextResponse.json({ error: updateError?.message ?? "Logo se nepodařilo uložit." }, { status: 500 });
   }
 
   await removeStoredTeamLogo(context.supabase, existingTeam.logo_url);

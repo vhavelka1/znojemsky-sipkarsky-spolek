@@ -131,6 +131,7 @@ type MatchSheetPageProps = {
   backHref?: string;
   backLabel?: string;
   scoreboardHref?: ((matchId: string) => string) | null;
+  teamView?: boolean;
 };
 const statusLabels: Record<MatchStatus, string> = {
   scheduled: "naplánováno",
@@ -229,8 +230,10 @@ export default function AdminMatchSheetPage({
   backHref = "/admin/matches",
   backLabel = "Zpět na zápasy",
   scoreboardHref = (currentMatchId) => `/admin/matches/${currentMatchId}/scoreboard`,
+  teamView = false,
 }: MatchSheetPageProps = {}) {
   const matchId = useParams<{ id: string }>().id;
+  const sheetApiUrl = `/api/admin/matches/${matchId}/sheet${teamView ? "?view=team" : ""}`;
   const [payload, setPayload] = useState(emptyPayload);
   const [rescheduleRequests, setRescheduleRequests] = useState<MatchRescheduleRequest[]>([]);
   const [rescheduleForm, setRescheduleForm] = useState(emptyRescheduleForm);
@@ -296,7 +299,7 @@ export default function AdminMatchSheetPage({
     setIsLoading(true);
     setError(null);
     try {
-      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`);
+      const response = await adminFetch(sheetApiUrl);
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
       if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo načíst.");
       const slots = body.slots ?? [];
@@ -414,7 +417,7 @@ export default function AdminMatchSheetPage({
     setError(null);
 
     try {
-      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
+      const response = await adminFetch(sheetApiUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -460,7 +463,7 @@ export default function AdminMatchSheetPage({
     setError(null);
 
     try {
-      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
+      const response = await adminFetch(sheetApiUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -521,7 +524,7 @@ export default function AdminMatchSheetPage({
     setError(null);
 
     try {
-      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
+      const response = await adminFetch(sheetApiUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
