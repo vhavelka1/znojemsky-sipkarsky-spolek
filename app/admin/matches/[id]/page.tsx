@@ -820,6 +820,7 @@ export default function AdminMatchSheetPage({
           homeTeamLogoUrl={homeTeamLogoUrl}
           isRevealSaving={revealingLineup !== null}
           lineupRevealSchemaReady={payload.lineupRevealSchemaReady}
+          lineupsVisibleForAll={payload.match?.status === "confirmed"}
           onAchievementChange={updateInlineAchievement}
           onLegsChange={updateLegs}
           onPlayerChange={updateRowPlayer}

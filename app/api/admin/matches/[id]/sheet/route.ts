@@ -324,12 +324,13 @@ function viewerContextForMatch(
 
 function canViewerSeeSideInBlock(
   viewer: SheetViewerContext,
+  lineupsVisibleForAll: boolean,
   revealSchemaReady: boolean,
   reveals: Set<string>,
   side: MatchSide,
   blockNumber: number | null,
 ) {
-  if (viewer.canManageBothSides || viewer.side === side || !revealSchemaReady || !blockNumber) {
+  if (lineupsVisibleForAll || viewer.canManageBothSides || viewer.side === side || !revealSchemaReady || !blockNumber) {
     return true;
   }
 
@@ -637,6 +638,7 @@ async function loadSheetData(
   }
 
   const viewer = viewerContextForMatch(requester, match, memberships.data ?? [], options);
+  const lineupsVisibleForAll = match.status === "confirmed";
   const activeGameIds = new Set((games.data ?? []).map((game) => game.id));
   const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) =>
     activeGameIds.has(gamePlayer.match_game_id),
@@ -686,8 +688,8 @@ async function loadSheetData(
 
     const normalizedGameType = normalizeGameType(savedGame.game_type);
     const blockNumber = blockNumberForOrder(savedGame.order_number);
-    const canSeeHome = canViewerSeeSideInBlock(viewer, revealSchemaReady, revealSet, "home", blockNumber);
-    const canSeeAway = canViewerSeeSideInBlock(viewer, revealSchemaReady, revealSet, "away", blockNumber);
+    const canSeeHome = canViewerSeeSideInBlock(viewer, lineupsVisibleForAll, revealSchemaReady, revealSet, "home", blockNumber);
+    const canSeeAway = canViewerSeeSideInBlock(viewer, lineupsVisibleForAll, revealSchemaReady, revealSet, "away", blockNumber);
     const homePlayerIds = canSeeHome
       ? playerIdsForSide("home", homeSlotCodes, normalizedGameType)
       : Array.from({ length: playerLimitForGame(normalizedGameType) }, () => "");
@@ -715,10 +717,10 @@ async function loadSheetData(
   });
 
   const matchScore = calculateMatchScore(sheetGames);
-  const visibleGamePlayers = viewer.canManageBothSides || !revealSchemaReady
+  const visibleGamePlayers = lineupsVisibleForAll || viewer.canManageBothSides || !revealSchemaReady
     ? relevantGamePlayers
     : relevantGamePlayers.filter((gamePlayer) => visiblePlayerIds.has(gamePlayer.player_id));
-  const visibleAchievements = viewer.canManageBothSides || !revealSchemaReady
+  const visibleAchievements = lineupsVisibleForAll || viewer.canManageBothSides || !revealSchemaReady
     ? achievements.data ?? []
     : (achievements.data ?? []).filter((achievement) => visiblePlayerIds.has(achievement.player_id));
   const statistics = buildStatistics(games.data ?? [], visibleGamePlayers);

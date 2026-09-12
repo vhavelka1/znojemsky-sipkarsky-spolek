@@ -58,6 +58,7 @@ type MatchSheetProps = {
   homeTeamLogoUrl?: string | null;
   isRevealSaving?: boolean;
   lineupRevealSchemaReady?: boolean;
+  lineupsVisibleForAll?: boolean;
   onRevealLineup?: (side: MatchSide, blockNumber: number) => void;
   playerLabel?: (player: Player) => string;
   readOnly?: boolean;
@@ -207,12 +208,12 @@ function HiddenLineupValue() {
 
 function TeamHeader({ label, logoUrl }: { label: string; logoUrl?: string | null }) {
   return (
-    <span className="flex items-center justify-center gap-2">
+    <span className="flex items-center justify-center gap-3">
       {logoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img alt="" className="h-7 w-7 rounded-full border border-white bg-white object-contain p-0.5 shadow-sm" src={logoUrl} />
+        <img alt="" className="h-10 w-10 rounded-full border border-white bg-white object-contain p-1 shadow-sm" src={logoUrl} />
       ) : (
-        <span className="h-7 w-7 rounded-full border border-white bg-white shadow-sm" />
+        <span className="h-10 w-10 rounded-full border border-white bg-white shadow-sm" />
       )}
       <span>{label}</span>
     </span>
@@ -239,6 +240,7 @@ export function MatchSheet({
   homeTeamLogoUrl = null,
   isRevealSaving = false,
   lineupRevealSchemaReady = true,
+  lineupsVisibleForAll = false,
   onRevealLineup,
   playerLabel = defaultPlayerLabel,
   readOnly = false,
@@ -258,7 +260,7 @@ export function MatchSheet({
   }
 
   function canSeeLineup(side: MatchSide, blockNumber: number) {
-    return canManageBothSides || viewerSide === side || !lineupRevealSchemaReady || isLineupRevealed(side, blockNumber);
+    return lineupsVisibleForAll || canManageBothSides || viewerSide === side || !lineupRevealSchemaReady || isLineupRevealed(side, blockNumber);
   }
 
   function canEditLineup(side: MatchSide) {
@@ -443,10 +445,10 @@ export function MatchSheet({
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"
       : "border border-slate-300 bg-slate-100 text-slate-600 hover:bg-slate-200";
 
-    if (revealed) {
+    if (lineupsVisibleForAll || revealed) {
       return (
         <span className="inline-flex min-h-10 items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-700">
-          Nasazení zobrazeno soupeři
+          {lineupsVisibleForAll ? "Nasazení zveřejněno" : "Nasazení zobrazeno soupeři"}
         </span>
       );
     }
@@ -493,9 +495,9 @@ export function MatchSheet({
               <tr>
                 <th className="w-14 px-1 py-2 text-center">Zápas</th>
                 {paperAchievementTypes.map((type) => <th className="w-9 px-0.5 py-2 text-center text-[10px]" key={`home:${type}`}><span className="inline-block [writing-mode:vertical-rl] rotate-180">{achievementLabels[type]}</span></th>)}
-                <th className="w-48 px-1 py-2 text-center"><TeamHeader label="Domácí" logoUrl={homeTeamLogoUrl} /></th>
+                <th className="w-56 px-1 py-2 text-center"><TeamHeader label="Domácí" logoUrl={homeTeamLogoUrl} /></th>
                 <th className="w-12 px-1 py-2 text-center">Pozice</th>
-                <th className="w-48 px-1 py-2 text-center"><TeamHeader label="Hosté" logoUrl={awayTeamLogoUrl} /></th>
+                <th className="w-56 px-1 py-2 text-center"><TeamHeader label="Hosté" logoUrl={awayTeamLogoUrl} /></th>
                 {paperAchievementTypes.map((type) => <th className="w-9 px-0.5 py-2 text-center text-[10px]" key={`away:${type}`}><span className="inline-block [writing-mode:vertical-rl] rotate-180">{achievementLabels[type]}</span></th>)}
                 <th className="w-28 px-1 py-2 text-center">Legy</th>
                 <th className="w-12 px-1 py-2 text-center">Body</th>
