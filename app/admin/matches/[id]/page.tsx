@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, PageHeader } from "@/components/ui/admin";
 import { MatchInfo, MatchSheet, MatchStatisticsSection } from "@/components/matches/MatchSheet";
+import { supabase } from "@/lib/supabase";
 
 type MatchStatus = "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
 type MatchGameType = "singles" | "doubles" | "cricket" | "tiebreak_701";
@@ -247,6 +248,7 @@ export default function AdminMatchSheetPage({
   const [rescheduleNotice, setRescheduleNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const autosaveRequestId = useRef(0);
   const didAutoOpenRescheduleForm = useRef(false);
+  const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playerById = useMemo(() => new Map(payload.players.map((player) => [player.id, player])), [payload.players]);
   const teamById = useMemo(() => new Map(payload.teams.map((team) => [team.id, team])), [payload.teams]);
@@ -295,8 +297,10 @@ export default function AdminMatchSheetPage({
     return requests;
   }
 
-  async function loadSheet() {
-    setIsLoading(true);
+  async function loadSheet(options: { showLoading?: boolean; refreshRescheduleRequests?: boolean } = {}) {
+    const showLoading = options.showLoading ?? true;
+    const refreshRescheduleRequests = options.refreshRescheduleRequests ?? true;
+    if (showLoading) setIsLoading(true);
     setError(null);
     try {
       const response = await adminFetch(sheetApiUrl);
@@ -325,11 +329,14 @@ export default function AdminMatchSheetPage({
         lineupRevealSchemaReady: body.lineupRevealSchemaReady ?? false,
         viewer: body.viewer ?? { side: null, canManageBothSides: true },
       });
-      const loadedRequests = await loadRescheduleRequests().catch((requestError) => {
-        setError(requestError instanceof Error ? requestError.message : "Žádosti o změnu termínu se nepodařilo načíst.");
-        return null;
-      });
+      const loadedRequests = refreshRescheduleRequests
+        ? await loadRescheduleRequests().catch((requestError) => {
+            setError(requestError instanceof Error ? requestError.message : "Žádosti o změnu termínu se nepodařilo načíst.");
+            return null;
+          })
+        : null;
       if (
+        refreshRescheduleRequests &&
         new URLSearchParams(window.location.search).get("reschedule") === "1" &&
         body.match &&
         loadedRequests &&
@@ -346,7 +353,18 @@ export default function AdminMatchSheetPage({
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Zápis utkání se nepodařilo načíst.");
     }
-    setIsLoading(false);
+    if (showLoading) setIsLoading(false);
+  }
+
+  function scheduleRealtimeSheetReload() {
+    if (realtimeReloadTimer.current) {
+      clearTimeout(realtimeReloadTimer.current);
+    }
+
+    realtimeReloadTimer.current = setTimeout(() => {
+      realtimeReloadTimer.current = null;
+      void loadSheet({ showLoading: false, refreshRescheduleRequests: false });
+    }, 300);
   }
 
   async function handleRescheduleRequest() {
@@ -444,6 +462,51 @@ export default function AdminMatchSheetPage({
     // Initial data is loaded when the dynamic match route changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSheet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`match-sheet:${matchId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
+        scheduleRealtimeSheetReload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_games", filter: `match_id=eq.${matchId}` },
+        scheduleRealtimeSheetReload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_game_achievements", filter: `match_id=eq.${matchId}` },
+        scheduleRealtimeSheetReload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_player_slots", filter: `match_id=eq.${matchId}` },
+        scheduleRealtimeSheetReload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_block_lineup_reveals", filter: `match_id=eq.${matchId}` },
+        scheduleRealtimeSheetReload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "match_confirmations", filter: `match_id=eq.${matchId}` },
+        scheduleRealtimeSheetReload,
+      )
+      .subscribe();
+
+    return () => {
+      if (realtimeReloadTimer.current) {
+        clearTimeout(realtimeReloadTimer.current);
+        realtimeReloadTimer.current = null;
+      }
+      void supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId]);
 
