@@ -3,7 +3,7 @@ import { getCurrentUserProfile, hasAtLeastRole, requireModeratorOrAdmin } from "
 import { authorizeMatchAccess, type MatchSide } from "@/lib/matchAccess";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
-type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+type RequestStatus = "opponent_pending" | "pending" | "approved" | "rejected" | "cancelled";
 
 type CreateBody = {
   match_id?: unknown;
@@ -38,6 +38,9 @@ type RescheduleRequestRow = {
   requested_scheduled_at: string;
   reason: string;
   status: RequestStatus;
+  opponent_reviewed_by_user_id: string | null;
+  opponent_reviewed_at: string | null;
+  opponent_review_note: string | null;
   reviewed_by_user_id: string | null;
   reviewed_at: string | null;
   review_note: string | null;
@@ -129,7 +132,7 @@ async function requesterSideForMatch(
 async function loadRequests(supabase: ReturnType<typeof createSupabaseAdminClient>, matchId?: string) {
   const requests = await supabase
     .from("match_reschedule_requests")
-    .select("id, match_id, requested_by_user_id, requested_by_player_id, requested_by_side, current_scheduled_at, requested_scheduled_at, reason, status, reviewed_by_user_id, reviewed_at, review_note, created_at, updated_at")
+    .select("id, match_id, requested_by_user_id, requested_by_player_id, requested_by_side, current_scheduled_at, requested_scheduled_at, reason, status, opponent_reviewed_by_user_id, opponent_reviewed_at, opponent_review_note, reviewed_by_user_id, reviewed_at, review_note, created_at, updated_at")
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .returns<RescheduleRequestRow[]>();
@@ -269,7 +272,7 @@ export async function POST(request: Request) {
     .from("match_reschedule_requests")
     .select("id")
     .eq("match_id", matchId)
-    .eq("status", "pending")
+    .in("status", ["opponent_pending", "pending"])
     .is("deleted_at", null)
     .maybeSingle<{ id: string }>();
 
@@ -294,7 +297,7 @@ export async function POST(request: Request) {
       current_scheduled_at: match.scheduled_at,
       requested_scheduled_at: requestedScheduledAt,
       reason,
-      status: "pending",
+      status: isModeratorOrAdmin ? "pending" : "opponent_pending",
     })
     .select("id")
     .single<{ id: string }>();
@@ -329,6 +332,10 @@ export async function PATCH(request: Request) {
 
   if (requestError || !rescheduleRequest) {
     return schemaError(requestError?.message ?? "Žádost nebyla nalezena.");
+  }
+
+  if (rescheduleRequest.status === "opponent_pending") {
+    return NextResponse.json({ error: "Tato žádost nejdřív čeká na potvrzení soupeřem." }, { status: 400 });
   }
 
   if (rescheduleRequest.status !== "pending") {

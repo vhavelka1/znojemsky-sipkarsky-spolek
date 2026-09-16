@@ -34,6 +34,7 @@ type CaptainTeamPayload = {
   roster?: RosterPlayer[];
   matches?: TeamMatch[];
   requests?: RosterRequest[];
+  matchRescheduleRequests?: MatchRescheduleRequest[];
   availablePlayers?: AvailablePlayer[];
   competitionRulesFileName?: string;
   competitionRulesFileUrl?: string;
@@ -94,6 +95,29 @@ type RosterRequest = {
   status: "pending" | "approved" | "rejected" | "cancelled";
   admin_note: string | null;
   created_at: string;
+};
+
+type MatchRescheduleRequest = {
+  id: string;
+  matchId: string;
+  requestedBySide: "home" | "away" | null;
+  currentScheduledAt: string;
+  requestedScheduledAt: string;
+  reason: string;
+  status: "opponent_pending" | "pending" | "approved" | "rejected" | "cancelled";
+  opponentReviewedAt: string | null;
+  opponentReviewNote: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  canOpponentReview: boolean;
+  isOwnRequest: boolean;
+  match: {
+    roundNumber: number | null;
+    homeTeamName: string;
+    awayTeamName: string;
+    seasonName: string;
+  } | null;
 };
 
 type AvailablePlayer = {
@@ -186,6 +210,22 @@ function requestStatusLabel(status: RosterRequest["status"]) {
 }
 
 function requestStatusClass(status: RosterRequest["status"]) {
+  if (status === "pending") return "bg-[#F4F8FF] text-[#0B2F6B]";
+  if (status === "approved") return "bg-green-100 text-green-800";
+  if (status === "rejected") return "bg-red-100 text-red-800";
+  return "bg-slate-100 text-slate-700";
+}
+
+function rescheduleStatusLabel(status: MatchRescheduleRequest["status"]) {
+  if (status === "opponent_pending") return "Čeká na soupeře";
+  if (status === "pending") return "Čeká na administrátora";
+  if (status === "approved") return "Schváleno";
+  if (status === "rejected") return "Zamítnuto";
+  return "Zrušeno";
+}
+
+function rescheduleStatusClass(status: MatchRescheduleRequest["status"]) {
+  if (status === "opponent_pending") return "bg-amber-100 text-amber-800";
   if (status === "pending") return "bg-[#F4F8FF] text-[#0B2F6B]";
   if (status === "approved") return "bg-green-100 text-green-800";
   if (status === "rejected") return "bg-red-100 text-red-800";
@@ -363,6 +403,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [matches, setMatches] = useState<TeamMatch[]>([]);
   const [requests, setRequests] = useState<RosterRequest[]>([]);
+  const [matchRescheduleRequests, setMatchRescheduleRequests] = useState<MatchRescheduleRequest[]>([]);
   const [availablePlayers, setAvailablePlayers] = useState<AvailablePlayer[]>([]);
   const [teamForm, setTeamForm] = useState<TeamForm>(emptyTeamForm);
   const [requestForm, setRequestForm] = useState<RequestForm>(emptyRequestForm);
@@ -382,6 +423,8 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [rescheduleNotes, setRescheduleNotes] = useState<Record<string, string>>({});
+  const [processingRescheduleRequest, setProcessingRescheduleRequest] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
   const [isSubmittingRegistration, setIsSubmittingRegistration] = useState(false);
   const [removingMembershipId, setRemovingMembershipId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -402,6 +445,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
         setMatches(body.matches ?? []);
         setMatchSeasonFilter((current) => current || body.activeSeasonId || loadedSeasons.find((season) => season.isActive)?.id || loadedSeasons[0]?.id || "");
         setRequests(body.requests ?? []);
+        setMatchRescheduleRequests(body.matchRescheduleRequests ?? []);
         setAvailablePlayers(body.availablePlayers ?? []);
         const parsedRegistrationNote = parseRegistrationNote(body.team?.registrationNote ?? "");
         setRegistrationNote(parsedRegistrationNote.note);
@@ -503,6 +547,38 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
     loadTeam();
   };
 
+  const reviewMatchRescheduleRequest = async (id: string, action: "approve" | "reject") => {
+    setProcessingRescheduleRequest({ id, action });
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await authFetch("/api/captain/match-reschedule-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          action,
+          opponent_review_note: rescheduleNotes[id] ?? "",
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok) {
+        setError(body.error ?? "Žádost o změnu termínu se nepodařilo zpracovat.");
+        return;
+      }
+
+      setMessage(action === "approve" ? "Žádost byla potvrzena a čeká na administrátora." : "Žádost byla zamítnuta.");
+      setRescheduleNotes((current) => ({ ...current, [id]: "" }));
+      loadTeam();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Žádost o změnu termínu se nepodařilo zpracovat.");
+    } finally {
+      setProcessingRescheduleRequest(null);
+    }
+  };
+
   const submitSeasonRegistration = async () => {
     if (!registrationRulesAccepted) {
       setMessage(null);
@@ -567,6 +643,8 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const activeRoster = roster.filter((player) => !player.leftOn);
   const inactiveRoster = roster.filter((player) => player.leftOn);
   const pendingRequests = requests.filter((request) => request.status === "pending");
+  const incomingRescheduleRequests = matchRescheduleRequests.filter((request) => request.canOpponentReview);
+  const pendingRequestCount = pendingRequests.length + incomingRescheduleRequests.length;
   const selectedExistingPlayer = availablePlayers.find((player) => player.id === requestForm.existing_player_id) ?? null;
 
   const filteredAvailablePlayers = useMemo(() => {
@@ -726,6 +804,77 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
     </div>
   );
 
+  const renderRescheduleRequestsGroup = (title: string, items: MatchRescheduleRequest[]) => (
+    <div className="space-y-2">
+      <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#EF233C]">{title}</h3>
+      {items.length === 0 ? (
+        <EmptyState>Žádné žádosti.</EmptyState>
+      ) : (
+        <div className="grid gap-3">
+          {items.map((request) => (
+            <div className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3" key={request.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-black text-[#061A3A]">
+                    {request.match ? `${request.match.homeTeamName} vs. ${request.match.awayTeamName}` : "Zápas"}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    {request.match?.seasonName ?? "Sezóna"}
+                    {request.match?.roundNumber ? ` / ${request.match.roundNumber}. kolo` : ""} / {formatDate(request.createdAt)}
+                  </p>
+                </div>
+                <Badge className={rescheduleStatusClass(request.status)}>{rescheduleStatusLabel(request.status)}</Badge>
+              </div>
+              <div className="mt-3 grid gap-1 text-xs font-bold text-slate-600 sm:grid-cols-2">
+                <p>Původní termín: {formatDateTime(request.currentScheduledAt)}</p>
+                <p>Navržený termín: {formatDateTime(request.requestedScheduledAt)}</p>
+              </div>
+              <p className="mt-2 text-sm font-bold text-[#061A3A]">{request.reason}</p>
+              {request.opponentReviewNote ? <p className="mt-2 text-xs font-bold text-slate-600">Poznámka soupeře: {request.opponentReviewNote}</p> : null}
+              {request.reviewNote ? <p className="mt-2 text-xs font-bold text-slate-600">Poznámka administrátora: {request.reviewNote}</p> : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Link
+                  className="rounded-full border border-[#0F4FA8] bg-white px-4 py-2 text-xs font-black text-[#0F4FA8] transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]"
+                  href={`/muj-tym/zapasy/${request.matchId}`}
+                >
+                  Otevřít zápas
+                </Link>
+              </div>
+              {request.canOpponentReview ? (
+                <div className="mt-3 grid gap-2">
+                  <textarea
+                    className={`${inputClass} min-h-20`}
+                    onChange={(event) => setRescheduleNotes((current) => ({ ...current, [request.id]: event.target.value }))}
+                    placeholder="Poznámka k vyjádření"
+                    value={rescheduleNotes[request.id] ?? ""}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded-full bg-[#0B2F6B] px-4 py-2 text-xs font-black text-white transition hover:-translate-y-0.5 hover:bg-[#061A3A] disabled:opacity-60"
+                      disabled={Boolean(processingRescheduleRequest)}
+                      onClick={() => void reviewMatchRescheduleRequest(request.id, "approve")}
+                      type="button"
+                    >
+                      {processingRescheduleRequest?.id === request.id && processingRescheduleRequest.action === "approve" ? "Potvrzuji..." : "Souhlasím"}
+                    </button>
+                    <button
+                      className="rounded-full bg-[#EF233C] px-4 py-2 text-xs font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500 disabled:opacity-60"
+                      disabled={Boolean(processingRescheduleRequest)}
+                      onClick={() => void reviewMatchRescheduleRequest(request.id, "reject")}
+                      type="button"
+                    >
+                      {processingRescheduleRequest?.id === request.id && processingRescheduleRequest.action === "reject" ? "Zamítám..." : "Zamítnout"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   let content: React.ReactNode = null;
 
   if (team) {
@@ -735,7 +884,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <SummaryCard label="Stav registrace" value={teamRegistrationStatusLabel(team.registrationStatus)} href="/muj-tym/soupiska" />
             <SummaryCard label="Aktivní hráči" value={String(activeRoster.length)} href="/muj-tym/soupiska" />
-            <SummaryCard label="Čekající žádosti" value={String(pendingRequests.length)} href="/muj-tym/zadosti" />
+            <SummaryCard label="Čekající žádosti" value={String(pendingRequestCount)} href="/muj-tym/zadosti" />
             <SummaryCard label="Aktuální soutěž" value={competition ? `${competition.leagueName} / ${competition.groupName}` : "Nepřiřazeno"} href="/muj-tym/soutez" />
             <SummaryCard label="Nejbližší zápas" value={upcomingMatches[0] ? matchTitle(upcomingMatches[0]) : "Nenaplánován"} href="/muj-tym/zapasy" />
           </div>
@@ -1057,6 +1206,15 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
             </form>
           </Card>
 
+          <div className="grid gap-5">
+            <Card className="p-5">
+              <h2 className="text-2xl font-black text-[#061A3A]">Změny termínu</h2>
+              <div className="mt-5 grid gap-5">
+                {renderRescheduleRequestsGroup("K potvrzení soupeřem", matchRescheduleRequests.filter((request) => request.canOpponentReview))}
+                {renderRescheduleRequestsGroup("Odeslané a rozpracované", matchRescheduleRequests.filter((request) => !request.canOpponentReview && (request.isOwnRequest || request.status !== "opponent_pending")))}
+              </div>
+            </Card>
+
           <Card className="p-5">
             <h2 className="text-2xl font-black text-[#061A3A]">Odeslané žádosti</h2>
             <div className="mt-5 grid gap-5">
@@ -1065,6 +1223,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
               {renderRequestsGroup("Zamítnuté", requests.filter((request) => request.status === "rejected"))}
             </div>
           </Card>
+          </div>
         </div>
       );
     }
@@ -1198,7 +1357,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
           </Card>
         ) : (
           <div className="space-y-5">
-            <TeamShellHeader activeCount={activeRoster.length} pendingCount={pendingRequests.length} section={section} team={team} />
+            <TeamShellHeader activeCount={activeRoster.length} pendingCount={pendingRequestCount} section={section} team={team} />
             {content}
           </div>
         )}

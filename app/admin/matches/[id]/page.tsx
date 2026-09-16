@@ -94,7 +94,7 @@ type MatchRescheduleRequest = {
   id: string;
   requested_scheduled_at: string;
   reason: string;
-  status: "pending" | "approved" | "rejected" | "cancelled";
+  status: "opponent_pending" | "pending" | "approved" | "rejected" | "cancelled";
   review_note: string | null;
   created_at: string;
 };
@@ -279,7 +279,7 @@ export default function AdminMatchSheetPage({
     payload.confirmations.map((confirmation) => [confirmation.side, confirmation]),
   );
   const lockedSides = payload.confirmations.map((confirmation) => confirmation.side);
-  const pendingRescheduleRequest = rescheduleRequests.find((request) => request.status === "pending");
+  const pendingRescheduleRequest = rescheduleRequests.find((request) => request.status === "opponent_pending" || request.status === "pending");
   const captainForSide = (side: MatchSide) => {
     const teamSeasonId = side === "home" ? payload.match?.home_team_id : payload.match?.away_team_id;
     const membership = payload.memberships.find(
@@ -343,7 +343,7 @@ export default function AdminMatchSheetPage({
         body.match &&
         loadedRequests &&
         !didAutoOpenRescheduleForm.current &&
-        !loadedRequests.some((request) => request.status === "pending")
+        !loadedRequests.some((request) => request.status === "opponent_pending" || request.status === "pending")
       ) {
         setRescheduleForm({
           requested_scheduled_at: dateTimeLocalValue(body.match.scheduled_at),
@@ -396,7 +396,12 @@ export default function AdminMatchSheetPage({
       setRescheduleForm(emptyRescheduleForm);
       setIsRescheduleFormOpen(false);
       await loadRescheduleRequests();
-      setRescheduleNotice({ type: "success", text: "Žádost byla odeslána. Teď čeká na schválení moderátorem." });
+      setRescheduleNotice({
+        type: "success",
+        text: payload.viewer.canManageBothSides
+          ? "Žádost byla odeslána. Teď čeká na schválení moderátorem."
+          : "Žádost byla odeslána. Teď čeká na potvrzení soupeřem.",
+      });
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Žádost o změnu termínu se nepodařilo odeslat.";
       setError(message);
@@ -820,7 +825,7 @@ export default function AdminMatchSheetPage({
             </p>
             {pendingRescheduleRequest ? (
               <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                Čeká žádost o změnu na {formatDateTime(pendingRescheduleRequest.requested_scheduled_at)}.
+                {pendingRescheduleRequest.status === "opponent_pending" ? "Čeká žádost na potvrzení soupeřem" : "Čeká žádost na schválení moderátorem"}: {formatDateTime(pendingRescheduleRequest.requested_scheduled_at)}.
               </p>
             ) : null}
           </div>

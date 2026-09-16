@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Button, Card, PageHeader } from "@/components/ui/admin";
 
-type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+type RequestStatus = "opponent_pending" | "pending" | "approved" | "rejected" | "cancelled";
 type MatchSide = "home" | "away";
 
 type MatchRescheduleRequest = {
@@ -16,6 +16,8 @@ type MatchRescheduleRequest = {
   requested_scheduled_at: string;
   reason: string;
   status: RequestStatus;
+  opponent_reviewed_at: string | null;
+  opponent_review_note: string | null;
   reviewed_at: string | null;
   review_note: string | null;
   created_at: string;
@@ -40,6 +42,7 @@ function formatDateTime(value: string) {
 }
 
 function statusLabel(status: RequestStatus) {
+  if (status === "opponent_pending") return "Čeká na soupeře";
   if (status === "pending") return "Čeká na schválení";
   if (status === "approved") return "Schváleno";
   if (status === "rejected") return "Zamítnuto";
@@ -47,6 +50,7 @@ function statusLabel(status: RequestStatus) {
 }
 
 function statusClass(status: RequestStatus) {
+  if (status === "opponent_pending") return "rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800";
   if (status === "pending") return "admin-badge";
   if (status === "approved") return "rounded-full bg-green-100 px-3 py-1 text-xs font-black text-green-800";
   if (status === "rejected") return "rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-800";
@@ -150,6 +154,14 @@ export default function AdminMatchRescheduleRequestsPage() {
                       <p>Strana: {request.requested_by_side === "home" ? "domácí" : request.requested_by_side === "away" ? "hosté" : "administrace"}</p>
                     </div>
                     <p className="mt-3 text-sm text-[var(--brand-navy)]">{request.reason}</p>
+                    {request.status === "opponent_pending" ? (
+                      <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                        Soupeřův kapitán nebo zástupce musí žádost nejdřív potvrdit ve své sekci Můj tým - Žádosti.
+                      </p>
+                    ) : null}
+                    {request.opponent_review_note ? (
+                      <p className="mt-3 text-sm font-bold text-[var(--admin-muted)]">Poznámka soupeře: {request.opponent_review_note}</p>
+                    ) : null}
                     {request.review_note ? (
                       <p className="mt-3 text-sm font-bold text-[var(--admin-muted)]">Poznámka: {request.review_note}</p>
                     ) : null}

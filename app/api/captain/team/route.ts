@@ -78,6 +78,24 @@ type MatchResultRow = {
   away_points: number;
 };
 
+type MatchSide = "home" | "away";
+type MatchRescheduleRequestStatus = "opponent_pending" | "pending" | "approved" | "rejected" | "cancelled";
+
+type MatchRescheduleRequestRow = {
+  id: string;
+  match_id: string;
+  requested_by_side: MatchSide | null;
+  current_scheduled_at: string;
+  requested_scheduled_at: string;
+  reason: string;
+  status: MatchRescheduleRequestStatus;
+  opponent_reviewed_at: string | null;
+  opponent_review_note: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+};
+
 type TeamSeasonRow = {
   id: string;
   team_id: string;
@@ -508,6 +526,15 @@ export async function GET(request: Request) {
     : { data: [] as MatchRow[], error: null };
   const matchRows = matchResult.data ?? [];
   const matchIds = matchRows.map((match) => match.id);
+  const matchRescheduleRequestsResult = matchIds.length > 0
+    ? await supabase
+        .from("match_reschedule_requests")
+        .select("id, match_id, requested_by_side, current_scheduled_at, requested_scheduled_at, reason, status, opponent_reviewed_at, opponent_review_note, reviewed_at, review_note, created_at")
+        .in("match_id", matchIds)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .returns<MatchRescheduleRequestRow[]>()
+    : { data: [] as MatchRescheduleRequestRow[], error: null };
   const matchTeamSeasonIds = Array.from(
     new Set(
       matchRows.flatMap((match) => [match.home_team_id, match.away_team_id]),
@@ -670,6 +697,53 @@ export async function GET(request: Request) {
       result: result ? `${result.home_points}:${result.away_points}` : null,
     };
   });
+  const matchById = new Map(matchRows.map((match) => [match.id, match]));
+  const matchRescheduleRequests = matchRescheduleRequestsResult.error
+    ? []
+    : (matchRescheduleRequestsResult.data ?? []).map((rescheduleRequest) => {
+        const match = matchById.get(rescheduleRequest.match_id) ?? null;
+        const ownSide: MatchSide | null = match
+          ? ownTeamSeasonIdsSet.has(match.home_team_id)
+            ? "home"
+            : ownTeamSeasonIdsSet.has(match.away_team_id)
+              ? "away"
+              : null
+          : null;
+        const homeTeamName = match ? matchTeamName(match.home_team_id, "Domácí") : "Domácí";
+        const awayTeamName = match ? matchTeamName(match.away_team_id, "Hosté") : "Hosté";
+
+        return {
+          id: rescheduleRequest.id,
+          matchId: rescheduleRequest.match_id,
+          requestedBySide: rescheduleRequest.requested_by_side,
+          currentScheduledAt: rescheduleRequest.current_scheduled_at,
+          requestedScheduledAt: rescheduleRequest.requested_scheduled_at,
+          reason: rescheduleRequest.reason,
+          status: rescheduleRequest.status,
+          opponentReviewedAt: rescheduleRequest.opponent_reviewed_at,
+          opponentReviewNote: rescheduleRequest.opponent_review_note,
+          reviewedAt: rescheduleRequest.reviewed_at,
+          reviewNote: rescheduleRequest.review_note,
+          createdAt: rescheduleRequest.created_at,
+          canOpponentReview:
+            rescheduleRequest.status === "opponent_pending" &&
+            ownSide !== null &&
+            rescheduleRequest.requested_by_side !== null &&
+            ownSide !== rescheduleRequest.requested_by_side,
+          isOwnRequest:
+            ownSide !== null &&
+            rescheduleRequest.requested_by_side !== null &&
+            ownSide === rescheduleRequest.requested_by_side,
+          match: match
+            ? {
+                roundNumber: match.round_number,
+                homeTeamName,
+                awayTeamName,
+                seasonName: seasonById.get(match.season_id)?.name ?? "Sezóna",
+              }
+            : null,
+        };
+      });
 
   return NextResponse.json({
     seasons: (seasonsResult.data ?? [])
@@ -712,6 +786,7 @@ export async function GET(request: Request) {
     matches,
     availablePlayers,
     requests: requestsResult.error ? [] : requestsResult.data ?? [],
+    matchRescheduleRequests,
     competitionRulesFileName: publicSettings.competitionRulesFileName,
     competitionRulesFileUrl: publicSettings.competitionRulesFileUrl,
   });
