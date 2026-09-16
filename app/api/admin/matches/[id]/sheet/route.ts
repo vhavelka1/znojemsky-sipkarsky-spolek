@@ -340,13 +340,20 @@ async function resolveRequestedTeamSide(
   matchTeamSeasons: TeamSeasonRow[],
   teamSeasonId: string | null | undefined,
 ) {
-  if (!requester?.playerId || !teamSeasonId) return null;
-  const side: MatchSide | null =
-    teamSeasonId === match.home_team_id ? "home" : teamSeasonId === match.away_team_id ? "away" : null;
-  if (!side) return null;
+  if (!requester?.playerId) return null;
+  const requestedSide: MatchSide | null = teamSeasonId
+    ? teamSeasonId === match.home_team_id
+      ? "home"
+      : teamSeasonId === match.away_team_id
+        ? "away"
+        : null
+    : null;
+  if (teamSeasonId && !requestedSide) return null;
 
-  const requestedTeamSeason = matchTeamSeasons.find((teamSeason) => teamSeason.id === teamSeasonId);
-  if (!requestedTeamSeason) return null;
+  const requestedTeamSeason = teamSeasonId
+    ? matchTeamSeasons.find((teamSeason) => teamSeason.id === teamSeasonId)
+    : null;
+  if (teamSeasonId && !requestedTeamSeason) return null;
 
   const { data: leadershipMemberships, error: membershipError } = await supabase
     .from("team_memberships")
@@ -371,9 +378,21 @@ async function resolveRequestedTeamSide(
 
   if (teamSeasonError) return null;
 
-  return (leadershipTeamSeasons ?? []).some((teamSeason) => teamSeason.team_id === requestedTeamSeason.team_id)
-    ? side
-    : null;
+  const leadershipTeamIds = new Set((leadershipTeamSeasons ?? []).map((teamSeason) => teamSeason.team_id));
+  if (requestedTeamSeason && requestedSide) {
+    return leadershipTeamIds.has(requestedTeamSeason.team_id) ? requestedSide : null;
+  }
+
+  const matchingSides = matchTeamSeasons
+    .map((teamSeason): MatchSide | null => {
+      if (!leadershipTeamIds.has(teamSeason.team_id)) return null;
+      if (teamSeason.id === match.home_team_id) return "home";
+      if (teamSeason.id === match.away_team_id) return "away";
+      return null;
+    })
+    .filter((side): side is MatchSide => Boolean(side));
+
+  return matchingSides.length === 1 ? matchingSides[0] : null;
 }
 
 async function forcedTeamSideForRequest(
@@ -382,7 +401,6 @@ async function forcedTeamSideForRequest(
   match: Pick<MatchRow, "home_team_id" | "away_team_id">,
   teamSeasonId: string | null | undefined,
 ) {
-  if (!teamSeasonId) return null;
   const matchTeamSeasonIds = [match.home_team_id, match.away_team_id];
   const { data: matchTeamSeasons } = await supabase
     .from("team_seasons")
