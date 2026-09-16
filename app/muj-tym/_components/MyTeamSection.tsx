@@ -69,6 +69,7 @@ type RosterPlayer = {
 
 type TeamMatch = {
   id: string;
+  teamSeasonId: string;
   seasonId: string;
   seasonName: string;
   roundNumber: number | null;
@@ -759,7 +760,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
     return (
       <div className="grid gap-2">
         {items.slice(0, 6).map((match) => (
-          <Link className="rounded-2xl border border-[#D8E4F2] bg-white p-3 transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]" href={`/muj-tym/zapasy/${match.id}`} key={match.id}>
+          <Link className="rounded-2xl border border-[#D8E4F2] bg-white p-3 transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]" href={`/muj-tym/zapasy/${match.id}?team_season_id=${match.teamSeasonId}`} key={match.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-black text-[#061A3A]">{matchTitle(match)}</p>
@@ -1079,14 +1080,14 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
                       {match.status === "scheduled" ? (
                         <Link
                           className="rounded-full border border-[#0F4FA8] bg-white px-4 py-2 text-sm font-black text-[#0F4FA8] transition hover:-translate-y-0.5 hover:bg-[#F4F8FF]"
-                          href={`/muj-tym/zapasy/${match.id}?reschedule=1`}
+                          href={`/muj-tym/zapasy/${match.id}?team_season_id=${match.teamSeasonId}&reschedule=1`}
                         >
                           Změnit termín
                         </Link>
                       ) : null}
                       <Link
                         className="rounded-full bg-[#EF233C] px-4 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-red-500"
-                        href={`/muj-tym/zapasy/${match.id}`}
+                        href={`/muj-tym/zapasy/${match.id}?team_season_id=${match.teamSeasonId}`}
                       >
                         Otevřít zápis
                       </Link>

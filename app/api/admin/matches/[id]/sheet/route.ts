@@ -292,8 +292,15 @@ function viewerContextForMatch(
   requester: { role?: AppRole; playerId?: string | null } | null,
   match: Pick<MatchRow, "home_team_id" | "away_team_id">,
   memberships: MembershipRow[],
-  options: { preferTeamSide?: boolean } = {},
+  options: { forcedTeamSide?: MatchSide | null; preferTeamSide?: boolean } = {},
 ): SheetViewerContext {
+  if (options.forcedTeamSide && options.preferTeamSide) {
+    return {
+      side: options.forcedTeamSide,
+      canManageBothSides: false,
+    };
+  }
+
   const membership = memberships.find(
     (item) =>
       item.player_id === requester?.playerId &&
@@ -324,6 +331,67 @@ function viewerContextForMatch(
     side: membership.team_season_id === match.home_team_id ? "home" : "away",
     canManageBothSides: false,
   };
+}
+
+async function resolveRequestedTeamSide(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  requester: { playerId?: string | null } | null,
+  match: Pick<MatchRow, "home_team_id" | "away_team_id">,
+  matchTeamSeasons: TeamSeasonRow[],
+  teamSeasonId: string | null | undefined,
+) {
+  if (!requester?.playerId || !teamSeasonId) return null;
+  const side: MatchSide | null =
+    teamSeasonId === match.home_team_id ? "home" : teamSeasonId === match.away_team_id ? "away" : null;
+  if (!side) return null;
+
+  const requestedTeamSeason = matchTeamSeasons.find((teamSeason) => teamSeason.id === teamSeasonId);
+  if (!requestedTeamSeason) return null;
+
+  const { data: leadershipMemberships, error: membershipError } = await supabase
+    .from("team_memberships")
+    .select("team_season_id")
+    .eq("player_id", requester.playerId)
+    .in("member_role", ["captain", "assistant_captain"])
+    .is("left_on", null)
+    .is("deleted_at", null)
+    .returns<Array<{ team_season_id: string }>>();
+
+  if (membershipError || !leadershipMemberships || leadershipMemberships.length === 0) {
+    return null;
+  }
+
+  const leadershipTeamSeasonIds = leadershipMemberships.map((membership) => membership.team_season_id);
+  const { data: leadershipTeamSeasons, error: teamSeasonError } = await supabase
+    .from("team_seasons")
+    .select("id, team_id")
+    .in("id", leadershipTeamSeasonIds)
+    .is("deleted_at", null)
+    .returns<Array<{ id: string; team_id: string }>>();
+
+  if (teamSeasonError) return null;
+
+  return (leadershipTeamSeasons ?? []).some((teamSeason) => teamSeason.team_id === requestedTeamSeason.team_id)
+    ? side
+    : null;
+}
+
+async function forcedTeamSideForRequest(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  requester: { playerId?: string | null } | null,
+  match: Pick<MatchRow, "home_team_id" | "away_team_id">,
+  teamSeasonId: string | null | undefined,
+) {
+  if (!teamSeasonId) return null;
+  const matchTeamSeasonIds = [match.home_team_id, match.away_team_id];
+  const { data: matchTeamSeasons } = await supabase
+    .from("team_seasons")
+    .select("id, team_id, season_id, display_name")
+    .in("id", matchTeamSeasonIds)
+    .is("deleted_at", null)
+    .returns<TeamSeasonRow[]>();
+
+  return resolveRequestedTeamSide(supabase, requester, match, matchTeamSeasons ?? [], teamSeasonId);
 }
 
 function canViewerSeeSideInBlock(
@@ -535,7 +603,7 @@ function missingSheetSchemaResponse(errorMessage: string) {
 async function loadSheetData(
   matchId: string,
   requester: { role?: AppRole; playerId?: string | null } | null = null,
-  options: { preferTeamSide?: boolean } = {},
+  options: { preferTeamSide?: boolean; teamSeasonId?: string | null } = {},
 ) {
   const supabase = createSupabaseAdminClient();
 
@@ -663,7 +731,10 @@ async function loadSheetData(
     return { data: null, error: error.message };
   }
 
-  const viewer = viewerContextForMatch(requester, match, memberships.data ?? [], options);
+  const forcedTeamSide = options.preferTeamSide
+    ? await resolveRequestedTeamSide(supabase, requester, match, teamSeasons.data ?? [], options.teamSeasonId)
+    : null;
+  const viewer = viewerContextForMatch(requester, match, memberships.data ?? [], { ...options, forcedTeamSide });
   const lineupsVisibleForAll = match.status === "confirmed";
   const activeGameIds = new Set((games.data ?? []).map((game) => game.id));
   const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) =>
@@ -894,6 +965,8 @@ async function handleAutosaveCell(
   cell: AutosaveCell,
 ) {
   const preferTeamSide = preferTeamSideForRequest(request);
+  const requestUrl = new URL(request.url);
+  const requestedTeamSeasonId = parseString(requestUrl.searchParams.get("team_season_id"));
   const access = await authorizeMatchAccess(request, matchId);
   if (access.response) {
     return access.response;
@@ -931,7 +1004,10 @@ async function handleAutosaveCell(
       );
     }
 
-    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { preferTeamSide });
+    const forcedTeamSide = preferTeamSide
+      ? await forcedTeamSideForRequest(supabase, access.requester, matchResult.data, requestedTeamSeasonId)
+      : null;
+    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
     if (!viewer.canManageBothSides && viewer.side !== side) {
       return NextResponse.json({ error: "Souperi muzete zobrazit jen vlastni nasazeni." }, { status: 403 });
     }
@@ -1046,7 +1122,10 @@ async function handleAutosaveCell(
       );
     }
 
-    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { preferTeamSide });
+    const forcedTeamSide = preferTeamSide
+      ? await forcedTeamSideForRequest(supabase, access.requester, matchResult.data, requestedTeamSeasonId)
+      : null;
+    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
     const canEditSide = (side: MatchSide) => viewer.canManageBothSides || viewer.side === side;
     if (!viewer.canManageBothSides && !viewer.side) {
       return NextResponse.json({ error: "Nemáte oprávnění upravit zápis tohoto zápasu." }, { status: 403 });
@@ -1357,12 +1436,14 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const preferTeamSide = preferTeamSideForRequest(request);
+    const requestUrl = new URL(request.url);
+    const teamSeasonId = parseString(requestUrl.searchParams.get("team_season_id"));
     const access = await authorizeMatchAccess(request, id);
     if (access.response) {
       return access.response;
     }
 
-    const { data, error } = await loadSheetData(id, access.requester, { preferTeamSide });
+    const { data, error } = await loadSheetData(id, access.requester, { preferTeamSide, teamSeasonId });
 
     if (error) {
       const schemaResponse = missingSheetSchemaResponse(error);
@@ -1384,6 +1465,9 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { id: matchId } = await context.params;
+  const preferTeamSide = preferTeamSideForRequest(request);
+  const requestUrl = new URL(request.url);
+  const teamSeasonId = parseString(requestUrl.searchParams.get("team_season_id"));
   const body = (await request.json().catch(() => null)) as SaveSheetBody | null;
   const cell = typeof body?.cell === "object" && body.cell !== null
     ? body.cell as AutosaveCell
@@ -1933,7 +2017,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return schemaResponse ?? NextResponse.json({ error: confirmationsDeleteError.message }, { status: 500 });
   }
 
-  const { data, error } = await loadSheetData(matchId, access.requester);
+  const { data, error } = await loadSheetData(matchId, access.requester, { preferTeamSide, teamSeasonId });
   if (error) {
     return NextResponse.json({ error }, { status: 500 });
   }

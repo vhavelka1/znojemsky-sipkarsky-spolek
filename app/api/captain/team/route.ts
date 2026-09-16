@@ -683,6 +683,7 @@ export async function GET(request: Request) {
     const awayTeamName = matchTeamName(match.away_team_id, "Hosté");
     return {
       id: match.id,
+      teamSeasonId: isHome ? match.home_team_id : match.away_team_id,
       seasonId: match.season_id,
       seasonName: matchSeason?.name ?? "Sezóna",
       roundNumber: match.round_number,

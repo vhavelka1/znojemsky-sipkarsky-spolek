@@ -2,7 +2,7 @@
 
 import { adminFetch } from "@/lib/adminFetch";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, PageHeader } from "@/components/ui/admin";
 import { MatchInfo, MatchSheet, MatchStatisticsSection } from "@/components/matches/MatchSheet";
@@ -234,7 +234,13 @@ export default function AdminMatchSheetPage({
   teamView = false,
 }: MatchSheetPageProps = {}) {
   const matchId = useParams<{ id: string }>().id;
-  const sheetApiUrl = `/api/admin/matches/${matchId}/sheet${teamView ? "?view=team" : ""}`;
+  const searchParams = useSearchParams();
+  const teamSeasonId = searchParams.get("team_season_id");
+  const sheetApiParams = new URLSearchParams();
+  if (teamView) sheetApiParams.set("view", "team");
+  if (teamView && teamSeasonId) sheetApiParams.set("team_season_id", teamSeasonId);
+  const sheetApiQuery = sheetApiParams.toString();
+  const sheetApiUrl = `/api/admin/matches/${matchId}/sheet${sheetApiQuery ? `?${sheetApiQuery}` : ""}`;
   const [payload, setPayload] = useState(emptyPayload);
   const [rescheduleRequests, setRescheduleRequests] = useState<MatchRescheduleRequest[]>([]);
   const [rescheduleForm, setRescheduleForm] = useState(emptyRescheduleForm);
