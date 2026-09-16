@@ -59,6 +59,7 @@ type MatchSheetProps = {
   isRevealSaving?: boolean;
   lineupRevealSchemaReady?: boolean;
   lineupsVisibleForAll?: boolean;
+  lockedSides?: MatchSide[];
   onRevealLineup?: (side: MatchSide, blockNumber: number) => void;
   playerLabel?: (player: Player) => string;
   readOnly?: boolean;
@@ -241,6 +242,7 @@ export function MatchSheet({
   isRevealSaving = false,
   lineupRevealSchemaReady = true,
   lineupsVisibleForAll = false,
+  lockedSides = [],
   onRevealLineup,
   playerLabel = defaultPlayerLabel,
   readOnly = false,
@@ -254,6 +256,7 @@ export function MatchSheet({
   const tiebreakNeeded = sheetTiebreakNeeded(games);
   const visibleBlocks = tiebreakNeeded ? [...blocks, tiebreakBlock] : blocks;
   const revealKeys = new Set(blockReveals.map((reveal) => `${reveal.side}:${reveal.block_number}`));
+  const lockedSideSet = new Set(lockedSides);
 
   function isLineupRevealed(side: MatchSide, blockNumber: number) {
     return revealKeys.has(`${side}:${blockNumber}`);
@@ -264,7 +267,11 @@ export function MatchSheet({
   }
 
   function canEditLineup(side: MatchSide) {
-    return !readOnly && (canManageBothSides || viewerSide === side || viewerSide === null);
+    return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side || viewerSide === null);
+  }
+
+  function canEditLegs() {
+    return !readOnly && (canManageBothSides || !viewerSide || !lockedSideSet.has(viewerSide));
   }
 
   function achievementCount(orderNumber: number, playerId: string, type: AchievementType) {
@@ -391,7 +398,7 @@ export function MatchSheet({
   }
 
   function renderLegs(game: SheetGame) {
-    if (readOnly) return <span className="block text-center text-sm font-black text-[var(--brand-navy)]">{game.home_legs}:{game.away_legs}</span>;
+    if (!canEditLegs()) return <span className="block text-center text-sm font-black text-[var(--brand-navy)]">{game.home_legs}:{game.away_legs}</span>;
 
     const maximumLegs = game.game_type === "tiebreak_701" ? 1 : 3;
     const legsPattern = game.game_type === "tiebreak_701" ? "[0-1]" : "[0-3]";
@@ -439,7 +446,7 @@ export function MatchSheet({
 
   function renderRevealControl(side: MatchSide, block: Block) {
     const revealed = isLineupRevealed(side, block.blockNumber);
-    const canReveal = !readOnly && (canManageBothSides || viewerSide !== null);
+    const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
     const isOwnSide = canManageBothSides || viewerSide === null || viewerSide === side;
     const buttonClass = isOwnSide
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"

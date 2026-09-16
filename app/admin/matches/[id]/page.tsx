@@ -244,6 +244,7 @@ export default function AdminMatchSheetPage({
   const [revealingLineup, setRevealingLineup] = useState<{ side: MatchSide; blockNumber: number } | null>(null);
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
+  const [unlockingSide, setUnlockingSide] = useState<MatchSide | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rescheduleNotice, setRescheduleNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const autosaveRequestId = useRef(0);
@@ -277,6 +278,7 @@ export default function AdminMatchSheetPage({
   const confirmationBySide = new Map(
     payload.confirmations.map((confirmation) => [confirmation.side, confirmation]),
   );
+  const lockedSides = payload.confirmations.map((confirmation) => confirmation.side);
   const pendingRescheduleRequest = rescheduleRequests.find((request) => request.status === "pending");
   const captainForSide = (side: MatchSide) => {
     const teamSeasonId = side === "home" ? payload.match?.home_team_id : payload.match?.away_team_id;
@@ -428,6 +430,24 @@ export default function AdminMatchSheetPage({
       setError(confirmError instanceof Error ? confirmError.message : "Potvrzení zápisu se nepodařilo uložit.");
     }
     setConfirmingSide(null);
+  }
+
+  async function handleUnlockConfirmation(side: MatchSide) {
+    setUnlockingSide(side);
+    setError(null);
+    try {
+      const response = await adminFetch(`/api/admin/matches/${matchId}/confirm`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ side }),
+      });
+      const body = (await response.json().catch(() => ({}))) as SheetPayload;
+      if (!response.ok) throw new Error(body.error ?? "Zápis se nepodařilo odemknout.");
+      await loadSheet();
+    } catch (unlockError) {
+      setError(unlockError instanceof Error ? unlockError.message : "Zápis se nepodařilo odemknout.");
+    }
+    setUnlockingSide(null);
   }
 
   async function handleRevealLineup(side: MatchSide, blockNumber: number) {
@@ -884,6 +904,7 @@ export default function AdminMatchSheetPage({
           isRevealSaving={revealingLineup !== null}
           lineupRevealSchemaReady={payload.lineupRevealSchemaReady}
           lineupsVisibleForAll={payload.match?.status === "confirmed"}
+          lockedSides={lockedSides}
           onAchievementChange={updateInlineAchievement}
           onLegsChange={updateLegs}
           onPlayerChange={updateRowPlayer}
@@ -920,6 +941,17 @@ export default function AdminMatchSheetPage({
                         type="button"
                       >
                         {confirmingSide === side ? "Potvrzuji..." : "Potvrdit zápis"}
+                      </Button>
+                    </div>
+                  ) : payload.viewer.canManageBothSides ? (
+                    <div className="mt-4">
+                      <Button
+                        disabled={unlockingSide !== null}
+                        onClick={() => void handleUnlockConfirmation(side)}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {unlockingSide === side ? "Odemykám..." : "Odemknout"}
                       </Button>
                     </div>
                   ) : null}

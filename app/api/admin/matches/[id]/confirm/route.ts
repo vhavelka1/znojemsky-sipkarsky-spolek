@@ -134,3 +134,50 @@ export async function POST(request: Request, context: RouteContext) {
 
   return NextResponse.json({ status: isConfirmed ? "confirmed" : "awaiting_confirmation" });
 }
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const body = (await request.json().catch(() => null)) as ConfirmBody | null;
+  const side = parseSide(body?.side);
+  if (!side) {
+    return NextResponse.json({ error: "Vyberte stranu kapitána." }, { status: 400 });
+  }
+
+  const { id: matchId } = await context.params;
+  const access = await authorizeMatchAccess(request, matchId, {
+    globalMinimumRole: "moderator",
+  });
+  if (access.response) {
+    return access.response;
+  }
+
+  if (!hasAtLeastRole(access.requester?.role, "moderator")) {
+    return NextResponse.json(
+      { error: "Odemknout potvrzený zápis může jen moderátor nebo administrátor." },
+      { status: 403 },
+    );
+  }
+
+  const supabase = access.supabase;
+  const { error: deleteError } = await supabase
+    .from("match_confirmations")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("match_id", matchId)
+    .eq("side", side)
+    .is("deleted_at", null);
+
+  if (deleteError) {
+    return schemaError(deleteError.message);
+  }
+
+  const { error: updateError } = await supabase
+    .from("matches")
+    .update({ status: "awaiting_confirmation" })
+    .eq("id", matchId)
+    .is("deleted_at", null);
+
+  if (updateError) {
+    return schemaError(updateError.message);
+  }
+
+  return NextResponse.json({ status: "awaiting_confirmation" });
+}

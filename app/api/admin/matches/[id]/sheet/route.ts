@@ -337,6 +337,28 @@ function canViewerSeeSideInBlock(
   return reveals.has(revealKey(side, blockNumber));
 }
 
+async function confirmedSidesForMatch(supabase: ReturnType<typeof createSupabaseAdminClient>, matchId: string) {
+  const { data, error } = await supabase
+    .from("match_confirmations")
+    .select("side")
+    .eq("match_id", matchId)
+    .is("deleted_at", null)
+    .returns<Array<{ side: MatchSide }>>();
+
+  if (error) {
+    return { confirmedSides: new Set<MatchSide>(), error };
+  }
+
+  return { confirmedSides: new Set((data ?? []).map((confirmation) => confirmation.side)), error: null };
+}
+
+function lockedSideResponse() {
+  return NextResponse.json(
+    { error: "Tato strana už zápis potvrdila. Změny může znovu povolit jen moderátor nebo administrátor tlačítkem Odemknout." },
+    { status: 423 },
+  );
+}
+
 function isSlotForSide(side: MatchSide, slotCode: string): slotCode is SlotCode {
   return side === "home"
     ? homeSlotCodes.includes(slotCode as HomeSlotCode)
@@ -724,6 +746,21 @@ async function loadSheetData(
     ? achievements.data ?? []
     : (achievements.data ?? []).filter((achievement) => visiblePlayerIds.has(achievement.player_id));
   const statistics = buildStatistics(games.data ?? [], visibleGamePlayers);
+  const visiblePayloadPlayerIds = new Set<string>();
+  if (!viewer.canManageBothSides && revealSchemaReady) {
+    const viewerTeamSeasonId =
+      viewer.side === "home" ? match.home_team_id : viewer.side === "away" ? match.away_team_id : null;
+
+    (memberships.data ?? []).forEach((membership) => {
+      if (viewerTeamSeasonId && membership.team_season_id === viewerTeamSeasonId) {
+        visiblePayloadPlayerIds.add(membership.player_id);
+      }
+    });
+    visiblePlayerIds.forEach((playerId) => visiblePayloadPlayerIds.add(playerId));
+  }
+  const visiblePlayers = viewer.canManageBothSides || !revealSchemaReady
+    ? players.data ?? []
+    : (players.data ?? []).filter((player) => visiblePayloadPlayerIds.has(player.id));
   const teamsWithLogos = (teams.data ?? []).map((team) => ({
     ...team,
     logo_url: teamLogoUrl(team.slug, team.logo_url),
@@ -738,7 +775,7 @@ async function loadSheetData(
       teamSeasons: teamSeasons.data ?? [],
       teams: teamsWithLogos,
       memberships: memberships.data ?? [],
-      players: players.data ?? [],
+      players: visiblePlayers,
       games: sheetGames,
       achievements: visibleAchievements,
       slots: slots.data ?? [],
@@ -756,6 +793,7 @@ async function loadSheetData(
 async function updateMatchSummary(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   matchId: string,
+  confirmationSideToDelete?: MatchSide | null,
 ) {
   const { data: games, error: gamesError } = await supabase
     .from("match_games")
@@ -828,11 +866,15 @@ async function updateMatchSummary(
     );
   }
 
-  const { error: confirmationsDeleteError } = await supabase
+  let confirmationsDeleteQuery = supabase
     .from("match_confirmations")
     .update({ deleted_at: new Date().toISOString() })
     .eq("match_id", matchId)
     .is("deleted_at", null);
+  if (confirmationSideToDelete) {
+    confirmationsDeleteQuery = confirmationsDeleteQuery.eq("side", confirmationSideToDelete);
+  }
+  const { error: confirmationsDeleteError } = await confirmationsDeleteQuery;
 
   if (confirmationsDeleteError) {
     const schemaResponse = missingSheetSchemaResponse(confirmationsDeleteError.message);
@@ -860,6 +902,43 @@ async function handleAutosaveCell(
     const blockNumber = parseInteger(cell.block_number);
     if (!side || !blockNumber || blockNumber < 1 || blockNumber > 6) {
       return NextResponse.json({ error: "Blok nasazení není platný." }, { status: 400 });
+    }
+
+    const [matchResult, membershipsResult] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("id, home_team_id, away_team_id")
+        .eq("id", matchId)
+        .is("deleted_at", null)
+        .single(),
+      supabase
+        .from("team_memberships")
+        .select("team_season_id, player_id, member_role")
+        .is("deleted_at", null)
+        .is("left_on", null)
+        .returns<MembershipRow[]>(),
+    ]);
+
+    const lookupError = matchResult.error ?? membershipsResult.error;
+    if (lookupError || !matchResult.data) {
+      return NextResponse.json(
+        { error: lookupError?.message ?? "Zapas nebyl nalezen." },
+        { status: 500 },
+      );
+    }
+
+    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { preferTeamSide });
+    if (!viewer.canManageBothSides && viewer.side !== side) {
+      return NextResponse.json({ error: "Souperi muzete zobrazit jen vlastni nasazeni." }, { status: 403 });
+    }
+
+    const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
+    if (confirmationsLookupError) {
+      const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
+      return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
+    }
+    if (confirmedSides.has(side)) {
+      return lockedSideResponse();
     }
 
     const { data: existingReveal, error: revealLookupError } = await supabase
@@ -965,6 +1044,17 @@ async function handleAutosaveCell(
 
     const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { preferTeamSide });
     const canEditSide = (side: MatchSide) => viewer.canManageBothSides || viewer.side === side;
+    if (!viewer.canManageBothSides && !viewer.side) {
+      return NextResponse.json({ error: "Nemáte oprávnění upravit zápis tohoto zápasu." }, { status: 403 });
+    }
+    const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
+    if (confirmationsLookupError) {
+      const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
+      return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
+    }
+    if (!viewer.canManageBothSides && viewer.side && confirmedSides.has(viewer.side)) {
+      return lockedSideResponse();
+    }
     const existingGamePlayers = existingGame
       ? await supabase
           .from("match_game_players")
@@ -1105,7 +1195,11 @@ async function handleAutosaveCell(
       return NextResponse.json({ error: achievementsDeleteError.message }, { status: 500 });
     }
 
-    const summaryError = await updateMatchSummary(supabase, matchId);
+    const summaryError = await updateMatchSummary(
+      supabase,
+      matchId,
+      viewer.canManageBothSides ? null : viewer.side,
+    );
     if (summaryError) {
       return summaryError;
     }
@@ -1152,11 +1246,11 @@ async function handleAutosaveCell(
 
     const { data: assignedPlayer, error: assignedPlayerError } = await supabase
       .from("match_game_players")
-      .select("id")
+      .select("id, side")
       .eq("match_game_id", game.id)
       .eq("player_id", playerId)
       .is("deleted_at", null)
-      .maybeSingle();
+      .maybeSingle<{ id: string; side: MatchSide }>();
 
     if (assignedPlayerError) {
       return NextResponse.json({ error: assignedPlayerError.message }, { status: 500 });
@@ -1167,6 +1261,15 @@ async function handleAutosaveCell(
         { error: "Vybraný hráč není v této hře nasazený." },
         { status: 400 },
       );
+    }
+
+    const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
+    if (confirmationsLookupError) {
+      const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
+      return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
+    }
+    if (!hasAtLeastRole(access.requester?.role, "moderator") && confirmedSides.has(assignedPlayer.side)) {
+      return lockedSideResponse();
     }
 
     if (achievementType === "checkout_100_plus" && achievementCount > 3) {
