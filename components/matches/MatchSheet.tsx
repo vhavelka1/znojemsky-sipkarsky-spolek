@@ -266,11 +266,11 @@ export function MatchSheet({
   }
 
   function canEditLineup(side: MatchSide) {
-    return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side || viewerSide === null);
+    return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
   }
 
   function canEditLegs() {
-    return !readOnly && (canManageBothSides || !viewerSide || !lockedSideSet.has(viewerSide));
+    return !readOnly && (canManageBothSides || (viewerSide !== null && !lockedSideSet.has(viewerSide)));
   }
 
   function achievementCount(orderNumber: number, playerId: string, type: AchievementType) {
@@ -446,7 +446,7 @@ export function MatchSheet({
   function renderRevealControl(side: MatchSide, block: Block) {
     const revealed = isLineupRevealed(side, block.blockNumber);
     const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
-    const isOwnSide = canManageBothSides || viewerSide === null || viewerSide === side;
+    const isOwnSide = canManageBothSides || viewerSide === side;
     const buttonClass = isOwnSide
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"
       : "border border-slate-300 bg-slate-100 text-slate-600 hover:bg-slate-200";

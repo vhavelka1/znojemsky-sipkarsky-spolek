@@ -308,6 +308,10 @@ function viewerContextForMatch(
     };
   }
 
+  if (options.preferTeamSide) {
+    return { side: null, canManageBothSides: false };
+  }
+
   if (!requester || hasAtLeastRole(requester.role, "moderator")) {
     return { side: null, canManageBothSides: true };
   }
