@@ -330,7 +330,7 @@ function canViewerSeeSideInBlock(
   side: MatchSide,
   blockNumber: number | null,
 ) {
-  if (lineupsVisibleForAll || viewer.canManageBothSides || viewer.side === side || !revealSchemaReady || !blockNumber) {
+  if (lineupsVisibleForAll || viewer.canManageBothSides || viewer.side === side || !blockNumber) {
     return true;
   }
 
@@ -739,15 +739,15 @@ async function loadSheetData(
   });
 
   const matchScore = calculateMatchScore(sheetGames);
-  const visibleGamePlayers = lineupsVisibleForAll || viewer.canManageBothSides || !revealSchemaReady
+  const visibleGamePlayers = lineupsVisibleForAll || viewer.canManageBothSides
     ? relevantGamePlayers
     : relevantGamePlayers.filter((gamePlayer) => visiblePlayerIds.has(gamePlayer.player_id));
-  const visibleAchievements = lineupsVisibleForAll || viewer.canManageBothSides || !revealSchemaReady
+  const visibleAchievements = lineupsVisibleForAll || viewer.canManageBothSides
     ? achievements.data ?? []
     : (achievements.data ?? []).filter((achievement) => visiblePlayerIds.has(achievement.player_id));
   const statistics = buildStatistics(games.data ?? [], visibleGamePlayers);
   const visiblePayloadPlayerIds = new Set<string>();
-  if (!viewer.canManageBothSides && revealSchemaReady) {
+  if (!viewer.canManageBothSides) {
     const viewerTeamSeasonId =
       viewer.side === "home" ? match.home_team_id : viewer.side === "away" ? match.away_team_id : null;
 
@@ -758,7 +758,7 @@ async function loadSheetData(
     });
     visiblePlayerIds.forEach((playerId) => visiblePayloadPlayerIds.add(playerId));
   }
-  const visiblePlayers = viewer.canManageBothSides || !revealSchemaReady
+  const visiblePlayers = viewer.canManageBothSides
     ? players.data ?? []
     : (players.data ?? []).filter((player) => visiblePayloadPlayerIds.has(player.id));
   const teamsWithLogos = (teams.data ?? []).map((team) => ({

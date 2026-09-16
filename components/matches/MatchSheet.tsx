@@ -240,7 +240,6 @@ export function MatchSheet({
   homePlayers,
   homeTeamLogoUrl = null,
   isRevealSaving = false,
-  lineupRevealSchemaReady = true,
   lineupsVisibleForAll = false,
   lockedSides = [],
   onRevealLineup,
@@ -263,7 +262,7 @@ export function MatchSheet({
   }
 
   function canSeeLineup(side: MatchSide, blockNumber: number) {
-    return lineupsVisibleForAll || canManageBothSides || viewerSide === side || !lineupRevealSchemaReady || isLineupRevealed(side, blockNumber);
+    return lineupsVisibleForAll || canManageBothSides || viewerSide === side || isLineupRevealed(side, blockNumber);
   }
 
   function canEditLineup(side: MatchSide) {
