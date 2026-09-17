@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type RouteContext = {
   params: Promise<{
@@ -19,31 +17,6 @@ type UpdatePlayerBody = {
   email?: unknown;
   phone?: unknown;
 };
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace hráčů není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function optionalString(value: unknown) {
   if (typeof value !== "string") {
@@ -87,15 +60,15 @@ function getAdminClientOrError() {
   }
 }
 
-export async function PATCH(request: Request, context: RouteContext) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
+async function guardRequest(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  return guard.response;
+}
 
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
+export async function PATCH(request: Request, context: RouteContext) {
+  const guardResponse = await guardRequest(request);
+  if (guardResponse) {
+    return guardResponse;
   }
 
   const body = (await request.json().catch(() => null)) as UpdatePlayerBody | null;
@@ -137,15 +110,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   return NextResponse.json({ player: data });
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
+export async function DELETE(request: Request, context: RouteContext) {
+  const guardResponse = await guardRequest(request);
+  if (guardResponse) {
+    return guardResponse;
   }
 
   const { id } = await context.params;

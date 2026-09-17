@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type CreatePlayerBody = {
   display_name?: unknown;
@@ -25,31 +23,6 @@ type PlayerRow = {
   phone: string | null;
   created_at: string;
 };
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace hráčů není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function optionalString(value: unknown) {
   if (typeof value !== "string") {
@@ -93,15 +66,15 @@ function getAdminClientOrError() {
   }
 }
 
-export async function GET() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
+async function guardRequest(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  return guard.response;
+}
 
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
+export async function GET(request: Request) {
+  const guardResponse = await guardRequest(request);
+  if (guardResponse) {
+    return guardResponse;
   }
 
   const { supabase, response } = getAdminClientOrError();
@@ -143,14 +116,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
+  const guardResponse = await guardRequest(request);
+  if (guardResponse) {
+    return guardResponse;
   }
 
   const body = (await request.json().catch(() => null)) as CreatePlayerBody | null;
