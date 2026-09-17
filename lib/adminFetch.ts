@@ -2,14 +2,25 @@
 
 import { supabase } from "@/lib/supabase";
 
-export async function adminFetch(input: RequestInfo | URL, init?: RequestInit) {
+async function currentAccessToken() {
   const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  if (data.session?.access_token) {
+    return data.session.access_token;
+  }
+
+  const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }));
+  return refreshed.session?.access_token ?? null;
+}
+
+export async function adminFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const token = await currentAccessToken();
   const headers = new Headers(init?.headers);
 
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (!token) {
+    return Response.json({ error: "Pro tuto akci se nejprve přihlaste." }, { status: 401 });
   }
+
+  headers.set("Authorization", `Bearer ${token}`);
 
   return fetch(input, {
     ...init,

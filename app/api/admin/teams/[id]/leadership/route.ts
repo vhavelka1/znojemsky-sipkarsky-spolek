@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const mockRole = "admin";
@@ -17,8 +18,8 @@ type RouteContext = {
 
 function guardRequest() {
   if (
-    process.env.NODE_ENV !== "development" &&
-    process.env.ENABLE_DEV_ADMIN !== "true"
+    !isDevelopmentRuntime() &&
+    !isDevAdminEnabled()
   ) {
     return NextResponse.json(
       { error: "Administrace týmů není povolena." },

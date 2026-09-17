@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/appAuth";
+import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const mockRole = "admin";
@@ -23,8 +24,8 @@ function parseScheduledAt(value: unknown) {
 
 function guardRequest() {
   if (
-    process.env.NODE_ENV !== "development" &&
-    process.env.ENABLE_DEV_ADMIN !== "true"
+    !isDevelopmentRuntime() &&
+    !isDevAdminEnabled()
   ) {
     return NextResponse.json(
       { error: "Administrace zápasů není povolena." },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile, hasAtLeastRole, type AppRole } from "@/lib/appAuth";
+import { isDevAdminEnabled } from "@/lib/devAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export type MatchSide = "home" | "away";
@@ -23,7 +24,7 @@ export async function authorizeMatchAccess(
 ) {
   const supabase = createSupabaseAdminClient();
 
-  if (process.env.ENABLE_DEV_ADMIN === "true") {
+  if (isDevAdminEnabled()) {
     return { supabase, requester: null, match: null as MatchAccessRow | null, response: null };
   }
 

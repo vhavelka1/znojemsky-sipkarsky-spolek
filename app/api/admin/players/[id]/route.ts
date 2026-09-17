@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const mockRole = "admin";
@@ -21,8 +22,8 @@ type UpdatePlayerBody = {
 
 function developmentOnlyResponse() {
   if (
-    process.env.NODE_ENV === "development" ||
-    process.env.ENABLE_DEV_ADMIN === "true"
+    isDevelopmentRuntime() ||
+    isDevAdminEnabled()
   ) {
     return null;
   }

@@ -10,6 +10,7 @@ import {
   toSettingRows,
   writeLocalHomepageSettings,
 } from "@/lib/homepageSettings";
+import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const mockRole = "admin";
@@ -67,8 +68,8 @@ function rulesFileValidationError(file: File) {
 
 function developmentOnlyResponse() {
   if (
-    process.env.NODE_ENV === "development" ||
-    process.env.ENABLE_DEV_ADMIN === "true"
+    isDevelopmentRuntime() ||
+    isDevAdminEnabled()
   ) {
     return null;
   }
