@@ -266,6 +266,15 @@ function revealKey(side: MatchSide, blockNumber: number) {
   return `${side}:${blockNumber}`;
 }
 
+function normalizedTeamName(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("cs-CZ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function isMissingLineupRevealSchema(message: string) {
   return message.includes("match_block_lineup_reveals") || message.includes("schema cache");
 }
@@ -371,21 +380,48 @@ async function resolveRequestedTeamSide(
   const leadershipTeamSeasonIds = leadershipMemberships.map((membership) => membership.team_season_id);
   const { data: leadershipTeamSeasons, error: teamSeasonError } = await supabase
     .from("team_seasons")
-    .select("id, team_id")
+    .select("id, team_id, display_name")
     .in("id", leadershipTeamSeasonIds)
     .is("deleted_at", null)
-    .returns<Array<{ id: string; team_id: string }>>();
+    .returns<Array<{ id: string; team_id: string; display_name: string | null }>>();
 
   if (teamSeasonError) return null;
 
   const leadershipTeamIds = new Set((leadershipTeamSeasons ?? []).map((teamSeason) => teamSeason.team_id));
+  const allTeamIds = Array.from(
+    new Set([
+      ...matchTeamSeasons.map((teamSeason) => teamSeason.team_id),
+      ...(leadershipTeamSeasons ?? []).map((teamSeason) => teamSeason.team_id),
+    ]),
+  );
+  const { data: teams } = allTeamIds.length > 0
+    ? await supabase
+        .from("teams")
+        .select("id, name")
+        .in("id", allTeamIds)
+        .is("deleted_at", null)
+        .returns<Array<{ id: string; name: string }>>()
+    : { data: [] as Array<{ id: string; name: string }> };
+  const teamNameById = new Map((teams ?? []).map((team) => [team.id, team.name]));
+  const leadershipNames = new Set(
+    (leadershipTeamSeasons ?? [])
+      .flatMap((teamSeason) => [teamSeason.display_name, teamNameById.get(teamSeason.team_id)])
+      .map(normalizedTeamName)
+      .filter(Boolean),
+  );
+  const matchesLeadershipTeam = (teamSeason: TeamSeasonRow) => {
+    if (leadershipTeamIds.has(teamSeason.team_id)) return true;
+    const names = [teamSeason.display_name, teamNameById.get(teamSeason.team_id)].map(normalizedTeamName);
+    return names.some((name) => name && leadershipNames.has(name));
+  };
+
   if (requestedTeamSeason && requestedSide) {
-    return leadershipTeamIds.has(requestedTeamSeason.team_id) ? requestedSide : null;
+    return matchesLeadershipTeam(requestedTeamSeason) ? requestedSide : null;
   }
 
   const matchingSides = matchTeamSeasons
     .map((teamSeason): MatchSide | null => {
-      if (!leadershipTeamIds.has(teamSeason.team_id)) return null;
+      if (!matchesLeadershipTeam(teamSeason)) return null;
       if (teamSeason.id === match.home_team_id) return "home";
       if (teamSeason.id === match.away_team_id) return "away";
       return null;
