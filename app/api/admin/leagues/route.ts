@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireAdmin, requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type CreateLeagueBody = {
   action?: "create_league";
@@ -23,31 +21,6 @@ type AssignTeamBody = {
 };
 
 type LeagueRequestBody = CreateLeagueBody | CreateGroupBody | AssignTeamBody;
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace lig není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -77,20 +50,9 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
-}
-
-export async function GET() {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+export async function GET(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) return guard.response;
 
   const { supabase, response } = getAdminClientOrError();
   if (response) {
@@ -166,10 +128,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const body = (await request.json().catch(() => null)) as LeagueRequestBody | null;
   const { supabase, response } = getAdminClientOrError();

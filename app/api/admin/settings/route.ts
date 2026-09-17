@@ -10,10 +10,9 @@ import {
   toSettingRows,
   writeLocalHomepageSettings,
 } from "@/lib/homepageSettings";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
-const mockRole = "admin";
 const competitionDocumentsBucket = "competition-documents";
 const maxRulesFileSize = 20 * 1024 * 1024;
 const allowedRulesMimeTypes = new Set([
@@ -66,31 +65,6 @@ function rulesFileValidationError(file: File) {
   return null;
 }
 
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
-
 function getAdminClientOrError() {
   try {
     return { supabase: createSupabaseAdminClient(), response: null };
@@ -110,12 +84,9 @@ function getAdminClientOrError() {
   }
 }
 
-export async function GET() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) return developmentResponse;
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) return adminResponse;
+export async function GET(request: Request) {
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const { supabase, response } = getAdminClientOrError();
   if (response) return response;
@@ -146,11 +117,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) return developmentResponse;
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) return adminResponse;
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const { supabase, response } = getAdminClientOrError();
   if (response) return response;
@@ -183,11 +151,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) return developmentResponse;
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) return adminResponse;
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const { supabase, response } = getAdminClientOrError();
   if (response) return response;

@@ -1,32 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type RouteContext = {
   params: Promise<{
     id: string;
   }>;
 };
-
-function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
-}
 
 function getAdminClientOrError() {
   try {
@@ -42,20 +22,9 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
-}
-
-export async function POST(_request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+export async function POST(request: Request, context: RouteContext) {
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const { id } = await context.params;
   const { supabase, response } = getAdminClientOrError();

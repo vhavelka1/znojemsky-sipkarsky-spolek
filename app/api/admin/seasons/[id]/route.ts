@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type UpdateSeasonBody = {
   name?: unknown;
@@ -16,25 +15,6 @@ type RouteContext = {
     id: string;
   }>;
 };
-
-function developmentOnlyResponse() {
-  if (process.env.NODE_ENV === "development") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Development-only admin API route." },
-    { status: 404 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json({ error: "Admin role required." }, { status: 403 });
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -86,20 +66,9 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
-}
-
 export async function PATCH(request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const body = (await request.json().catch(() => null)) as UpdateSeasonBody | null;
   const name = requiredString(body?.name);
@@ -147,11 +116,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   return NextResponse.json({ season: data });
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+export async function DELETE(request: Request, context: RouteContext) {
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const { id } = await context.params;
   const { supabase, response } = getAdminClientOrError();

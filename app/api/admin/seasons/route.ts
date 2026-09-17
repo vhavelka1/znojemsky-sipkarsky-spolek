@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type CreateSeasonBody = {
   name?: unknown;
@@ -28,31 +26,6 @@ type MembershipRow = {
   member_role: string;
   team_season_id: string;
 };
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace sezón není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -111,15 +84,6 @@ function getAdminClientOrError() {
       ),
     };
   }
-}
-
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
 }
 
 async function copyActiveSeasonRosters(
@@ -245,11 +209,9 @@ async function copyActiveSeasonRosters(
   return { teams: copiedTeams, memberships: copiedMemberships };
 }
 
-export async function GET() {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+export async function GET(request: Request) {
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const { supabase, response } = getAdminClientOrError();
   if (response) {
@@ -272,10 +234,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const body = (await request.json().catch(() => null)) as CreateSeasonBody | null;
   const name = requiredString(body?.name);
