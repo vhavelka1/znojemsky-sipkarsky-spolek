@@ -269,6 +269,10 @@ export function MatchSheet({
     return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
   }
 
+  function canEditAchievements(side: MatchSide) {
+    return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide !== null);
+  }
+
   function canEditLegs() {
     return !readOnly && (canManageBothSides || (viewerSide !== null && !lockedSideSet.has(viewerSide)));
   }
@@ -288,7 +292,7 @@ export function MatchSheet({
     const playerId = (side === "home" ? game.home_player_ids : game.away_player_ids)[0] ?? "";
     const value = playerId ? achievementCount(game.order_number, playerId, type) : 0;
 
-    if (readOnly || !canEditLineup(side)) return <span className="block text-center text-xs font-bold text-[var(--brand-navy)]">{value || "-"}</span>;
+    if (readOnly || !canEditAchievements(side)) return <span className="block text-center text-xs font-bold text-[var(--brand-navy)]">{value || "-"}</span>;
 
     return (
       <input
@@ -445,7 +449,7 @@ export function MatchSheet({
 
   function renderRevealControl(side: MatchSide, block: Block) {
     const revealed = isLineupRevealed(side, block.blockNumber);
-    const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
+    const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide !== null);
     const isOwnSide = canManageBothSides || viewerSide === side;
     const buttonClass = isOwnSide
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"

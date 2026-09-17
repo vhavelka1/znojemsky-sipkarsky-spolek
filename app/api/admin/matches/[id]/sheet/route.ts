@@ -1062,8 +1062,8 @@ async function handleAutosaveCell(
       ? await forcedTeamSideForRequest(supabase, access.requester, matchResult.data, requestedTeamSeasonId)
       : null;
     const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
-    if (!viewer.canManageBothSides && viewer.side !== side) {
-      return NextResponse.json({ error: "Souperi muzete zobrazit jen vlastni nasazeni." }, { status: 403 });
+    if (!viewer.canManageBothSides && !viewer.side) {
+      return NextResponse.json({ error: "Nemate opravneni zobrazit nasazeni tohoto zapasu." }, { status: 403 });
     }
 
     const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);

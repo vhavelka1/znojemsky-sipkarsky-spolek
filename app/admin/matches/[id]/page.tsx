@@ -483,6 +483,15 @@ export default function AdminMatchSheetPage({
   }
 
   async function handleRevealLineup(side: MatchSide, blockNumber: number) {
+    if (
+      payload.viewer.side &&
+      !payload.viewer.canManageBothSides &&
+      payload.viewer.side !== side &&
+      !window.confirm("Opravdu chces zobrazit souperovu soupisku? Tu by mel zverejnit souper")
+    ) {
+      return;
+    }
+
     setRevealingLineup({ side, blockNumber });
     setError(null);
 
