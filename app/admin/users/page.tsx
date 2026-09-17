@@ -147,7 +147,11 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
-    const body = (await response.json().catch(() => ({}))) as { user?: ManagedUser; error?: string };
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      invitationSent?: boolean;
+      user?: ManagedUser;
+    };
 
     if (!response.ok || !body.user) {
       setError(body.error ?? "Uživatele se nepodařilo vytvořit.");
@@ -159,7 +163,7 @@ export default function AdminUsersPage() {
     setDrafts((current) => ({ ...current, [createdUser.id]: createdUser }));
     setForm({ email: "", display_name: "", player_id: "", app_role: "player" });
     setIsCreateOpen(false);
-    setMessage("Pozvánka byla odeslána.");
+    setMessage(body.invitationSent ? "Pozvánka byla odeslána." : "Existující přihlášení bylo propojeno s webem.");
   }
 
   async function saveUser(userId: string) {

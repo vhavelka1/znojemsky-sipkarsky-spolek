@@ -4,6 +4,7 @@ import { passwordSetupRedirectTo } from "@/lib/siteUrl";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 const allowedRoles = new Set(["player", "moderator", "admin"]);
+const authUsersPageSize = 1000;
 
 type PlayerRow = {
   id: string;
@@ -44,6 +45,38 @@ function schemaError(error: { message?: string } | null | undefined) {
   return message.includes("user_profiles")
     ? "Nejprve spusťte SQL soubor supabase/apply_user_profiles_in_dashboard.sql v Supabase SQL Editoru."
     : message;
+}
+
+async function findAuthUserByEmail(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  email: string,
+) {
+  const normalizedEmail = email.toLowerCase();
+
+  for (let page = 1; page < 100; page += 1) {
+    const result = await supabase.auth.admin.listUsers({
+      page,
+      perPage: authUsersPageSize,
+    });
+
+    if (result.error) {
+      return { error: result.error, user: null };
+    }
+
+    const user = result.data.users.find(
+      (item) => item.email?.toLowerCase() === normalizedEmail,
+    );
+
+    if (user) {
+      return { error: null, user };
+    }
+
+    if (result.data.users.length < authUsersPageSize) {
+      break;
+    }
+  }
+
+  return { error: null, user: null };
 }
 
 export async function GET() {
@@ -171,24 +204,57 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Zadejte zobrazované jméno." }, { status: 400 });
   }
 
-  const invite = await supabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: passwordSetupRedirectTo(request),
-  });
-
-  if (invite.error || !invite.data.user) {
-    return NextResponse.json({ error: invite.error?.message ?? "Uživatele se nepodařilo pozvat." }, { status: 500 });
+  const existingAuthUser = await findAuthUserByEmail(supabase, email);
+  if (existingAuthUser.error) {
+    return NextResponse.json({ error: existingAuthUser.error.message }, { status: 500 });
   }
 
-  const { data: profile, error } = await supabase
+  let authUser = existingAuthUser.user;
+  let invitationSent = false;
+
+  if (!authUser) {
+    const invite = await supabase.auth.admin.inviteUserByEmail(email, {
+      redirectTo: passwordSetupRedirectTo(request),
+    });
+
+    if (invite.error || !invite.data.user) {
+      return NextResponse.json({ error: invite.error?.message ?? "Uživatele se nepodařilo pozvat." }, { status: 500 });
+    }
+
+    authUser = invite.data.user;
+    invitationSent = true;
+  }
+
+  const profilePayload = {
+    user_id: authUser.id,
+    player_id: playerId || null,
+    display_name: displayName,
+    app_role: appRole,
+    is_active: true,
+    must_use_mfa: false,
+    deleted_at: null,
+  };
+
+  const { data: currentProfile, error: currentProfileError } = await supabase
     .from("user_profiles")
-    .insert({
-      user_id: invite.data.user.id,
-      player_id: playerId || null,
-      display_name: displayName,
-      app_role: appRole,
-      is_active: true,
-      must_use_mfa: false,
-    })
+    .select("id")
+    .eq("user_id", authUser.id)
+    .maybeSingle();
+
+  if (currentProfileError) {
+    return NextResponse.json({ error: schemaError(currentProfileError) }, { status: 500 });
+  }
+
+  const profileQuery = currentProfile
+    ? supabase
+        .from("user_profiles")
+        .update(profilePayload)
+        .eq("id", currentProfile.id)
+    : supabase
+        .from("user_profiles")
+        .insert(profilePayload);
+
+  const { data: profile, error } = await profileQuery
     .select("id, user_id, player_id, display_name, app_role, is_active, created_at")
     .single();
 
@@ -197,7 +263,7 @@ export async function POST(request: Request) {
   }
 
   if (playerId) {
-    await supabase.from("players").update({ user_id: invite.data.user.id, role: appRole }).eq("id", playerId);
+    await supabase.from("players").update({ user_id: authUser.id, role: appRole }).eq("id", playerId);
   }
 
   return NextResponse.json({
@@ -212,5 +278,6 @@ export async function POST(request: Request) {
       createdAt: profile.created_at,
       teamNames: [],
     },
+    invitationSent,
   });
 }
