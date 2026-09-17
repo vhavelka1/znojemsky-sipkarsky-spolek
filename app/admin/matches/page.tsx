@@ -171,6 +171,7 @@ export default function AdminMatchesPage() {
   const [matchFilterSeasonId, setMatchFilterSeasonId] = useState("");
   const [matchFilterLeagueId, setMatchFilterLeagueId] = useState("");
   const [matchFilterGroupId, setMatchFilterGroupId] = useState("");
+  const [matchFilterTeamId, setMatchFilterTeamId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingTeams, setIsPreparingTeams] = useState(false);
@@ -209,12 +210,49 @@ export default function AdminMatchesPage() {
   const listGroupOptions = matchFilterLeagueId
     ? groups.filter((group) => group.league_id === matchFilterLeagueId)
     : groups;
-  const visibleMatches = matches.filter((match) => {
-    if (matchFilterSeasonId && match.season_id !== matchFilterSeasonId) return false;
-    if (matchFilterLeagueId && match.league_id !== matchFilterLeagueId) return false;
-    if (matchFilterGroupId && match.group_id !== matchFilterGroupId) return false;
-    return true;
-  });
+  const listTeamOptions = teamSeasons
+    .filter((teamSeason) => {
+      if (matchFilterSeasonId && teamSeason.season_id !== matchFilterSeasonId) return false;
+
+      if (!matchFilterLeagueId && !matchFilterGroupId) return true;
+
+      const teamAssignmentGroupIds = assignments
+        .filter((assignment) => assignment.team_season_id === teamSeason.id)
+        .map((assignment) => assignment.league_group_id);
+
+      if (matchFilterGroupId) {
+        return teamAssignmentGroupIds.includes(matchFilterGroupId);
+      }
+
+      return teamAssignmentGroupIds.some(
+        (groupId) => groupById.get(groupId)?.league_id === matchFilterLeagueId,
+      );
+    })
+    .sort((firstTeam, secondTeam) =>
+      getTeamSeasonLabel(firstTeam.id).localeCompare(
+        getTeamSeasonLabel(secondTeam.id),
+        "cs",
+      ),
+    );
+  const visibleMatches = matches
+    .filter((match) => {
+      if (matchFilterSeasonId && match.season_id !== matchFilterSeasonId) return false;
+      if (matchFilterLeagueId && match.league_id !== matchFilterLeagueId) return false;
+      if (matchFilterGroupId && match.group_id !== matchFilterGroupId) return false;
+      if (
+        matchFilterTeamId &&
+        match.home_team_id !== matchFilterTeamId &&
+        match.away_team_id !== matchFilterTeamId
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .sort(
+      (firstMatch, secondMatch) =>
+        new Date(firstMatch.scheduled_at).getTime() -
+        new Date(secondMatch.scheduled_at).getTime(),
+    );
 
   const filteredLeagues = leagues.filter(
     (league) => league.season_id === matchForm.season_id,
@@ -318,6 +356,7 @@ export default function AdminMatchesPage() {
         setMatchFilterSeasonId(defaultSeasonId);
         setMatchFilterLeagueId("");
         setMatchFilterGroupId("");
+        setMatchFilterTeamId("");
         setIsLoading(false);
       })
       .catch((loadError) => {
@@ -506,7 +545,7 @@ export default function AdminMatchesPage() {
       ) : (
         <>
           <section className="rounded-lg bg-white p-6 shadow-sm">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label className="flex flex-col gap-1 text-sm font-medium">
                 Sezóna
                 <select
@@ -516,6 +555,7 @@ export default function AdminMatchesPage() {
                     setMatchFilterSeasonId(event.target.value);
                     setMatchFilterLeagueId("");
                     setMatchFilterGroupId("");
+                    setMatchFilterTeamId("");
                   }}
                 >
                   <option value="">Všechny sezóny</option>
@@ -535,6 +575,7 @@ export default function AdminMatchesPage() {
                   onChange={(event) => {
                     setMatchFilterLeagueId(event.target.value);
                     setMatchFilterGroupId("");
+                    setMatchFilterTeamId("");
                   }}
                 >
                   <option value="">Všechny ligy</option>
@@ -550,12 +591,30 @@ export default function AdminMatchesPage() {
                 <select
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
                   value={matchFilterGroupId}
-                  onChange={(event) => setMatchFilterGroupId(event.target.value)}
+                  onChange={(event) => {
+                    setMatchFilterGroupId(event.target.value);
+                    setMatchFilterTeamId("");
+                  }}
                 >
                   <option value="">Všechny skupiny</option>
                   {listGroupOptions.map((group) => (
                     <option key={group.id} value={group.id}>
                       {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Tým
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-700"
+                  value={matchFilterTeamId}
+                  onChange={(event) => setMatchFilterTeamId(event.target.value)}
+                >
+                  <option value="">Všechny týmy</option>
+                  {listTeamOptions.map((teamSeason) => (
+                    <option key={teamSeason.id} value={teamSeason.id}>
+                      {getTeamSeasonLabel(teamSeason.id)}
                     </option>
                   ))}
                 </select>
