@@ -385,9 +385,27 @@ export default function AdminMatchSheetPage({
 
     setIsSubmittingReschedule(true);
     setError(null);
-    setRescheduleNotice({ type: "info", text: "Odesílám žádost o změnu termínu..." });
+    setRescheduleNotice({ type: "info", text: teamView ? "Odesílám žádost o změnu termínu..." : "Ukládám nový termín zápasu..." });
 
     try {
+      if (!teamView) {
+        const response = await adminFetch(`/api/admin/matches/${payload.match.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "change_scheduled_at",
+            scheduled_at: requestedScheduledAt.toISOString(),
+          }),
+        });
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(body.error ?? "Termín zápasu se nepodařilo změnit.");
+        setRescheduleForm(emptyRescheduleForm);
+        setIsRescheduleFormOpen(false);
+        await loadSheet();
+        setRescheduleNotice({ type: "success", text: "Termín zápasu byl změněn." });
+        return;
+      }
+
       const response = await adminFetch("/api/admin/match-reschedule-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -836,7 +854,7 @@ export default function AdminMatchSheetPage({
             ) : null}
           </div>
           <Button
-            disabled={Boolean(pendingRescheduleRequest)}
+            disabled={teamView && Boolean(pendingRescheduleRequest)}
             onClick={openRescheduleForm}
             type="button"
             variant="secondary"
@@ -871,23 +889,25 @@ export default function AdminMatchSheetPage({
                 onChange={(event) => setRescheduleForm((current) => ({ ...current, requested_scheduled_at: event.target.value }))}
               />
             </label>
-            <label className="flex flex-col gap-1 text-sm font-bold text-[var(--brand-navy)]">
-              Důvod
-              <textarea
-                className="min-h-24 rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--brand-blue)]"
-                required
-                value={rescheduleForm.reason}
-                onChange={(event) => setRescheduleForm((current) => ({ ...current, reason: event.target.value }))}
-              />
-            </label>
+            {teamView ? (
+              <label className="flex flex-col gap-1 text-sm font-bold text-[var(--brand-navy)]">
+                Důvod
+                <textarea
+                  className="min-h-24 rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--brand-blue)]"
+                  required
+                  value={rescheduleForm.reason}
+                  onChange={(event) => setRescheduleForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </label>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
-                disabled={!rescheduleForm.requested_scheduled_at || !rescheduleForm.reason.trim()}
+                disabled={!rescheduleForm.requested_scheduled_at || (teamView && !rescheduleForm.reason.trim())}
                 isLoading={isSubmittingReschedule}
                 onClick={() => void handleRescheduleRequest()}
                 type="button"
               >
-                {isSubmittingReschedule ? "Odesílám..." : "Odeslat žádost"}
+                {isSubmittingReschedule ? (teamView ? "Odesílám..." : "Ukládám...") : teamView ? "Odeslat žádost" : "Uložit termín"}
               </Button>
               <Button
                 disabled={isSubmittingReschedule}

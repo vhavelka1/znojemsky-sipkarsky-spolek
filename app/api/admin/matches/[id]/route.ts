@@ -12,7 +12,14 @@ type RouteContext = {
 
 type ResetMatchBody = {
   action?: unknown;
+  scheduled_at?: unknown;
 };
+
+function parseScheduledAt(value: unknown) {
+  if (typeof value !== "string") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 function guardRequest() {
   if (
@@ -60,17 +67,39 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const body = (await request.json().catch(() => null)) as ResetMatchBody | null;
-  if (body?.action !== "reset_match") {
+  if (body?.action !== "reset_match" && body?.action !== "change_scheduled_at") {
     return NextResponse.json({ error: "Nepodporovaná akce." }, { status: 400 });
   }
 
-  const auth = await requireRole(request, "admin");
+  const auth = await requireRole(request, body.action === "change_scheduled_at" ? "moderator" : "admin");
   if (auth.response) {
     return auth.response;
   }
 
   const { id } = await context.params;
   const supabase = createSupabaseAdminClient();
+
+  if (body.action === "change_scheduled_at") {
+    const scheduledAt = parseScheduledAt(body.scheduled_at);
+    if (!scheduledAt) {
+      return NextResponse.json({ error: "Vyberte platnĂ˝ novĂ˝ termĂ­n." }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from("matches")
+      .update({ scheduled_at: scheduledAt })
+      .eq("id", id)
+      .is("deleted_at", null)
+      .select("id, scheduled_at")
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ match: data });
+  }
+
   const deletedAt = new Date().toISOString();
 
   const { data: match, error: matchError } = await supabase
