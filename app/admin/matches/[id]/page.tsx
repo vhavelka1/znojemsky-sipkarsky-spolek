@@ -253,9 +253,12 @@ export default function AdminMatchSheetPage({
   const [unlockingSide, setUnlockingSide] = useState<MatchSide | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rescheduleNotice, setRescheduleNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(!teamView);
+  const [authRefreshKey, setAuthRefreshKey] = useState(0);
   const autosaveRequestId = useRef(0);
   const didAutoOpenRescheduleForm = useRef(false);
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAccessToken = useRef<string | null>(null);
 
   const playerById = useMemo(() => new Map(payload.players.map((player) => [player.id, player])), [payload.players]);
   const teamById = useMemo(() => new Map(payload.teams.map((team) => [team.id, team])), [payload.teams]);
@@ -508,11 +511,46 @@ export default function AdminMatchSheetPage({
   }
 
   useEffect(() => {
-    // Initial data is loaded when the dynamic match route changes.
+    if (!teamView) {
+      return;
+    }
+
+    let isMounted = true;
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!isMounted) return;
+        lastAccessToken.current = data.session?.access_token ?? null;
+        setIsAuthReady(true);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setIsAuthReady(true);
+      });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const accessToken = session?.access_token ?? null;
+      if (accessToken !== lastAccessToken.current) {
+        lastAccessToken.current = accessToken;
+        setAuthRefreshKey((key) => key + 1);
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => {
+      isMounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [teamView]);
+
+  useEffect(() => {
+    if (teamView && !isAuthReady) return;
+    // Initial data is loaded when the dynamic match route or auth session changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSheet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchId]);
+  }, [matchId, sheetApiUrl, teamView, isAuthReady, authRefreshKey]);
 
   useEffect(() => {
     const channel = supabase

@@ -391,3 +391,28 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) return guard.response;
+
+  const url = new URL(request.url);
+  const id = requiredString(url.searchParams.get("id"));
+
+  if (!id) {
+    return NextResponse.json({ error: "Vyberte zadost ke smazani." }, { status: 400 });
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("match_reschedule_requests")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null);
+
+  if (error) {
+    return schemaError(error.message);
+  }
+
+  return NextResponse.json({ ok: true });
+}

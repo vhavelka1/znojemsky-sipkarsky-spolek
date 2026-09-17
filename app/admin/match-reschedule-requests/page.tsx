@@ -61,7 +61,7 @@ export default function AdminMatchRescheduleRequestsPage() {
   const [requests, setRequests] = useState<MatchRescheduleRequest[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [processingRequest, setProcessingRequest] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
+  const [processingRequest, setProcessingRequest] = useState<{ id: string; action: "approve" | "reject" | "delete" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -109,6 +109,33 @@ export default function AdminMatchRescheduleRequestsPage() {
       loadRequests();
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : "Žádost se nepodařilo zpracovat.");
+    } finally {
+      setProcessingRequest(null);
+    }
+  };
+
+  const deleteRequest = async (id: string) => {
+    if (!window.confirm("Opravdu smazat tuto zadost o zmenu terminu?")) return;
+
+    setProcessingRequest({ id, action: "delete" });
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await adminFetch(`/api/admin/match-reschedule-requests?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok) {
+        setError(body.error ?? "Zadost se nepodarilo smazat.");
+        return;
+      }
+
+      setMessage("Zadost byla smazana.");
+      loadRequests();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Zadost se nepodarilo smazat.");
     } finally {
       setProcessingRequest(null);
     }
@@ -165,13 +192,21 @@ export default function AdminMatchRescheduleRequestsPage() {
                     {request.review_note ? (
                       <p className="mt-3 text-sm font-bold text-[var(--admin-muted)]">Poznámka: {request.review_note}</p>
                     ) : null}
-                    <div className="mt-4">
+                    <div className="mt-4 flex flex-wrap gap-2">
                       <Link
                         className="inline-flex rounded-xl border border-[var(--admin-border)] px-4 py-2 text-sm font-bold text-[var(--brand-navy)] hover:bg-[#F4F8FF]"
                         href={`/admin/matches/${request.match_id}`}
                       >
                         Otevřít zápis
                       </Link>
+                      <Button
+                        disabled={Boolean(processingRequest)}
+                        isLoading={processingRequest?.id === request.id && processingRequest.action === "delete"}
+                        onClick={() => deleteRequest(request.id)}
+                        variant="danger"
+                      >
+                        {processingRequest?.id === request.id && processingRequest.action === "delete" ? "Mazu..." : "Smazat"}
+                      </Button>
                     </div>
                   </div>
 
