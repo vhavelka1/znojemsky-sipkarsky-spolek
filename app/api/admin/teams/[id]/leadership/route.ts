@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type LeadershipBody = {
   season_id?: unknown;
@@ -16,25 +14,9 @@ type RouteContext = {
   }>;
 };
 
-function guardRequest() {
-  if (
-    !isDevelopmentRuntime() &&
-    !isDevAdminEnabled()
-  ) {
-    return NextResponse.json(
-      { error: "Administrace týmů není povolena." },
-      { status: 403 },
-    );
-  }
-
-  if (mockRole !== "admin") {
-    return NextResponse.json(
-      { error: "Pro tuto akci je potřeba role administrátora." },
-      { status: 403 },
-    );
-  }
-
-  return null;
+async function guardRequest(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  return guard.response;
 }
 
 function optionalUuid(value: unknown) {
@@ -78,7 +60,7 @@ function getAdminClientOrError() {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
+  const guardResponse = await guardRequest(request);
   if (guardResponse) {
     return guardResponse;
   }

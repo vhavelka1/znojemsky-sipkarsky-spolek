@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type UpdateTeamBody = {
   name?: unknown;
@@ -14,31 +12,6 @@ type RouteContext = {
     id: string;
   }>;
 };
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace týmů není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -87,17 +60,13 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
+async function guardRequest(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  return guard.response;
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
+  const guardResponse = await guardRequest(request);
   if (guardResponse) {
     return guardResponse;
   }
@@ -134,8 +103,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   return NextResponse.json({ team: data });
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
-  const guardResponse = guardRequest();
+export async function DELETE(request: Request, context: RouteContext) {
+  const guardResponse = await guardRequest(request);
   if (guardResponse) {
     return guardResponse;
   }

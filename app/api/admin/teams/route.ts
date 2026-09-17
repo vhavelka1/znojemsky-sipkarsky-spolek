@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type CreateTeamBody = {
   name?: unknown;
@@ -38,31 +36,6 @@ function withBundledLogo<T extends { slug: string; logo_url?: string | null }>(
     ...team,
     logo_url: team.logo_url ?? bundledLogoUrls[team.slug] ?? null,
   };
-}
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace týmů není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
 }
 
 function requiredString(value: unknown) {
@@ -113,17 +86,13 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
+async function guardRequest(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  return guard.response;
 }
 
-export async function GET() {
-  const guardResponse = guardRequest();
+export async function GET(request: Request) {
+  const guardResponse = await guardRequest(request);
   if (guardResponse) {
     return guardResponse;
   }
@@ -244,14 +213,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guardResponse = guardRequest();
+  const guardResponse = await guardRequest(request);
   if (guardResponse) {
     return guardResponse;
-  }
-
-  const adminResponse = mockAdminResponse();
-  if (adminResponse) {
-    return adminResponse;
   }
 
   const body = (await request.json().catch(() => null)) as CreateTeamBody | null;
