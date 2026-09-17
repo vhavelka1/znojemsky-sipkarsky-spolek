@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDevAdminEnabled, isDevelopmentRuntime } from "@/lib/devAdmin";
+import { requireAdmin, requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-
-const mockRole = "admin";
 
 type CreateMatchBody = {
   action?: "create_match";
@@ -53,31 +51,6 @@ type ExistingTeamSeason = {
   team_id: string;
   season_id: string;
 };
-
-function developmentOnlyResponse() {
-  if (
-    isDevelopmentRuntime() ||
-    isDevAdminEnabled()
-  ) {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Administrace zápasů není povolena." },
-    { status: 403 },
-  );
-}
-
-function mockAdminResponse() {
-  if (mockRole === "admin") {
-    return null;
-  }
-
-  return NextResponse.json(
-    { error: "Pro tuto akci je potřeba role administrátora." },
-    { status: 403 },
-  );
-}
 
 function requiredString(value: unknown) {
   if (typeof value !== "string") {
@@ -135,15 +108,6 @@ function getAdminClientOrError() {
   }
 }
 
-function guardRequest() {
-  const developmentResponse = developmentOnlyResponse();
-  if (developmentResponse) {
-    return developmentResponse;
-  }
-
-  return mockAdminResponse();
-}
-
 function missingMatchesSchemaResponse(errorMessage: string) {
   if (
     errorMessage.includes("public.matches") ||
@@ -162,11 +126,9 @@ function missingMatchesSchemaResponse(errorMessage: string) {
   return null;
 }
 
-export async function GET() {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+export async function GET(request: Request) {
+  const guard = await requireModeratorOrAdmin(request);
+  if (guard.response) return guard.response;
 
   const { supabase, response } = getAdminClientOrError();
   if (response) {
@@ -257,10 +219,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guardResponse = guardRequest();
-  if (guardResponse) {
-    return guardResponse;
-  }
+  const guard = await requireAdmin(request);
+  if (guard.response) return guard.response;
 
   const body = (await request.json().catch(() => null)) as MatchRequestBody | null;
   const { supabase, response } = getAdminClientOrError();

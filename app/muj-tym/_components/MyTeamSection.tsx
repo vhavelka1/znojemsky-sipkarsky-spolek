@@ -1001,7 +1001,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
           </div>
 
           <div className="border-b border-[#D8E4F2] bg-[#F4F8FF] p-4">
-            <div className="grid gap-3 md:grid-cols-[220px_1fr_220px_220px]">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.2fr)_minmax(240px,1fr)_180px_180px]">
               <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                 Sezóna
                 <select
