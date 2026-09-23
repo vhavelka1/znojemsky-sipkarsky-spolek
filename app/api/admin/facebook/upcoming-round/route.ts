@@ -10,8 +10,9 @@ export async function GET(request: NextRequest) {
     const payload = await loadFacebookUpcomingRound({
       seasonId: request.nextUrl.searchParams.get("season_id"),
       leagueId: request.nextUrl.searchParams.get("league_id"),
-      groupId: request.nextUrl.searchParams.get("group_id"),
       roundNumber: request.nextUrl.searchParams.get("round_number"),
+      postType: request.nextUrl.searchParams.get("post_type"),
+      origin: request.nextUrl.origin,
     });
 
     return NextResponse.json(payload);

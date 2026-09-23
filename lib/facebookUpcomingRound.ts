@@ -1,5 +1,9 @@
+import { buildLeagueGroupStandings, isFinishedMatch, type MatchStatus, type StandingRow } from "@/lib/leagueStandings";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
+
+export type FacebookPostType = "upcoming" | "results";
+export type FacebookImageKind = "upcoming_schedule" | "results" | "standings";
 
 export type FacebookSeason = {
   id: string;
@@ -32,8 +36,29 @@ export type FacebookRoundMatch = {
   id: string;
   roundNumber: number;
   scheduledAt: string;
+  playedAt: string | null;
+  status: MatchStatus;
   homeTeam: FacebookTeam;
   awayTeam: FacebookTeam;
+  result: {
+    homePoints: number;
+    awayPoints: number;
+  } | null;
+};
+
+export type FacebookGroupRound = {
+  group: FacebookGroup;
+  matches: FacebookRoundMatch[];
+  byes: FacebookTeam[];
+  standings: StandingRow[];
+};
+
+export type FacebookPostImage = {
+  id: string;
+  kind: FacebookImageKind;
+  groupId: string;
+  groupName: string;
+  label: string;
 };
 
 export type FacebookRoundPayload = {
@@ -42,14 +67,19 @@ export type FacebookRoundPayload = {
     leagueId: string;
     groupId: string;
     roundNumber: number | null;
+    postType: FacebookPostType;
   };
   seasons: FacebookSeason[];
   leagues: FacebookLeague[];
   groups: FacebookGroup[];
+  selectedGroups: FacebookGroupRound[];
   rounds: number[];
   matches: FacebookRoundMatch[];
   byes: FacebookTeam[];
+  standings: StandingRow[];
+  images: FacebookPostImage[];
   caption: string;
+  publicUrl: string;
   selectedSeason: FacebookSeason | null;
   selectedLeague: FacebookLeague | null;
   selectedGroup: FacebookGroup | null;
@@ -60,6 +90,8 @@ type QueryInput = {
   leagueId?: string | null;
   groupId?: string | null;
   roundNumber?: string | number | null;
+  postType?: string | null;
+  origin?: string | null;
 };
 
 type SeasonRow = {
@@ -112,18 +144,30 @@ type MatchRow = {
   away_team_id: string;
   round_number: number | string | null;
   scheduled_at: string;
+  played_at: string | null;
+  status: MatchStatus;
+};
+
+type MatchResultRow = {
+  match_id: string;
+  home_points: number;
+  away_points: number;
+};
+
+type MatchGameRow = {
+  match_id: string;
+  home_legs: number;
+  away_legs: number;
 };
 
 function roundValue(value: string | number | null | undefined) {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-    return value;
-  }
-
-  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
-    return Number(value);
-  }
-
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) return Number(value);
   return null;
+}
+
+function postTypeValue(value: string | null | undefined): FacebookPostType {
+  return value === "results" ? "results" : "upcoming";
 }
 
 function isMissingOptionalTeamColumn(message: string | undefined) {
@@ -137,60 +181,91 @@ function isMissingRoundNumberColumn(message: string | undefined) {
   return Boolean(message?.includes("round_number"));
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("cs-CZ", {
-    day: "numeric",
-    month: "numeric",
-    year: "numeric",
-    timeZone: "Europe/Prague",
-  }).format(new Date(value));
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("cs-CZ", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Prague",
-  }).format(new Date(value));
-}
-
 function teamLabel(teamSeason: TeamSeasonRow | undefined, team: TeamRow | undefined) {
   return teamSeason?.display_name || team?.name || "Neznámý tým";
 }
 
-function buildCaption(
-  roundNumber: number | null,
-  groupName: string | undefined,
-  matches: FacebookRoundMatch[],
-  byes: FacebookTeam[],
-) {
-  if (!roundNumber) {
-    return "";
+function publicMatchesUrl(origin: string | null | undefined, seasonId: string, leagueId: string) {
+  const params = new URLSearchParams();
+  if (seasonId) params.set("season_id", seasonId);
+  if (leagueId) params.set("league_id", leagueId);
+  params.set("view", "rounds");
+  const path = `/zapasy?${params.toString()}`;
+
+  if (!origin) return path;
+  try {
+    return new URL(path, origin).toString();
+  } catch {
+    return path;
+  }
+}
+
+function buildCaption({
+  league,
+  postType,
+  publicUrl,
+  roundNumber,
+  season,
+}: {
+  league: FacebookLeague | null;
+  postType: FacebookPostType;
+  publicUrl: string;
+  roundNumber: number | null;
+  season: FacebookSeason | null;
+}) {
+  if (!roundNumber) return "";
+
+  if (postType === "results") {
+    return [
+      `🎯 ${roundNumber}. kolo Znojemské ligy týmů je za námi.`,
+      "",
+      "Přinášíme výsledky utkání a aktuální tabulky jednotlivých skupin.",
+      "",
+      "Kompletní výsledky a zápisy utkání najdete v aplikaci:",
+      publicUrl,
+    ].join("\n");
   }
 
-  const lines = [
-    `🎯 ${roundNumber}. kolo${groupName ? ` – ${groupName}` : ""}`,
+  return [
+    `🎯 ${league?.name ?? "Znojemská liga týmů"}${season?.name ? ` – ${season.name}` : ""} – ${roundNumber}. kolo`,
     "",
-    "Další ligové kolo je před námi! 🎯",
+    "Další ligové kolo je před námi.",
+    "Níže najdete rozpis utkání všech skupin.",
     "",
-  ];
+    "Kompletní program najdete v aplikaci:",
+    publicUrl,
+  ].join("\n");
+}
 
-  matches.forEach((match) => {
-    lines.push(`📅 ${formatDate(match.scheduledAt)}`);
-    lines.push(`${match.homeTeam.name} 🆚 ${match.awayTeam.name}`);
-    lines.push(`🕕 ${formatTime(match.scheduledAt)}`);
-    lines.push("");
-  });
+function toSeason(row: SeasonRow): FacebookSeason {
+  return {
+    id: row.id,
+    name: row.name,
+    isActive: row.is_active,
+    startsOn: row.starts_on,
+  };
+}
 
-  byes.forEach((team) => {
-    lines.push(`Volno: ${team.name}`);
-  });
+function toLeague(row: LeagueRow): FacebookLeague {
+  return {
+    id: row.id,
+    seasonId: row.season_id,
+    name: row.name,
+  };
+}
 
-  return lines.join("\n").trim();
+function toGroup(row: GroupRow): FacebookGroup {
+  return {
+    id: row.id,
+    leagueId: row.league_id,
+    name: row.name,
+    sortOrder: row.sort_order,
+  };
 }
 
 export async function loadFacebookUpcomingRound(input: QueryInput): Promise<FacebookRoundPayload> {
   const supabase = createSupabaseAdminClient();
+  const postType = postTypeValue(input.postType);
   const [
     seasonsResult,
     leaguesResult,
@@ -199,6 +274,7 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
     teamSeasonsResult,
     teamsResult,
     matchesResult,
+    resultsResult,
   ] = await Promise.all([
     supabase
       .from("seasons")
@@ -236,10 +312,15 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
       .order("name", { ascending: true }),
     supabase
       .from("matches")
-      .select("id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at")
+      .select("id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at, played_at, status")
       .is("deleted_at", null)
       .order("scheduled_at", { ascending: true })
       .returns<MatchRow[]>(),
+    supabase
+      .from("match_results")
+      .select("match_id, home_points, away_points")
+      .is("deleted_at", null)
+      .returns<MatchResultRow[]>(),
   ]);
 
   let teamRows = teamsResult.data as TeamRow[] | null;
@@ -262,7 +343,7 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
   if (isMissingRoundNumberColumn(matchesError?.message)) {
     const fallback = await supabase
       .from("matches")
-      .select("id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at")
+      .select("id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status")
       .is("deleted_at", null)
       .order("scheduled_at", { ascending: true })
       .returns<Array<Omit<MatchRow, "round_number">>>();
@@ -277,17 +358,17 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
     assignmentsResult.error ??
     teamSeasonsResult.error ??
     teamsError ??
-    matchesError;
+    matchesError ??
+    resultsResult.error;
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   const seasonRows = seasonsResult.data ?? [];
   const leagueRows = leaguesResult.data ?? [];
   const groupRows = groupsResult.data ?? [];
   const assignmentRows = assignmentsResult.data ?? [];
   const teamSeasonRows = teamSeasonsResult.data ?? [];
+  const resultRows = resultsResult.data ?? [];
   const teams = (teamRows ?? []).map((team) => ({
     ...team,
     logo_url: teamLogoUrl(team.slug, team.logo_url),
@@ -304,22 +385,17 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
     ) ??
     leagueRows.find((league) => league.season_id === selectedSeason?.id) ??
     null;
-  const selectedGroup =
-    groupRows.find(
-      (group) => group.id === input.groupId && group.league_id === selectedLeague?.id,
-    ) ??
-    groupRows.find((group) => group.league_id === selectedLeague?.id) ??
-    null;
+  const leagueGroups = groupRows.filter((group) => group.league_id === selectedLeague?.id);
 
-  const matchesForGroup = matchRows.filter(
+  const matchesForLeague = matchRows.filter(
     (match) =>
       match.season_id === selectedSeason?.id &&
       match.league_id === selectedLeague?.id &&
-      match.group_id === selectedGroup?.id,
+      leagueGroups.some((group) => group.id === match.group_id),
   );
   const rounds = Array.from(
     new Set(
-      matchesForGroup
+      matchesForLeague
         .map((match) => roundValue(match.round_number))
         .filter((value): value is number => value !== null),
     ),
@@ -327,8 +403,8 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
   const requestedRound = roundValue(input.roundNumber);
   const now = Date.now();
   const nextRound =
-    matchesForGroup.find((match) => new Date(match.scheduled_at).getTime() >= now)?.round_number ??
-    matchesForGroup[0]?.round_number ??
+    matchesForLeague.find((match) => new Date(match.scheduled_at).getTime() >= now)?.round_number ??
+    matchesForLeague[0]?.round_number ??
     null;
   const selectedRound = rounds.includes(requestedRound ?? 0)
     ? requestedRound
@@ -336,6 +412,7 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
 
   const teamById = new Map(teams.map((team) => [team.id, team]));
   const teamSeasonById = new Map(teamSeasonRows.map((teamSeason) => [teamSeason.id, teamSeason]));
+  const resultByMatchId = new Map(resultRows.map((result) => [result.match_id, result]));
 
   function teamPayload(teamSeasonId: string): FacebookTeam {
     const teamSeason = teamSeasonById.get(teamSeasonId);
@@ -349,28 +426,107 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
     };
   }
 
-  const matches = matchesForGroup
-    .filter((match) => roundValue(match.round_number) === selectedRound)
-    .map((match) => ({
-      id: match.id,
-      roundNumber: selectedRound ?? 0,
-      scheduledAt: match.scheduled_at,
-      homeTeam: teamPayload(match.home_team_id),
-      awayTeam: teamPayload(match.away_team_id),
-    }));
+  const matchIdsForLegs = matchesForLeague
+    .filter((match) => isFinishedMatch(match) && resultByMatchId.has(match.id))
+    .map((match) => match.id);
+  let matchGames: MatchGameRow[] = [];
+  if (matchIdsForLegs.length > 0) {
+    const gamesResult = await supabase
+      .from("match_games")
+      .select("match_id, home_legs, away_legs")
+      .in("match_id", matchIdsForLegs)
+      .is("deleted_at", null)
+      .returns<MatchGameRow[]>();
+    matchGames = gamesResult.error ? [] : gamesResult.data ?? [];
+  }
 
-  const playingTeamSeasonIds = new Set(
-    matches.flatMap((match) => [match.homeTeam.teamSeasonId, match.awayTeam.teamSeasonId]),
-  );
-  const byes = assignmentRows
-    .filter(
-      (assignment) =>
-        assignment.league_group_id === selectedGroup?.id &&
-        !playingTeamSeasonIds.has(assignment.team_season_id),
-    )
-    .map((assignment) => teamPayload(assignment.team_season_id))
-    .filter((team) => team.name !== "Neznámý tým")
-    .sort((first, second) => first.name.localeCompare(second.name, "cs"));
+  const selectedGroups = leagueGroups.map((group) => {
+    const groupRoundMatches = matchesForLeague
+      .filter(
+        (match) =>
+          match.group_id === group.id &&
+          roundValue(match.round_number) === selectedRound,
+      )
+      .map((match): FacebookRoundMatch => {
+        const result = resultByMatchId.get(match.id);
+        return {
+          id: match.id,
+          roundNumber: selectedRound ?? 0,
+          scheduledAt: match.scheduled_at,
+          playedAt: match.played_at,
+          status: match.status,
+          homeTeam: teamPayload(match.home_team_id),
+          awayTeam: teamPayload(match.away_team_id),
+          result: result
+            ? { homePoints: result.home_points, awayPoints: result.away_points }
+            : null,
+        };
+      });
+
+    const playingTeamSeasonIds = new Set(
+      groupRoundMatches.flatMap((match) => [match.homeTeam.teamSeasonId, match.awayTeam.teamSeasonId]),
+    );
+    const byes = assignmentRows
+      .filter(
+        (assignment) =>
+          assignment.league_group_id === group.id &&
+          !playingTeamSeasonIds.has(assignment.team_season_id),
+      )
+      .map((assignment) => teamPayload(assignment.team_season_id))
+      .filter((team) => team.name !== "Neznámý tým")
+      .sort((first, second) => first.name.localeCompare(second.name, "cs"));
+
+    const standings = buildLeagueGroupStandings({
+      assignments: assignmentRows,
+      groupId: group.id,
+      matches: matchesForLeague,
+      matchGames,
+      results: resultRows,
+      teams,
+      teamSeasons: teamSeasonRows,
+    });
+
+    return {
+      group: toGroup(group),
+      matches: groupRoundMatches,
+      byes,
+      standings,
+    };
+  });
+
+  const selectedGroup = selectedGroups[0]?.group ?? null;
+  const flatMatches = selectedGroups.flatMap((group) => group.matches);
+  const flatByes = selectedGroups.flatMap((group) => group.byes);
+  const flatStandings = selectedGroups.flatMap((group) => group.standings);
+  const publicUrl = publicMatchesUrl(input.origin, selectedSeason?.id ?? "", selectedLeague?.id ?? "");
+  const selectedSeasonPayload = selectedSeason ? toSeason(selectedSeason) : null;
+  const selectedLeaguePayload = selectedLeague ? toLeague(selectedLeague) : null;
+
+  const images: FacebookPostImage[] =
+    postType === "results"
+      ? selectedGroups.flatMap((group) => [
+          {
+            id: `${group.group.id}:results`,
+            kind: "results" as const,
+            groupId: group.group.id,
+            groupName: group.group.name,
+            label: `${group.group.name} - výsledky`,
+          },
+          {
+            id: `${group.group.id}:standings`,
+            kind: "standings" as const,
+            groupId: group.group.id,
+            groupName: group.group.name,
+            label: `${group.group.name} - tabulka`,
+          },
+        ])
+      : selectedGroups.map((group) => ({
+          id: `${group.group.id}:upcoming_schedule`,
+          kind: "upcoming_schedule",
+          groupId: group.group.id,
+          groupName: group.group.name,
+          label: `${group.group.name} - rozpis`,
+        }));
 
   return {
     selections: {
@@ -378,50 +534,27 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
       leagueId: selectedLeague?.id ?? "",
       groupId: selectedGroup?.id ?? "",
       roundNumber: selectedRound,
+      postType,
     },
-    seasons: seasonRows.map((season) => ({
-      id: season.id,
-      name: season.name,
-      isActive: season.is_active,
-      startsOn: season.starts_on,
-    })),
-    leagues: leagueRows.map((league) => ({
-      id: league.id,
-      seasonId: league.season_id,
-      name: league.name,
-    })),
-    groups: groupRows.map((group) => ({
-      id: group.id,
-      leagueId: group.league_id,
-      name: group.name,
-      sortOrder: group.sort_order,
-    })),
+    seasons: seasonRows.map(toSeason),
+    leagues: leagueRows.map(toLeague),
+    groups: groupRows.map(toGroup),
+    selectedGroups,
     rounds,
-    matches,
-    byes,
-    caption: buildCaption(selectedRound, selectedGroup?.name, matches, byes),
-    selectedSeason: selectedSeason
-      ? {
-          id: selectedSeason.id,
-          name: selectedSeason.name,
-          isActive: selectedSeason.is_active,
-          startsOn: selectedSeason.starts_on,
-        }
-      : null,
-    selectedLeague: selectedLeague
-      ? {
-          id: selectedLeague.id,
-          seasonId: selectedLeague.season_id,
-          name: selectedLeague.name,
-        }
-      : null,
-    selectedGroup: selectedGroup
-      ? {
-          id: selectedGroup.id,
-          leagueId: selectedGroup.league_id,
-          name: selectedGroup.name,
-          sortOrder: selectedGroup.sort_order,
-        }
-      : null,
+    matches: flatMatches,
+    byes: flatByes,
+    standings: flatStandings,
+    images,
+    caption: buildCaption({
+      league: selectedLeaguePayload,
+      postType,
+      publicUrl,
+      roundNumber: selectedRound,
+      season: selectedSeasonPayload,
+    }),
+    publicUrl,
+    selectedSeason: selectedSeasonPayload,
+    selectedLeague: selectedLeaguePayload,
+    selectedGroup,
   };
 }

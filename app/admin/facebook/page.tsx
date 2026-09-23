@@ -4,6 +4,9 @@ import { adminFetch } from "@/lib/adminFetch";
 import { Button, Card, PageHeader } from "@/components/ui/admin";
 import { useEffect, useMemo, useState } from "react";
 
+type PostType = "upcoming" | "results";
+type ImageKind = "upcoming_schedule" | "results" | "standings";
+
 type Season = {
   id: string;
   name: string;
@@ -22,37 +25,37 @@ type Group = {
   name: string;
 };
 
-type Team = {
-  teamSeasonId: string;
-  name: string;
-  logoUrl: string | null;
-};
-
-type RoundMatch = {
+type RoundImage = {
   id: string;
-  roundNumber: number;
-  scheduledAt: string;
-  homeTeam: Team;
-  awayTeam: Team;
+  kind: ImageKind;
+  groupId: string;
+  groupName: string;
+  label: string;
 };
 
-type UpcomingRoundPayload = {
+type GroupRound = {
+  group: Group;
+  matches: unknown[];
+  byes: unknown[];
+  standings: unknown[];
+};
+
+type FacebookPayload = {
   selections: {
     seasonId: string;
     leagueId: string;
-    groupId: string;
     roundNumber: number | null;
+    postType: PostType;
   };
   seasons: Season[];
   leagues: League[];
   groups: Group[];
+  selectedGroups: GroupRound[];
   rounds: number[];
-  matches: RoundMatch[];
-  byes: Team[];
+  images: RoundImage[];
   caption: string;
   selectedSeason: Season | null;
   selectedLeague: League | null;
-  selectedGroup: Group | null;
   error?: string;
 };
 
@@ -60,21 +63,26 @@ type PublishResponse = {
   success?: boolean;
   id?: string | null;
   post_id?: string | null;
+  photo_ids?: string[];
   error?: string;
 };
 
 type Selections = {
   seasonId: string;
   leagueId: string;
-  groupId: string;
   roundNumber: string;
+  postType: PostType;
+};
+
+type PreviewImage = RoundImage & {
+  url: string;
 };
 
 const emptySelections: Selections = {
   seasonId: "",
   leagueId: "",
-  groupId: "",
   roundNumber: "",
+  postType: "upcoming",
 };
 
 const selectClass =
@@ -84,31 +92,31 @@ function queryFromSelections(selections: Selections) {
   const params = new URLSearchParams();
   if (selections.seasonId) params.set("season_id", selections.seasonId);
   if (selections.leagueId) params.set("league_id", selections.leagueId);
-  if (selections.groupId) params.set("group_id", selections.groupId);
   if (selections.roundNumber) params.set("round_number", selections.roundNumber);
+  params.set("post_type", selections.postType);
   return params;
 }
 
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("cs-CZ", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
 async function readJson(response: Response) {
-  return (await response.json().catch(() => ({}))) as UpcomingRoundPayload;
+  return (await response.json().catch(() => ({}))) as FacebookPayload;
 }
 
 async function readPublishJson(response: Response) {
   return (await response.json().catch(() => ({}))) as PublishResponse;
 }
 
+function imageKindLabel(kind: ImageKind) {
+  if (kind === "results") return "Výsledky";
+  if (kind === "standings") return "Tabulka";
+  return "Rozpis";
+}
+
 export default function AdminFacebookPage() {
-  const [payload, setPayload] = useState<UpcomingRoundPayload | null>(null);
+  const [payload, setPayload] = useState<FacebookPayload | null>(null);
   const [selections, setSelections] = useState<Selections>(emptySelections);
   const [caption, setCaption] = useState("");
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<PreviewImage[]>([]);
+  const [selectedPreviewImage, setSelectedPreviewImage] = useState<PreviewImage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isImageLoading, setIsImageLoading] = useState(false);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
@@ -121,10 +129,6 @@ export default function AdminFacebookPage() {
     () => (payload?.leagues ?? []).filter((league) => league.seasonId === selections.seasonId),
     [payload?.leagues, selections.seasonId],
   );
-  const groupOptions = useMemo(
-    () => (payload?.groups ?? []).filter((group) => group.leagueId === selections.leagueId),
-    [payload?.groups, selections.leagueId],
-  );
 
   async function loadPreview(nextSelections: Selections, replaceCaption = true) {
     setIsLoading(true);
@@ -132,6 +136,7 @@ export default function AdminFacebookPage() {
     setError(null);
     setPublishMessage(null);
     setPublishTechnicalInfo(null);
+    setSelectedPreviewImage(null);
 
     try {
       const query = queryFromSelections(nextSelections);
@@ -147,8 +152,8 @@ export default function AdminFacebookPage() {
       const resolvedSelections = {
         seasonId: body.selections.seasonId,
         leagueId: body.selections.leagueId,
-        groupId: body.selections.groupId,
         roundNumber: body.selections.roundNumber ? String(body.selections.roundNumber) : "",
+        postType: body.selections.postType,
       };
       setPayload(body);
       setSelections(resolvedSelections);
@@ -157,21 +162,30 @@ export default function AdminFacebookPage() {
         setCaption(body.caption);
       }
 
-      const imageQuery = queryFromSelections(resolvedSelections);
-      const imageResponse = await adminFetch(
-        `/api/admin/facebook/upcoming-round-image?${imageQuery.toString()}`,
-        { cache: "no-store" },
+      const previews = await Promise.all(
+        body.images.map(async (image) => {
+          const imageQuery = queryFromSelections(resolvedSelections);
+          imageQuery.set("group_id", image.groupId);
+          imageQuery.set("image_kind", image.kind);
+          const imageResponse = await adminFetch(
+            `/api/admin/facebook/upcoming-round-image?${imageQuery.toString()}`,
+            { cache: "no-store" },
+          );
+
+          if (!imageResponse.ok) {
+            throw new Error("Facebook grafiku se nepodařilo vytvořit.");
+          }
+
+          return {
+            ...image,
+            url: URL.createObjectURL(await imageResponse.blob()),
+          };
+        }),
       );
 
-      if (!imageResponse.ok) {
-        throw new Error("Facebook grafiku se nepodařilo vytvořit.");
-      }
-
-      const blob = await imageResponse.blob();
-      const nextImageUrl = URL.createObjectURL(blob);
-      setImageUrl((currentUrl) => {
-        if (currentUrl) URL.revokeObjectURL(currentUrl);
-        return nextImageUrl;
+      setImageUrls((currentUrls) => {
+        currentUrls.forEach((image) => URL.revokeObjectURL(image.url));
+        return previews;
       });
     } catch (loadError) {
       setError(
@@ -192,18 +206,17 @@ export default function AdminFacebookPage() {
 
   useEffect(() => {
     return () => {
-      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrls.forEach((image) => URL.revokeObjectURL(image.url));
     };
-  }, [imageUrl]);
+  }, [imageUrls]);
 
   function handleSelectionChange(field: keyof Selections, value: string) {
     const nextSelections = {
       ...selections,
       [field]: value,
-      ...(field === "seasonId" ? { leagueId: "", groupId: "", roundNumber: "" } : {}),
-      ...(field === "leagueId" ? { groupId: "", roundNumber: "" } : {}),
-      ...(field === "groupId" ? { roundNumber: "" } : {}),
-    };
+      ...(field === "seasonId" ? { leagueId: "", roundNumber: "" } : {}),
+      ...(field === "leagueId" ? { roundNumber: "" } : {}),
+    } as Selections;
 
     setSelections(nextSelections);
     void loadPreview(nextSelections);
@@ -212,18 +225,15 @@ export default function AdminFacebookPage() {
   const canPublish =
     Boolean(selections.seasonId) &&
     Boolean(selections.leagueId) &&
-    Boolean(selections.groupId) &&
     Boolean(selections.roundNumber) &&
-    Boolean(imageUrl) &&
+    imageUrls.length > 0 &&
     caption.trim().length > 0 &&
     !isLoading &&
     !isImageLoading &&
     !isPublishing;
 
   async function handlePublish() {
-    if (!canPublish) {
-      return;
-    }
+    if (!canPublish) return;
 
     setIsPublishing(true);
     setError(null);
@@ -239,8 +249,8 @@ export default function AdminFacebookPage() {
         body: JSON.stringify({
           seasonId: selections.seasonId,
           leagueId: selections.leagueId,
-          groupId: selections.groupId,
           roundNumber: selections.roundNumber,
+          postType: selections.postType,
           message: caption,
         }),
       });
@@ -254,7 +264,8 @@ export default function AdminFacebookPage() {
       setPublishMessage("Příspěvek byl úspěšně zveřejněn na Facebooku.");
       const technicalInfo = [
         body.post_id ? `post_id: ${body.post_id}` : null,
-        body.id ? `photo id: ${body.id}` : null,
+        body.id ? `id: ${body.id}` : null,
+        body.photo_ids?.length ? `photo ids: ${body.photo_ids.join(", ")}` : null,
       ]
         .filter(Boolean)
         .join(" · ");
@@ -270,10 +281,15 @@ export default function AdminFacebookPage() {
     setIsPublishing(false);
   }
 
+  const groupedImages = (payload?.selectedGroups ?? []).map((groupRound) => ({
+    group: groupRound.group,
+    images: imageUrls.filter((image) => image.groupId === groupRound.group.id),
+  }));
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        description="Připravte grafiku a text pro příspěvek na facebookovou stránku spolku."
+        description="Připravte souhrnný facebookový příspěvek pro celé ligové kolo."
         title="Facebook"
       />
 
@@ -304,7 +320,7 @@ export default function AdminFacebookPage() {
           </label>
 
           <label className="grid gap-2 text-sm font-black text-[var(--brand-navy)]">
-            Soutěž / liga
+            Liga
             <select
               className={selectClass}
               disabled={isLoading || !selections.seasonId}
@@ -321,27 +337,10 @@ export default function AdminFacebookPage() {
           </label>
 
           <label className="grid gap-2 text-sm font-black text-[var(--brand-navy)]">
-            Skupina
-            <select
-              className={selectClass}
-              disabled={isLoading || !selections.leagueId}
-              onChange={(event) => handleSelectionChange("groupId", event.target.value)}
-              value={selections.groupId}
-            >
-              <option value="">Vyberte skupinu</option>
-              {groupOptions.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-2 text-sm font-black text-[var(--brand-navy)]">
             Kolo
             <select
               className={selectClass}
-              disabled={isLoading || !selections.groupId || (payload?.rounds ?? []).length === 0}
+              disabled={isLoading || !selections.leagueId || (payload?.rounds ?? []).length === 0}
               onChange={(event) => handleSelectionChange("roundNumber", event.target.value)}
               value={selections.roundNumber}
             >
@@ -353,6 +352,35 @@ export default function AdminFacebookPage() {
               ))}
             </select>
           </label>
+
+          <div className="grid gap-2 text-sm font-black text-[var(--brand-navy)]">
+            <span>Typ příspěvku</span>
+            <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-[var(--admin-border)] bg-white p-1">
+              {[
+                { label: "Nadcházející kolo", value: "upcoming" as const },
+                { label: "Výsledky kola", value: "results" as const },
+              ].map((option) => {
+                const isSelected = selections.postType === option.value;
+
+                return (
+                  <button
+                    aria-pressed={isSelected}
+                    className={`rounded-xl px-3 py-2.5 text-sm font-black transition ${
+                      isSelected
+                        ? "bg-[var(--brand-blue)] text-white shadow-sm"
+                        : "text-[var(--brand-navy)] hover:bg-[#F4F8FF]"
+                    }`}
+                    disabled={isLoading}
+                    key={option.value}
+                    onClick={() => handleSelectionChange("postType", option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
@@ -374,6 +402,7 @@ export default function AdminFacebookPage() {
             {isPublishing ? "Publikuji..." : "Publikovat na Facebook"}
           </Button>
         </div>
+
         {publishMessage ? (
           <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <p className="text-sm font-black text-emerald-800">{publishMessage}</p>
@@ -386,26 +415,47 @@ export default function AdminFacebookPage() {
         ) : null}
       </Card>
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(340px,520px)_1fr]">
+      <div className="grid gap-8 xl:grid-cols-[minmax(360px,1fr)_520px]">
         <Card>
           <div className="flex items-center justify-between gap-4">
-            <h3 className="text-lg font-black text-[var(--brand-navy)]">Grafika</h3>
+            <h3 className="text-lg font-black text-[var(--brand-navy)]">Grafiky</h3>
             <span className="rounded-full bg-[#F4F8FF] px-3 py-1 text-xs font-black text-[var(--brand-blue)]">
-              1080 × 1080 px
+              {imageUrls.length} × 1080 × 1080 px
             </span>
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--admin-border)] bg-[#F4F8FF]">
-            {imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                alt="Náhled grafiky pro Facebook"
-                className="aspect-square w-full object-contain"
-                src={imageUrl}
-              />
+          <div className="mt-5 grid gap-6">
+            {groupedImages.length > 0 ? (
+              groupedImages.map(({ group, images }) => (
+                <section key={group.id}>
+                  <h4 className="text-sm font-black text-[var(--brand-navy)]">{group.name}</h4>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    {images.map((image) => (
+                      <button
+                        aria-label={`Zobrazit grafiku ${image.label} v plné velikosti`}
+                        className="overflow-hidden rounded-2xl border border-[var(--admin-border)] bg-[#F4F8FF]"
+                        key={image.id}
+                        onClick={() => setSelectedPreviewImage(image)}
+                        type="button"
+                      >
+                        <div className="flex items-center justify-between px-3 py-2 text-xs font-black text-[var(--brand-blue)]">
+                          <span>{imageKindLabel(image.kind)}</span>
+                          <span>{image.groupName}</span>
+                        </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          alt={image.label}
+                          className="aspect-square w-full object-contain"
+                          src={image.url}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))
             ) : (
-              <div className="flex aspect-square w-full items-center justify-center p-6 text-center text-sm font-bold text-[var(--admin-muted)]">
-                {isImageLoading ? "Generuji grafiku..." : "Vyberte kolo pro náhled grafiky."}
+              <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-[var(--admin-border)] bg-[#F4F8FF] p-6 text-center text-sm font-bold text-[var(--admin-muted)]">
+                {isImageLoading ? "Generuji grafiky..." : "Vyberte kolo pro náhled grafik."}
               </div>
             )}
           </div>
@@ -414,40 +464,10 @@ export default function AdminFacebookPage() {
         <Card>
           <h3 className="text-lg font-black text-[var(--brand-navy)]">Text příspěvku</h3>
           <textarea
-            className="mt-5 min-h-[340px] w-full resize-y rounded-2xl border border-[var(--admin-border)] bg-white px-4 py-3 text-sm leading-6 text-[var(--brand-navy)] outline-none focus:border-[var(--brand-blue)]"
+            className="mt-5 min-h-[360px] w-full resize-y rounded-2xl border border-[var(--admin-border)] bg-white px-4 py-3 text-sm leading-6 text-[var(--brand-navy)] outline-none focus:border-[var(--brand-blue)]"
             onChange={(event) => setCaption(event.target.value)}
             value={caption}
           />
-
-          <div className="mt-6 rounded-2xl border border-[var(--admin-border)] bg-[#F4F8FF] p-4">
-            <h4 className="text-sm font-black text-[var(--brand-navy)]">Zápasy v náhledu</h4>
-            {payload?.matches.length ? (
-              <div className="mt-3 grid gap-2">
-                {payload.matches.map((match) => (
-                  <div
-                    className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-[var(--brand-navy)]"
-                    key={match.id}
-                  >
-                    <span className="text-[var(--admin-muted)]">
-                      {formatDateTime(match.scheduledAt)}
-                    </span>
-                    <span className="mx-2 text-[var(--brand-coral)]">•</span>
-                    {match.homeTeam.name} vs. {match.awayTeam.name}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm font-semibold text-[var(--admin-muted)]">
-                Pro vybrané kolo nejsou zadané zápasy.
-              </p>
-            )}
-
-            {payload?.byes.length ? (
-              <p className="mt-3 text-sm font-black text-[var(--brand-navy)]">
-                Volno: {payload.byes.map((team) => team.name).join(", ")}
-              </p>
-            ) : null}
-          </div>
         </Card>
       </div>
 
@@ -455,16 +475,15 @@ export default function AdminFacebookPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-black text-[var(--brand-navy)]">
-              Publikovat na Facebook
+              Publikovat na Facebook?
             </h3>
-            <p className="mt-3 text-sm font-semibold text-[var(--admin-muted)]">
-              Opravdu chcete zveřejnit tento příspěvek na Facebooku?
-            </p>
             <div className="mt-5 rounded-2xl bg-[#F4F8FF] p-4 text-sm font-bold text-[var(--brand-navy)]">
+              <p>Kolo: {selections.roundNumber ? `${selections.roundNumber}. kolo` : "-"}</p>
               <p>Sezóna: {payload?.selectedSeason?.name ?? "-"}</p>
               <p>Liga: {payload?.selectedLeague?.name ?? "-"}</p>
-              <p>Skupina: {payload?.selectedGroup?.name ?? "-"}</p>
-              <p>Kolo: {selections.roundNumber ? `${selections.roundNumber}. kolo` : "-"}</p>
+              <p>Typ: {selections.postType === "results" ? "Výsledky kola" : "Nadcházející kolo"}</p>
+              <p>Počet obrázků: {imageUrls.length}</p>
+              <p>Skupiny: {(payload?.selectedGroups ?? []).map((item) => item.group.name).join(", ") || "-"}</p>
             </div>
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <Button
@@ -484,6 +503,43 @@ export default function AdminFacebookPage() {
                 {isPublishing ? "Publikuji..." : "Publikovat"}
               </Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedPreviewImage ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/75 p-4"
+          onClick={() => setSelectedPreviewImage(null)}
+        >
+          <div
+            className="flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vh-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 border-b border-[var(--admin-border)] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-black text-[var(--brand-navy)]">
+                  {selectedPreviewImage.groupName}
+                </p>
+                <p className="text-xs font-bold text-[var(--admin-muted)]">
+                  {imageKindLabel(selectedPreviewImage.kind)} · 1080 × 1080 px
+                </p>
+              </div>
+              <button
+                aria-label="Zavřít náhled"
+                className="shrink-0 rounded-full border border-[var(--admin-border)] px-4 py-2 text-sm font-black text-[var(--brand-navy)] hover:bg-[#F4F8FF]"
+                onClick={() => setSelectedPreviewImage(null)}
+                type="button"
+              >
+                Zavřít
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt={selectedPreviewImage.label}
+              className="aspect-square h-auto max-h-[calc(100vh-7rem)] w-full object-contain"
+              src={selectedPreviewImage.url}
+            />
           </div>
         </div>
       ) : null}
