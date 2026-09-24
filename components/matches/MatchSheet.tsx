@@ -507,7 +507,7 @@ export function MatchSheet({
           onClick={() => onRevealLineup?.(side, blockNumber)}
           type="button"
         >
-          Zobrazit nasazení soupeři
+          Zobrazit nasazení soupeře
         </button>
       );
     }
