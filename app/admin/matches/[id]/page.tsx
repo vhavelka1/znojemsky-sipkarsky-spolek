@@ -848,7 +848,7 @@ export default function AdminMatchSheetPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [revealingLineup, setRevealingLineup] = useState<{ side: MatchSide; blockNumber: number } | null>(null);
-  const [isDownloadingImages, setIsDownloadingImages] = useState(false);
+  const [downloadingImage, setDownloadingImage] = useState<"sheet" | "statistics" | null>(null);
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [unlockingSide, setUnlockingSide] = useState<MatchSide | null>(null);
@@ -1418,9 +1418,9 @@ export default function AdminMatchSheetPage({
     }));
   }
 
-  async function handleDownloadImages() {
+  async function handleDownloadImage(kind: "sheet" | "statistics") {
     if (!payload.match) return;
-    setIsDownloadingImages(true);
+    setDownloadingImage(kind);
     setError(null);
 
     try {
@@ -1440,13 +1440,15 @@ export default function AdminMatchSheetPage({
         statistics: payload.statistics,
       };
       const fileBase = sanitizeFilePart(`${homeTeamName}-${awayTeamName}-${formatDateTime(payload.match.scheduled_at)}`);
-      await downloadCanvasAsJpeg(await drawMatchSheetExport(exportContext), `${fileBase}-zapis.jpg`);
-      await new Promise((resolve) => window.setTimeout(resolve, 200));
-      await downloadCanvasAsJpeg(drawStatisticsExport(exportContext), `${fileBase}-statistiky.jpg`);
+      if (kind === "sheet") {
+        await downloadCanvasAsJpeg(await drawMatchSheetExport(exportContext), `${fileBase}-zapis.jpg`);
+      } else {
+        await downloadCanvasAsJpeg(drawStatisticsExport(exportContext), `${fileBase}-statistiky.jpg`);
+      }
     } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : "Zápis se nepodařilo stáhnout jako JPG.");
+      setError(downloadError instanceof Error ? downloadError.message : "Obrázek se nepodařilo stáhnout jako JPG.");
     } finally {
-      setIsDownloadingImages(false);
+      setDownloadingImage(null);
     }
   }
 
@@ -1503,13 +1505,22 @@ export default function AdminMatchSheetPage({
         </div>
         <div className="flex flex-wrap gap-3">
           <Button
-            disabled={isDownloadingImages}
-            isLoading={isDownloadingImages}
-            onClick={() => void handleDownloadImages()}
+            disabled={downloadingImage !== null}
+            isLoading={downloadingImage === "sheet"}
+            onClick={() => void handleDownloadImage("sheet")}
             type="button"
             variant="secondary"
           >
-            {isDownloadingImages ? "Stahuji JPG..." : "Stáhnout zápis JPG"}
+            {downloadingImage === "sheet" ? "Stahuji zápis..." : "Stáhnout zápis JPG"}
+          </Button>
+          <Button
+            disabled={downloadingImage !== null}
+            isLoading={downloadingImage === "statistics"}
+            onClick={() => void handleDownloadImage("statistics")}
+            type="button"
+            variant="secondary"
+          >
+            {downloadingImage === "statistics" ? "Stahuji statistiky..." : "Stáhnout statistiky JPG"}
           </Button>
           {scoreboardHref ? (
             <Link
