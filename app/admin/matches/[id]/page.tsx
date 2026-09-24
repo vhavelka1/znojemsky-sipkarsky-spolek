@@ -260,9 +260,11 @@ const exportGameTypeLabels: Record<MatchGameType, string> = {
 type ExportContext = {
   achievements: SheetAchievement[];
   awayPlayers: Player[];
+  awayTeamLogoUrl: string | null;
   awayTeamName: string;
   games: SheetGame[];
   homePlayers: Player[];
+  homeTeamLogoUrl: string | null;
   homeTeamName: string;
   leagueLabel: string;
   matchDateLabel: string;
@@ -352,21 +354,63 @@ function createExportCanvas(width: number, height: number) {
   return { canvas, context };
 }
 
-function drawExportTitle(context: CanvasRenderingContext2D, title: string, exportContext: ExportContext) {
-  context.fillStyle = "#061A3A";
-  context.font = "900 54px Arial";
-  context.fillText(title, 70, 86);
-  context.fillStyle = "#EF233C";
-  context.font = "900 24px Arial";
-  context.fillText(`${exportContext.homeTeamName} vs ${exportContext.awayTeamName}`, 70, 126);
-  context.fillStyle = "#0B2F6B";
-  context.font = "700 24px Arial";
-  context.fillText(exportContext.leagueLabel, 70, 164);
-  context.fillText(exportContext.matchDateLabel, 70, 202);
-  context.fillStyle = "#061A3A";
-  context.font = "900 42px Arial";
-  context.fillText(`Výsledek ${exportContext.score.home_points}:${exportContext.score.away_points}`, 1120, 110);
-  context.fillText(`Legy ${exportContext.score.home_legs}:${exportContext.score.away_legs}`, 1120, 162);
+function fillRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+  context.fill();
+}
+
+function strokeRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+  context.stroke();
+}
+
+function loadExportImage(url: string | null) {
+  return new Promise<HTMLImageElement | null>((resolve) => {
+    if (!url) {
+      resolve(null);
+      return;
+    }
+
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
 }
 
 function playerName(players: Player[], id: string | undefined) {
@@ -380,34 +424,133 @@ function achievementCount(achievements: SheetAchievement[], orderNumber: number,
     .reduce((sum, achievement) => sum + achievement.achievement_count, 0);
 }
 
-function drawMatchSheetExport(exportContext: ExportContext) {
-  const rowHeight = 58;
-  const blockHeaderHeight = 52;
-  const visibleBlocks = exportBlocks.filter((block) => block.orders.some((order) => exportContext.games.some((game) => game.order_number === order)));
-  const height = 260 + visibleBlocks.reduce((sum, block) => {
-    const gamesCount = exportContext.games.filter((game) => block.orders.includes(game.order_number)).length;
-    return sum + blockHeaderHeight + gamesCount * rowHeight + 26;
-  }, 0);
-  const { canvas, context } = createExportCanvas(1600, Math.max(1200, height));
-  drawExportTitle(context, "Zápis utkání", exportContext);
+function drawExportLogo(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement | null,
+  fallbackName: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  if (image) {
+    const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+    return;
+  }
 
-  let y = 250;
+  context.fillStyle = "#FFFFFF";
+  fillRoundedRect(context, x + 18, y + 18, width - 36, height - 36, 28);
+  context.strokeStyle = "#C8D9EC";
+  context.lineWidth = 3;
+  strokeRoundedRect(context, x + 18, y + 18, width - 36, height - 36, 28);
+  context.fillStyle = "#061A3A";
+  context.font = "900 34px Arial";
+  context.textAlign = "left";
+  fillWrappedText(context, fallbackName.toUpperCase(), x + 42, y + height / 2 - 10, width - 84, 38, 3);
+  context.textAlign = "left";
+}
+
+function exportMetaLabel(exportContext: ExportContext) {
+  const parts = exportContext.leagueLabel
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part, index, allParts) => index === 0 || part !== allParts[index - 1]);
+  return [...parts, exportContext.matchDateLabel].join("  |  ");
+}
+
+function drawSheetExportHeader(
+  context: CanvasRenderingContext2D,
+  exportContext: ExportContext,
+  homeLogo: HTMLImageElement | null,
+  awayLogo: HTMLImageElement | null,
+) {
+  context.fillStyle = "#F4F8FF";
+  context.fillRect(0, 0, 1600, 430);
+
+  context.fillStyle = "rgba(11, 47, 107, 0.12)";
+  for (let index = 0; index < 95; index += 1) {
+    const x = (index * 71) % 1600;
+    const y = (index * 43) % 430;
+    const size = index % 5 === 0 ? 4 : 2;
+    context.fillRect(x, y, size, size);
+  }
+
+  drawExportLogo(context, homeLogo, exportContext.homeTeamName, 90, 78, 215, 195);
+  drawExportLogo(context, awayLogo, exportContext.awayTeamName, 1295, 78, 215, 195);
+
+  context.textAlign = "center";
+  context.fillStyle = "#061A3A";
+  context.font = "900 76px Arial";
+  context.fillText("ZÁPIS UTKÁNÍ", 800, 92);
+  context.font = "700 28px Arial";
+  context.fillText(exportMetaLabel(exportContext), 800, 145, 870);
+
+  context.fillStyle = "rgba(255, 255, 255, 0.92)";
+  fillRoundedRect(context, 530, 178, 540, 175, 14);
+  context.strokeStyle = "#86A7CB";
+  context.lineWidth = 3;
+  strokeRoundedRect(context, 530, 178, 540, 175, 14);
+
+  context.fillStyle = "#061A3A";
+  context.font = "900 92px Arial";
+  context.fillText(String(exportContext.score.home_points), 720, 278);
+  context.fillStyle = "#EF233C";
+  context.fillText(String(exportContext.score.away_points), 880, 278);
+  context.fillStyle = "#061A3A";
+  context.font = "900 78px Arial";
+  context.fillText(":", 800, 270);
+
+  context.fillStyle = "#EAF1F9";
+  fillRoundedRect(context, 575, 304, 450, 42, 7);
+  context.fillStyle = "#061A3A";
+  context.font = "900 28px Arial";
+  context.fillText(`Legy   ${exportContext.score.home_legs} : ${exportContext.score.away_legs}`, 800, 333);
+  context.textAlign = "left";
+}
+
+async function drawMatchSheetExport(exportContext: ExportContext) {
+  const rowHeight = 54;
+  const blockHeaderHeight = 62;
+  const blockGap = 22;
+  const visibleBlocks = exportBlocks.filter((block) => block.orders.some((order) => exportContext.games.some((game) => game.order_number === order)));
+  const height = 500 + visibleBlocks.reduce((sum, block) => {
+    const gamesCount = exportContext.games.filter((game) => block.orders.includes(game.order_number)).length;
+    return sum + blockHeaderHeight + gamesCount * rowHeight + blockGap;
+  }, 0);
+  const { canvas, context } = createExportCanvas(1600, Math.max(1500, height));
+  const [homeLogo, awayLogo] = await Promise.all([
+    loadExportImage(exportContext.homeTeamLogoUrl),
+    loadExportImage(exportContext.awayTeamLogoUrl),
+  ]);
+
+  drawSheetExportHeader(context, exportContext, homeLogo, awayLogo);
+
+  let y = 430;
   visibleBlocks.forEach((block) => {
     const games = exportContext.games.filter((game) => block.orders.includes(game.order_number));
+    context.shadowColor = "rgba(6, 26, 58, 0.10)";
+    context.shadowBlur = 18;
+    context.shadowOffsetY = 6;
     context.fillStyle = "#061A3A";
-    context.fillRect(70, y, 1460, blockHeaderHeight);
+    fillRoundedRect(context, 50, y, 1500, blockHeaderHeight, 8);
+    context.shadowColor = "transparent";
     context.fillStyle = "#FFFFFF";
-    context.font = "900 24px Arial";
-    context.fillText(block.title, 95, y + 34);
-    context.font = "700 20px Arial";
-    context.fillText(block.subtitle, 230, y + 34);
+    context.font = "900 34px Arial";
+    context.fillText(block.title.toUpperCase(), 78, y + 42);
+    context.fillStyle = "rgba(255, 255, 255, 0.72)";
+    context.fillRect(238, y + 17, 2, 30);
+    context.fillStyle = "#FFFFFF";
+    context.font = "800 26px Arial";
+    context.fillText(block.subtitle, 280, y + 41);
+    context.font = "800 22px Arial";
+    context.textAlign = "center";
+    context.fillText("Výkony", 1480, y + 40);
+    context.textAlign = "left";
     y += blockHeaderHeight;
-
-    context.fillStyle = "#FFFFFF";
-    context.fillRect(70, y, 1460, games.length * rowHeight);
-    context.strokeStyle = "#D8E4F2";
-    context.lineWidth = 2;
-    context.strokeRect(70, y, 1460, games.length * rowHeight);
 
     games.forEach((game, index) => {
       const rowY = y + index * rowHeight;
@@ -418,38 +561,52 @@ function drawMatchSheetExport(exportContext: ExportContext) {
       const homeAchievementTotal = exportAchievementTypes.reduce((sum, type) => sum + achievementCount(exportContext.achievements, game.order_number, game.home_player_ids[0], type), 0);
       const awayAchievementTotal = exportAchievementTypes.reduce((sum, type) => sum + achievementCount(exportContext.achievements, game.order_number, game.away_player_ids[0], type), 0);
 
-      if (index > 0) {
-        context.strokeStyle = "#D8E4F2";
-        context.beginPath();
-        context.moveTo(70, rowY);
-        context.lineTo(1530, rowY);
-        context.stroke();
-      }
+      context.fillStyle = index % 2 === 0 ? "#FFFFFF" : "#F1F6FC";
+      context.fillRect(50, rowY, 1500, rowHeight);
+      context.strokeStyle = "#D6E4F2";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(50, rowY);
+      context.lineTo(1550, rowY);
+      context.stroke();
 
       context.fillStyle = "#EF233C";
-      context.font = "900 22px Arial";
-      context.fillText(`${game.order_number}.`, 95, rowY + 37);
-      context.fillStyle = "#0B2F6B";
-      context.font = "800 18px Arial";
-      context.fillText(exportGameTypeLabels[game.game_type], 145, rowY + 37);
+      context.font = "900 25px Arial";
+      context.fillText(`${game.order_number}.`, 84, rowY + 36);
       context.fillStyle = "#061A3A";
-      context.font = "800 20px Arial";
-      fillWrappedText(context, `${homePlayer}${homeExtra}`, 310, rowY + 25, 360, 22, 2);
+      context.font = "500 20px Arial";
+      context.fillText(exportGameTypeLabels[game.game_type], 150, rowY + 35);
+      context.fillStyle = "#061A3A";
+      context.font = "800 23px Arial";
+      fillWrappedText(context, `${homePlayer}${homeExtra}`, 335, rowY + 34, 360, 24, 1);
+
+      context.fillStyle = "#FFE1E2";
+      context.fillRect(712, rowY, 170, rowHeight);
       context.textAlign = "center";
       context.fillStyle = "#EF233C";
-      context.font = "900 24px Arial";
-      context.fillText(`${game.home_legs}:${game.away_legs}`, 800, rowY + 38);
+      context.font = "900 31px Arial";
+      context.fillText(`${game.home_legs} : ${game.away_legs}`, 797, rowY + 37);
       context.fillStyle = "#061A3A";
-      context.font = "800 20px Arial";
       context.textAlign = "left";
-      fillWrappedText(context, `${awayPlayer}${awayExtra}`, 920, rowY + 25, 360, 22, 2);
-      context.fillStyle = "#0B2F6B";
-      context.font = "700 17px Arial";
-      context.fillText(`Výkony ${homeAchievementTotal}`, 1310, rowY + 25);
-      context.fillText(`Výkony ${awayAchievementTotal}`, 1310, rowY + 48);
+      context.font = "800 23px Arial";
+      fillWrappedText(context, `${awayPlayer}${awayExtra}`, 920, rowY + 34, 420, 24, 1);
+
+      context.strokeStyle = "#D6E4F2";
+      context.beginPath();
+      context.moveTo(1398, rowY);
+      context.lineTo(1398, rowY + rowHeight);
+      context.stroke();
+      context.fillStyle = "#061A3A";
+      context.font = "700 22px Arial";
+      context.textAlign = "center";
+      context.fillText(`${homeAchievementTotal}  |  ${awayAchievementTotal}`, 1480, rowY + 35);
+      context.textAlign = "left";
     });
 
-    y += games.length * rowHeight + 26;
+    context.strokeStyle = "#C8D9EC";
+    context.lineWidth = 2;
+    context.strokeRect(50, y, 1500, games.length * rowHeight);
+    y += games.length * rowHeight + blockGap;
   });
 
   return canvas;
@@ -463,10 +620,40 @@ function drawStatisticsExport(exportContext: ExportContext) {
   const visiblePlayerIds = playedPlayerIds(exportContext.games);
   const homeRows = exportContext.homePlayers.filter((player) => visiblePlayerIds.has(player.id));
   const awayRows = exportContext.awayPlayers.filter((player) => visiblePlayerIds.has(player.id));
-  const rowHeight = 52;
-  const height = 360 + (homeRows.length + awayRows.length) * rowHeight + 190;
-  const { canvas, context } = createExportCanvas(1600, Math.max(900, height));
-  drawExportTitle(context, "Statistiky utkání", exportContext);
+  const rowHeight = 72;
+  const tableHeaderHeight = 64;
+  const sectionTitleHeight = 72;
+  const sectionGap = 74;
+  const tableWidth = 1480;
+  const left = 60;
+  const height =
+    270 +
+    sectionTitleHeight +
+    tableHeaderHeight +
+    Math.max(1, homeRows.length) * rowHeight +
+    sectionGap +
+    sectionTitleHeight +
+    tableHeaderHeight +
+    Math.max(1, awayRows.length) * rowHeight +
+    120;
+  const { canvas, context } = createExportCanvas(1600, Math.max(1300, height));
+
+  context.fillStyle = "#F7FAFE";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(11, 47, 107, 0.08)";
+  for (let index = 0; index < 120; index += 1) {
+    context.fillRect((index * 83) % 1600, (index * 47) % canvas.height, index % 4 === 0 ? 3 : 2, index % 4 === 0 ? 3 : 2);
+  }
+
+  context.fillStyle = "#061A3A";
+  context.font = "900 86px Arial";
+  context.fillText("Statistiky utkání", left, 120);
+  context.strokeStyle = "#0B2F6B";
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(left, 178);
+  context.lineTo(1540, 178);
+  context.stroke();
 
   function formatDecimal(value: number) {
     return new Intl.NumberFormat("cs-CZ", {
@@ -476,6 +663,20 @@ function drawStatisticsExport(exportContext: ExportContext) {
   }
 
   function drawTable(title: string, players: Player[], startY: number) {
+    const columns = [
+      { label: "Hráč", width: 315, align: "left" as const },
+      { label: "Užitečnost", width: 190, align: "center" as const },
+      { label: "OZ", width: 82, align: "center" as const },
+      { label: "VZ", width: 82, align: "center" as const },
+      { label: "PZ", width: 82, align: "center" as const },
+      { label: "OL", width: 82, align: "center" as const },
+      { label: "VL", width: 82, align: "center" as const },
+      { label: "PL", width: 82, align: "center" as const },
+      { label: "95+", width: 90, align: "center" as const },
+      { label: "133+", width: 90, align: "center" as const },
+      { label: "171+", width: 90, align: "center" as const },
+      { label: "Zavření 100+", width: 213, align: "right" as const },
+    ];
     const rows = players
       .map((player) => {
         const statistic = exportContext.statistics.find((item) => item.player_id === player.id) ?? {
@@ -525,29 +726,47 @@ function drawStatisticsExport(exportContext: ExportContext) {
       });
     let y = startY;
     context.fillStyle = "#061A3A";
-    context.font = "900 30px Arial";
-    context.fillText(title, 70, y);
-    y += 28;
-    context.fillStyle = "#D8E4F2";
-    context.fillRect(70, y, 1460, 46);
+    context.font = "900 46px Arial";
+    context.fillText(title, left, y);
+    y += sectionTitleHeight;
+
+    context.fillStyle = "#DCEAF8";
+    context.fillRect(left, y, tableWidth, tableHeaderHeight);
     context.fillStyle = "#0B2F6B";
-    context.font = "900 18px Arial";
-    ["Hráč", "Užitečnost", "OZ", "VZ", "PZ", "OL", "VL", "PL", "95+", "133+", "171+", "Zavření 100+"].forEach((label, index) => {
-      const x = index === 0 ? 95 : 560 + (index - 1) * 80;
-      context.fillText(label, x, y + 30);
+    context.font = "900 23px Arial";
+    let x = left;
+    columns.forEach((column, index) => {
+      const textX =
+        column.align === "left"
+          ? x + 22
+          : column.align === "right"
+            ? x + column.width - 22
+            : x + column.width / 2;
+      context.textAlign = column.align;
+      context.fillText(column.label, textX, y + 40);
+      if (index > 0) {
+        context.strokeStyle = "#C8D9EC";
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(x, y + tableHeaderHeight);
+        context.stroke();
+      }
+      x += column.width;
     });
-    y += 46;
+    context.textAlign = "left";
+    y += tableHeaderHeight;
 
     if (rows.length === 0) {
       context.fillStyle = "#FFFFFF";
-      context.fillRect(70, y, 1460, rowHeight);
+      context.fillRect(left, y, tableWidth, rowHeight);
       context.fillStyle = "#64748B";
-      context.font = "700 20px Arial";
-      context.fillText("V této části nejsou žádní nasazení hráči.", 95, y + 34);
-      return y + rowHeight + 42;
+      context.font = "700 24px Arial";
+      context.fillText("V této části nejsou žádní nasazení hráči.", left + 22, y + 45);
+      return y + rowHeight;
     }
 
-    rows.forEach(({ achievements, player, statistic, usefulnessScore }) => {
+    rows.forEach(({ achievements, player, statistic, usefulnessScore }, rowIndex) => {
       const values = [
         formatDecimal(usefulnessScore),
         statistic.played_matches,
@@ -558,23 +777,52 @@ function drawStatisticsExport(exportContext: ExportContext) {
         statistic.lost_legs,
         ...achievements,
       ];
-      context.fillStyle = "#FFFFFF";
-      context.fillRect(70, y, 1460, rowHeight);
-      context.strokeStyle = "#D8E4F2";
-      context.strokeRect(70, y, 1460, rowHeight);
+      context.fillStyle = rowIndex % 2 === 0 ? "#FFFFFF" : "#EFF6FC";
+      context.fillRect(left, y, tableWidth, rowHeight);
+      context.strokeStyle = "#D6E4F2";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(left, y);
+      context.lineTo(left + tableWidth, y);
+      context.stroke();
       context.fillStyle = "#061A3A";
-      context.font = "800 20px Arial";
-      fillWrappedText(context, player.display_name, 95, y + 32, 500, 22, 1);
-      context.font = "800 19px Arial";
-      values.forEach((value, index) => context.fillText(String(value), 560 + index * 80, y + 33));
+      context.font = "900 30px Arial";
+      fillWrappedText(context, player.display_name, left + 22, y + 45, columns[0].width - 42, 30, 1);
+
+      x = left + columns[0].width;
+      values.forEach((value, index) => {
+        const column = columns[index + 1];
+        context.fillStyle = index === 0 ? "#EF233C" : "#061A3A";
+        context.font = index === 0 ? "900 31px Arial" : "700 29px Arial";
+        const textX =
+          column.align === "right"
+            ? x + column.width - 22
+            : column.align === "left"
+              ? x + 22
+              : x + column.width / 2;
+        context.textAlign = column.align;
+        context.fillText(String(value), textX, y + 45);
+        context.strokeStyle = "#D6E4F2";
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(x, y + rowHeight);
+        context.stroke();
+        x += column.width;
+      });
+      context.textAlign = "left";
       y += rowHeight;
     });
 
-    return y + 42;
+    context.strokeStyle = "#C8D9EC";
+    context.lineWidth = 2;
+    context.strokeRect(left, startY + sectionTitleHeight, tableWidth, tableHeaderHeight + rows.length * rowHeight);
+
+    return y;
   }
 
-  let y = 285;
-  y = drawTable("Domácí hráči", homeRows, y);
+  let y = 255;
+  y = drawTable("Domácí hráči", homeRows, y) + sectionGap;
   drawTable("Hostující hráči", awayRows, y);
   return canvas;
 }
@@ -1180,9 +1428,11 @@ export default function AdminMatchSheetPage({
       const exportContext: ExportContext = {
         achievements: payload.achievements,
         awayPlayers,
+        awayTeamLogoUrl,
         awayTeamName,
         games: exportGames,
         homePlayers,
+        homeTeamLogoUrl,
         homeTeamName,
         leagueLabel: [payload.season?.name, payload.league?.name, payload.group?.name].filter(Boolean).join(" / "),
         matchDateLabel: formatDateTime(payload.match.scheduled_at),
@@ -1190,7 +1440,7 @@ export default function AdminMatchSheetPage({
         statistics: payload.statistics,
       };
       const fileBase = sanitizeFilePart(`${homeTeamName}-${awayTeamName}-${formatDateTime(payload.match.scheduled_at)}`);
-      await downloadCanvasAsJpeg(drawMatchSheetExport(exportContext), `${fileBase}-zapis.jpg`);
+      await downloadCanvasAsJpeg(await drawMatchSheetExport(exportContext), `${fileBase}-zapis.jpg`);
       await new Promise((resolve) => window.setTimeout(resolve, 200));
       await downloadCanvasAsJpeg(drawStatisticsExport(exportContext), `${fileBase}-statistiky.jpg`);
     } catch (downloadError) {
