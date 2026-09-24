@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile } from "@/lib/appAuth";
 import { homepageSettingKeys, publicSettingsFromRows, SettingRow } from "@/lib/homepageSettings";
+import { calculateUsefulnessScore } from "@/lib/playerUsefulness";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
 
@@ -79,6 +80,29 @@ type MatchResultRow = {
 };
 
 type MatchSide = "home" | "away";
+
+type MatchGameRow = {
+  id: string;
+  match_id: string;
+  game_type: "singles" | "doubles" | "cricket" | "tiebreak_701";
+  home_legs: number;
+  away_legs: number;
+  winner_side: MatchSide | null;
+};
+
+type MatchGamePlayerRow = {
+  match_game_id: string;
+  side: MatchSide;
+  player_id: string;
+};
+
+type MatchAchievementRow = {
+  match_id: string;
+  player_id: string;
+  achievement_type: "score_95_plus" | "score_133_plus" | "score_171_plus" | "checkout_100_plus";
+  achievement_count: number;
+};
+
 type MatchRescheduleRequestStatus = "opponent_pending" | "pending" | "approved" | "rejected" | "cancelled";
 
 type MatchRescheduleRequestRow = {
@@ -540,7 +564,7 @@ export async function GET(request: Request) {
       matchRows.flatMap((match) => [match.home_team_id, match.away_team_id]),
     ),
   );
-  const [playersResult, groupResult, resultsResult, matchTeamSeasonsResult, seasonMembershipsResult, allPlayersResult] = await Promise.all([
+  const [playersResult, groupResult, resultsResult, matchTeamSeasonsResult, seasonMembershipsResult, allPlayersResult, matchGamesResult, matchAchievementsResult] = await Promise.all([
     playerIds.length > 0
       ? supabase
           .from("players")
@@ -585,7 +609,32 @@ export async function GET(request: Request) {
       .is("deleted_at", null)
       .order("display_name", { ascending: true })
       .returns<AvailablePlayerRow[]>(),
+    matchIds.length > 0
+      ? supabase
+          .from("match_games")
+          .select("id, match_id, game_type, home_legs, away_legs, winner_side")
+          .in("match_id", matchIds)
+          .is("deleted_at", null)
+          .returns<MatchGameRow[]>()
+      : Promise.resolve({ data: [] as MatchGameRow[], error: null }),
+    matchIds.length > 0
+      ? supabase
+          .from("match_game_achievements")
+          .select("match_id, player_id, achievement_type, achievement_count")
+          .in("match_id", matchIds)
+          .is("deleted_at", null)
+          .returns<MatchAchievementRow[]>()
+      : Promise.resolve({ data: [] as MatchAchievementRow[], error: null }),
   ]);
+  const matchGameIds = (matchGamesResult.data ?? []).map((game) => game.id);
+  const matchGamePlayersResult = matchGameIds.length > 0
+    ? await supabase
+        .from("match_game_players")
+        .select("match_game_id, side, player_id")
+        .in("match_game_id", matchGameIds)
+        .is("deleted_at", null)
+        .returns<MatchGamePlayerRow[]>()
+    : { data: [] as MatchGamePlayerRow[], error: null };
   const activeTeamSeasonIds = Array.from(new Set((seasonMembershipsResult.data ?? []).map((membership) => membership.team_season_id)));
   const activeTeamSeasonsResult = activeTeamSeasonIds.length > 0
     ? await supabase
@@ -674,9 +723,99 @@ export async function GET(request: Request) {
     })
     .sort((first, second) => roleOrder[first.role] - roleOrder[second.role] || first.displayName.localeCompare(second.displayName, "cs"));
 
+  const matchGamesByMatchId = new Map<string, MatchGameRow[]>();
+  (matchGamesResult.data ?? []).forEach((game) => {
+    matchGamesByMatchId.set(game.match_id, [...(matchGamesByMatchId.get(game.match_id) ?? []), game]);
+  });
+  const matchGamePlayersByGameId = new Map<string, MatchGamePlayerRow[]>();
+  (matchGamePlayersResult.data ?? []).forEach((gamePlayer) => {
+    matchGamePlayersByGameId.set(gamePlayer.match_game_id, [
+      ...(matchGamePlayersByGameId.get(gamePlayer.match_game_id) ?? []),
+      gamePlayer,
+    ]);
+  });
+  const achievementsByMatchAndPlayer = new Map<string, MatchAchievementRow[]>();
+  (matchAchievementsResult.data ?? []).forEach((achievement) => {
+    const key = `${achievement.match_id}:${achievement.player_id}`;
+    achievementsByMatchAndPlayer.set(key, [...(achievementsByMatchAndPlayer.get(key) ?? []), achievement]);
+  });
+  const playerUsefulnessForMatch = (match: MatchRow, ownSide: MatchSide) => {
+    const stats = new Map<string, {
+      playerId: string;
+      displayName: string;
+      playedMatches: number;
+      wonMatches: number;
+      lostMatches: number;
+      wonLegs: number;
+      lostLegs: number;
+      score95Plus: number;
+      score133Plus: number;
+      score171Plus: number;
+      checkout100Plus: number;
+    }>();
+
+    (matchGamesByMatchId.get(match.id) ?? [])
+      .filter((game) => game.game_type === "singles" && game.winner_side)
+      .forEach((game) => {
+        (matchGamePlayersByGameId.get(game.id) ?? [])
+          .filter((gamePlayer) => gamePlayer.side === ownSide)
+          .forEach((gamePlayer) => {
+            const player = playerById.get(gamePlayer.player_id);
+            const current = stats.get(gamePlayer.player_id) ?? {
+              playerId: gamePlayer.player_id,
+              displayName: player?.display_name ?? "Neznámý hráč",
+              playedMatches: 0,
+              wonMatches: 0,
+              lostMatches: 0,
+              wonLegs: 0,
+              lostLegs: 0,
+              score95Plus: 0,
+              score133Plus: 0,
+              score171Plus: 0,
+              checkout100Plus: 0,
+            };
+            const wonLegs = gamePlayer.side === "home" ? game.home_legs : game.away_legs;
+            const lostLegs = gamePlayer.side === "home" ? game.away_legs : game.home_legs;
+            current.playedMatches += 1;
+            current.wonLegs += wonLegs;
+            current.lostLegs += lostLegs;
+            if (game.winner_side === gamePlayer.side) current.wonMatches += 1;
+            else current.lostMatches += 1;
+            stats.set(gamePlayer.player_id, current);
+          });
+      });
+
+    Array.from(stats.values()).forEach((stat) => {
+      (achievementsByMatchAndPlayer.get(`${match.id}:${stat.playerId}`) ?? []).forEach((achievement) => {
+        if (achievement.achievement_type === "score_95_plus") stat.score95Plus += achievement.achievement_count;
+        if (achievement.achievement_type === "score_133_plus") stat.score133Plus += achievement.achievement_count;
+        if (achievement.achievement_type === "score_171_plus") stat.score171Plus += achievement.achievement_count;
+        if (achievement.achievement_type === "checkout_100_plus") stat.checkout100Plus += achievement.achievement_count;
+      });
+    });
+
+    return Array.from(stats.values())
+      .map((stat) => ({
+        playerId: stat.playerId,
+        displayName: stat.displayName,
+        playedMatches: stat.playedMatches,
+        wonMatches: stat.wonMatches,
+        lostMatches: stat.lostMatches,
+        usefulnessScore: calculateUsefulnessScore(stat, Math.max(4, stat.playedMatches)),
+      }))
+      .sort((first, second) => {
+        const usefulnessDiff = second.usefulnessScore - first.usefulnessScore;
+        if (usefulnessDiff !== 0) return usefulnessDiff;
+        const winsDiff = second.wonMatches - first.wonMatches;
+        if (winsDiff !== 0) return winsDiff;
+        return first.displayName.localeCompare(second.displayName, "cs");
+      });
+  };
+
   const matches = matchRows.map((match) => {
     const result = resultsByMatchId.get(match.id) ?? null;
     const isHome = ownTeamSeasonIdsSet.has(match.home_team_id);
+    const ownSide: MatchSide = isHome ? "home" : "away";
     const opponentId = isHome ? match.away_team_id : match.home_team_id;
     const matchSeason = seasonById.get(match.season_id);
     const homeTeamName = matchTeamName(match.home_team_id, "Domácí");
@@ -696,6 +835,7 @@ export async function GET(request: Request) {
       awayTeamName,
       opponentName: matchTeamName(opponentId, "Soupeř"),
       result: result ? `${result.home_points}:${result.away_points}` : null,
+      playerUsefulness: playerUsefulnessForMatch(match, ownSide),
     };
   });
   const matchById = new Map(matchRows.map((match) => [match.id, match]));

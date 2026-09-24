@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, PageHeader } from "@/components/ui/admin";
 import { MatchInfo, MatchSheet, MatchStatisticsSection } from "@/components/matches/MatchSheet";
+import { calculateUsefulnessScore } from "@/lib/playerUsefulness";
 import { supabase } from "@/lib/supabase";
 
 type MatchStatus = "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
@@ -201,6 +202,11 @@ function matchStatusForGames(games: SheetGame[]): MatchStatus {
     : "scheduled";
 }
 
+function sheetTiebreakPlayed(games: SheetGame[]) {
+  const tiebreak = games.find((game) => game.order_number === 19 || game.game_type === "tiebreak_701");
+  return tiebreak ? getWinner(tiebreak) !== null : false;
+}
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium", timeStyle: "short" }).format(
     new Date(value),
@@ -227,6 +233,352 @@ function normalizeGame(game: SheetGame): SheetGame {
   };
 }
 
+const exportBlocks = [
+  { title: "Blok 1", subtitle: "První dvouhry", orders: [1, 2, 3, 4] },
+  { title: "Blok 2", subtitle: "Druhé dvouhry", orders: [5, 6, 7, 8] },
+  { title: "Blok 3", subtitle: "Párové hry", orders: [9, 10] },
+  { title: "Blok 4", subtitle: "Třetí dvouhry", orders: [11, 12, 13, 14] },
+  { title: "Blok 5", subtitle: "Čtvrté dvouhry", orders: [15, 16, 17, 18] },
+  { title: "Rozstřel", subtitle: "Povinně při stavu 9:9", orders: [19] },
+];
+
+const exportAchievementLabels: Record<AchievementType, string> = {
+  score_95_plus: "95+",
+  score_133_plus: "133+",
+  score_171_plus: "171+",
+  checkout_100_plus: "Zavření 100+",
+};
+const exportAchievementTypes = Object.keys(exportAchievementLabels) as AchievementType[];
+
+const exportGameTypeLabels: Record<MatchGameType, string> = {
+  singles: "Dvouhra",
+  doubles: "Čtyřhra",
+  cricket: "Kriket",
+  tiebreak_701: "Rozstřel 701 DO",
+};
+
+type ExportContext = {
+  achievements: SheetAchievement[];
+  awayPlayers: Player[];
+  awayTeamName: string;
+  games: SheetGame[];
+  homePlayers: Player[];
+  homeTeamName: string;
+  leagueLabel: string;
+  matchDateLabel: string;
+  score: Score;
+  statistics: PlayerStatistics[];
+};
+
+function sanitizeFilePart(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "zapis";
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("JPG se nepodařilo vytvořit."));
+    }, "image/jpeg", 0.92);
+  });
+}
+
+async function downloadCanvasAsJpeg(canvas: HTMLCanvasElement, fileName: string) {
+  const blob = await canvasToJpegBlob(canvas);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fillWrappedText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines = 2,
+) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  words.forEach((word) => {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+    if (context.measureText(nextLine).width <= maxWidth || currentLine.length === 0) {
+      currentLine = nextLine;
+      return;
+    }
+    lines.push(currentLine);
+    currentLine = word;
+  });
+  if (currentLine) lines.push(currentLine);
+
+  const visibleLines = lines.slice(0, maxLines);
+  if (lines.length > maxLines && visibleLines.length > 0) {
+    let lastLine = visibleLines[visibleLines.length - 1];
+    while (lastLine.length > 0 && context.measureText(`${lastLine}...`).width > maxWidth) {
+      lastLine = lastLine.slice(0, -1);
+    }
+    visibleLines[visibleLines.length - 1] = `${lastLine}...`;
+  }
+
+  visibleLines.forEach((line, index) => {
+    context.fillText(line, x, y + index * lineHeight);
+  });
+
+  return y + visibleLines.length * lineHeight;
+}
+
+function createExportCanvas(width: number, height: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Prohlížeč nepodporuje export obrázku.");
+  context.fillStyle = "#F4F8FF";
+  context.fillRect(0, 0, width, height);
+  return { canvas, context };
+}
+
+function drawExportTitle(context: CanvasRenderingContext2D, title: string, exportContext: ExportContext) {
+  context.fillStyle = "#061A3A";
+  context.font = "900 54px Arial";
+  context.fillText(title, 70, 86);
+  context.fillStyle = "#EF233C";
+  context.font = "900 24px Arial";
+  context.fillText(`${exportContext.homeTeamName} vs ${exportContext.awayTeamName}`, 70, 126);
+  context.fillStyle = "#0B2F6B";
+  context.font = "700 24px Arial";
+  context.fillText(exportContext.leagueLabel, 70, 164);
+  context.fillText(exportContext.matchDateLabel, 70, 202);
+  context.fillStyle = "#061A3A";
+  context.font = "900 42px Arial";
+  context.fillText(`Výsledek ${exportContext.score.home_points}:${exportContext.score.away_points}`, 1120, 110);
+  context.fillText(`Legy ${exportContext.score.home_legs}:${exportContext.score.away_legs}`, 1120, 162);
+}
+
+function playerName(players: Player[], id: string | undefined) {
+  return players.find((player) => player.id === id)?.display_name ?? "-";
+}
+
+function achievementCount(achievements: SheetAchievement[], orderNumber: number, playerId: string | undefined, type: AchievementType) {
+  if (!playerId) return 0;
+  return achievements
+    .filter((achievement) => achievement.order_number === orderNumber && achievement.player_id === playerId && achievement.achievement_type === type)
+    .reduce((sum, achievement) => sum + achievement.achievement_count, 0);
+}
+
+function drawMatchSheetExport(exportContext: ExportContext) {
+  const rowHeight = 58;
+  const blockHeaderHeight = 52;
+  const visibleBlocks = exportBlocks.filter((block) => block.orders.some((order) => exportContext.games.some((game) => game.order_number === order)));
+  const height = 260 + visibleBlocks.reduce((sum, block) => {
+    const gamesCount = exportContext.games.filter((game) => block.orders.includes(game.order_number)).length;
+    return sum + blockHeaderHeight + gamesCount * rowHeight + 26;
+  }, 0);
+  const { canvas, context } = createExportCanvas(1600, Math.max(1200, height));
+  drawExportTitle(context, "Zápis utkání", exportContext);
+
+  let y = 250;
+  visibleBlocks.forEach((block) => {
+    const games = exportContext.games.filter((game) => block.orders.includes(game.order_number));
+    context.fillStyle = "#061A3A";
+    context.fillRect(70, y, 1460, blockHeaderHeight);
+    context.fillStyle = "#FFFFFF";
+    context.font = "900 24px Arial";
+    context.fillText(block.title, 95, y + 34);
+    context.font = "700 20px Arial";
+    context.fillText(block.subtitle, 230, y + 34);
+    y += blockHeaderHeight;
+
+    context.fillStyle = "#FFFFFF";
+    context.fillRect(70, y, 1460, games.length * rowHeight);
+    context.strokeStyle = "#D8E4F2";
+    context.lineWidth = 2;
+    context.strokeRect(70, y, 1460, games.length * rowHeight);
+
+    games.forEach((game, index) => {
+      const rowY = y + index * rowHeight;
+      const homePlayer = playerName(exportContext.homePlayers, game.home_player_ids[0]);
+      const awayPlayer = playerName(exportContext.awayPlayers, game.away_player_ids[0]);
+      const homeExtra = game.home_player_ids[1] ? ` / ${playerName(exportContext.homePlayers, game.home_player_ids[1])}` : "";
+      const awayExtra = game.away_player_ids[1] ? ` / ${playerName(exportContext.awayPlayers, game.away_player_ids[1])}` : "";
+      const homeAchievementTotal = exportAchievementTypes.reduce((sum, type) => sum + achievementCount(exportContext.achievements, game.order_number, game.home_player_ids[0], type), 0);
+      const awayAchievementTotal = exportAchievementTypes.reduce((sum, type) => sum + achievementCount(exportContext.achievements, game.order_number, game.away_player_ids[0], type), 0);
+
+      if (index > 0) {
+        context.strokeStyle = "#D8E4F2";
+        context.beginPath();
+        context.moveTo(70, rowY);
+        context.lineTo(1530, rowY);
+        context.stroke();
+      }
+
+      context.fillStyle = "#EF233C";
+      context.font = "900 22px Arial";
+      context.fillText(`${game.order_number}.`, 95, rowY + 37);
+      context.fillStyle = "#0B2F6B";
+      context.font = "800 18px Arial";
+      context.fillText(exportGameTypeLabels[game.game_type], 145, rowY + 37);
+      context.fillStyle = "#061A3A";
+      context.font = "800 20px Arial";
+      fillWrappedText(context, `${homePlayer}${homeExtra}`, 310, rowY + 25, 360, 22, 2);
+      context.textAlign = "center";
+      context.fillStyle = "#EF233C";
+      context.font = "900 24px Arial";
+      context.fillText(`${game.home_legs}:${game.away_legs}`, 800, rowY + 38);
+      context.fillStyle = "#061A3A";
+      context.font = "800 20px Arial";
+      context.textAlign = "left";
+      fillWrappedText(context, `${awayPlayer}${awayExtra}`, 920, rowY + 25, 360, 22, 2);
+      context.fillStyle = "#0B2F6B";
+      context.font = "700 17px Arial";
+      context.fillText(`Výkony ${homeAchievementTotal}`, 1310, rowY + 25);
+      context.fillText(`Výkony ${awayAchievementTotal}`, 1310, rowY + 48);
+    });
+
+    y += games.length * rowHeight + 26;
+  });
+
+  return canvas;
+}
+
+function playedPlayerIds(games: SheetGame[]) {
+  return new Set(games.flatMap((game) => [...game.home_player_ids, ...game.away_player_ids]).filter(Boolean));
+}
+
+function drawStatisticsExport(exportContext: ExportContext) {
+  const visiblePlayerIds = playedPlayerIds(exportContext.games);
+  const homeRows = exportContext.homePlayers.filter((player) => visiblePlayerIds.has(player.id));
+  const awayRows = exportContext.awayPlayers.filter((player) => visiblePlayerIds.has(player.id));
+  const rowHeight = 52;
+  const height = 360 + (homeRows.length + awayRows.length) * rowHeight + 190;
+  const { canvas, context } = createExportCanvas(1600, Math.max(900, height));
+  drawExportTitle(context, "Statistiky utkání", exportContext);
+
+  function formatDecimal(value: number) {
+    return new Intl.NumberFormat("cs-CZ", {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 1,
+    }).format(value);
+  }
+
+  function drawTable(title: string, players: Player[], startY: number) {
+    const rows = players
+      .map((player) => {
+        const statistic = exportContext.statistics.find((item) => item.player_id === player.id) ?? {
+          player_id: player.id,
+          played_matches: 0,
+          won_matches: 0,
+          lost_matches: 0,
+          played_legs: 0,
+          won_legs: 0,
+          lost_legs: 0,
+        };
+        const achievements = exportAchievementTypes.map((type) =>
+          exportContext.achievements
+            .filter((achievement) => achievement.player_id === player.id && achievement.achievement_type === type)
+            .reduce((sum, achievement) => sum + achievement.achievement_count, 0),
+        );
+        const usefulnessScore = calculateUsefulnessScore(
+          {
+            playedMatches: statistic.played_matches,
+            wonMatches: statistic.won_matches,
+            wonLegs: statistic.won_legs,
+            lostLegs: statistic.lost_legs,
+            score95Plus: achievements[exportAchievementTypes.indexOf("score_95_plus")] ?? 0,
+            score133Plus: achievements[exportAchievementTypes.indexOf("score_133_plus")] ?? 0,
+            score171Plus: achievements[exportAchievementTypes.indexOf("score_171_plus")] ?? 0,
+            checkout100Plus: achievements[exportAchievementTypes.indexOf("checkout_100_plus")] ?? 0,
+          },
+          Math.max(4, statistic.played_matches),
+        );
+
+        return { achievements, player, statistic, usefulnessScore };
+      })
+      .sort((first, second) => {
+        const usefulnessDiff = second.usefulnessScore - first.usefulnessScore;
+        if (usefulnessDiff !== 0) return usefulnessDiff;
+
+        const winsDiff = second.statistic.won_matches - first.statistic.won_matches;
+        if (winsDiff !== 0) return winsDiff;
+
+        const legDiff =
+          second.statistic.won_legs -
+          second.statistic.lost_legs -
+          (first.statistic.won_legs - first.statistic.lost_legs);
+        if (legDiff !== 0) return legDiff;
+
+        return first.player.display_name.localeCompare(second.player.display_name, "cs");
+      });
+    let y = startY;
+    context.fillStyle = "#061A3A";
+    context.font = "900 30px Arial";
+    context.fillText(title, 70, y);
+    y += 28;
+    context.fillStyle = "#D8E4F2";
+    context.fillRect(70, y, 1460, 46);
+    context.fillStyle = "#0B2F6B";
+    context.font = "900 18px Arial";
+    ["Hráč", "Užitečnost", "OZ", "VZ", "PZ", "OL", "VL", "PL", "95+", "133+", "171+", "Zavření 100+"].forEach((label, index) => {
+      const x = index === 0 ? 95 : 560 + (index - 1) * 80;
+      context.fillText(label, x, y + 30);
+    });
+    y += 46;
+
+    if (rows.length === 0) {
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(70, y, 1460, rowHeight);
+      context.fillStyle = "#64748B";
+      context.font = "700 20px Arial";
+      context.fillText("V této části nejsou žádní nasazení hráči.", 95, y + 34);
+      return y + rowHeight + 42;
+    }
+
+    rows.forEach(({ achievements, player, statistic, usefulnessScore }) => {
+      const values = [
+        formatDecimal(usefulnessScore),
+        statistic.played_matches,
+        statistic.won_matches,
+        statistic.lost_matches,
+        statistic.played_legs,
+        statistic.won_legs,
+        statistic.lost_legs,
+        ...achievements,
+      ];
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(70, y, 1460, rowHeight);
+      context.strokeStyle = "#D8E4F2";
+      context.strokeRect(70, y, 1460, rowHeight);
+      context.fillStyle = "#061A3A";
+      context.font = "800 20px Arial";
+      fillWrappedText(context, player.display_name, 95, y + 32, 500, 22, 1);
+      context.font = "800 19px Arial";
+      values.forEach((value, index) => context.fillText(String(value), 560 + index * 80, y + 33));
+      y += rowHeight;
+    });
+
+    return y + 42;
+  }
+
+  let y = 285;
+  y = drawTable("Domácí hráči", homeRows, y);
+  drawTable("Hostující hráči", awayRows, y);
+  return canvas;
+}
+
 export default function AdminMatchSheetPage({
   backHref = "/admin/matches",
   backLabel = "Zpět na zápasy",
@@ -248,6 +600,7 @@ export default function AdminMatchSheetPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [revealingLineup, setRevealingLineup] = useState<{ side: MatchSide; blockNumber: number } | null>(null);
+  const [isDownloadingImages, setIsDownloadingImages] = useState(false);
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [unlockingSide, setUnlockingSide] = useState<MatchSide | null>(null);
@@ -281,8 +634,9 @@ export default function AdminMatchSheetPage({
   const coreScore = calculateScore(coreGames);
   const tiebreakNeeded =
     coreScore.home_points === 9 && coreScore.away_points === 9;
+  const includeTiebreak = tiebreakNeeded && sheetTiebreakPlayed(payload.games);
   const totalScore = calculateScore(
-    payload.games.filter((game) => game.order_number <= 18 || tiebreakNeeded),
+    payload.games.filter((game) => game.order_number <= 18 || includeTiebreak),
   );
   const confirmationBySide = new Map(
     payload.confirmations.map((confirmation) => [confirmation.side, confirmation]),
@@ -816,6 +1170,36 @@ export default function AdminMatchSheetPage({
     }));
   }
 
+  async function handleDownloadImages() {
+    if (!payload.match) return;
+    setIsDownloadingImages(true);
+    setError(null);
+
+    try {
+      const exportGames = payload.games.filter((game) => game.order_number <= 18 || includeTiebreak);
+      const exportContext: ExportContext = {
+        achievements: payload.achievements,
+        awayPlayers,
+        awayTeamName,
+        games: exportGames,
+        homePlayers,
+        homeTeamName,
+        leagueLabel: [payload.season?.name, payload.league?.name, payload.group?.name].filter(Boolean).join(" / "),
+        matchDateLabel: formatDateTime(payload.match.scheduled_at),
+        score: totalScore,
+        statistics: payload.statistics,
+      };
+      const fileBase = sanitizeFilePart(`${homeTeamName}-${awayTeamName}-${formatDateTime(payload.match.scheduled_at)}`);
+      await downloadCanvasAsJpeg(drawMatchSheetExport(exportContext), `${fileBase}-zapis.jpg`);
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+      await downloadCanvasAsJpeg(drawStatisticsExport(exportContext), `${fileBase}-statistiky.jpg`);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "Zápis se nepodařilo stáhnout jako JPG.");
+    } finally {
+      setIsDownloadingImages(false);
+    }
+  }
+
   function updateInlineAchievement(
     orderNumber: number,
     playerId: string,
@@ -867,14 +1251,25 @@ export default function AdminMatchSheetPage({
           <Link className="text-sm font-semibold text-[var(--brand-blue)] hover:text-[var(--brand-navy)]" href={backHref}>{backLabel}</Link>
           <div className="mt-4"><PageHeader title="Zápis utkání" description="Oficiální zápis ZŠS podle jednotlivých bloků utkání." /></div>
         </div>
-        {scoreboardHref ? (
-          <Link
-            className="inline-flex w-fit items-center justify-center rounded-2xl bg-[#EF233C] px-5 py-3 text-sm font-bold !text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
-            href={scoreboardHref(matchId)}
+        <div className="flex flex-wrap gap-3">
+          <Button
+            disabled={isDownloadingImages}
+            isLoading={isDownloadingImages}
+            onClick={() => void handleDownloadImages()}
+            type="button"
+            variant="secondary"
           >
-            Otevřít počítadlo
-          </Link>
-        ) : null}
+            {isDownloadingImages ? "Stahuji JPG..." : "Stáhnout zápis JPG"}
+          </Button>
+          {scoreboardHref ? (
+            <Link
+              className="inline-flex w-fit items-center justify-center rounded-2xl bg-[#EF233C] px-5 py-3 text-sm font-bold !text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#C91D32]"
+              href={scoreboardHref(matchId)}
+            >
+              Otevřít počítadlo
+            </Link>
+          ) : null}
+        </div>
       </div>
       <Card>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -1044,6 +1439,7 @@ export default function AdminMatchSheetPage({
           <MatchStatisticsSection
             achievements={payload.achievements}
             awayPlayers={awayPlayers}
+            games={payload.games}
             homePlayers={homePlayers}
             statistics={payload.statistics}
           />

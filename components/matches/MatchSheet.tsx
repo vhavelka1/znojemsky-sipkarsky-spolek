@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Card } from "@/components/ui/admin";
+import { calculateUsefulnessScore } from "@/lib/playerUsefulness";
 
 export type MatchStatus = "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
 export type MatchGameType = "singles" | "doubles" | "cricket" | "tiebreak_701";
@@ -74,6 +75,7 @@ type MatchSheetProps = {
 
 type MatchStatisticsProps = {
   achievements: SheetAchievement[];
+  games?: SheetGame[];
   homePlayers: Player[];
   awayPlayers: Player[];
   statistics: Array<{
@@ -86,6 +88,15 @@ type MatchStatisticsProps = {
     lost_legs: number;
   }>;
   playerLabel?: (player: Player) => string;
+};
+
+type MatchStatistic = MatchStatisticsProps["statistics"][number];
+
+type StatisticRow = {
+  player: Player;
+  statistic: Omit<MatchStatistic, "player_id">;
+  totals: number[];
+  usefulnessScore: number;
 };
 
 export const statusLabels: Record<MatchStatus, string> = {
@@ -187,6 +198,11 @@ export function sheetTiebreakNeeded(games: SheetGame[]) {
   return coreScore.home_points === 9 && coreScore.away_points === 9;
 }
 
+export function sheetTiebreakPlayed(games: SheetGame[]) {
+  const tiebreak = games.find((game) => game.order_number === 19 || game.game_type === "tiebreak_701");
+  return tiebreak ? getWinner(tiebreak) !== null : false;
+}
+
 function defaultPlayerLabel(player: Player) {
   return player.display_name;
 }
@@ -253,7 +269,8 @@ export function MatchSheet({
   playerUsesDifferentSlot = () => false,
 }: MatchSheetProps) {
   const tiebreakNeeded = sheetTiebreakNeeded(games);
-  const visibleBlocks = tiebreakNeeded ? [...blocks, tiebreakBlock] : blocks;
+  const showTiebreak = tiebreakNeeded && (!readOnly || sheetTiebreakPlayed(games));
+  const visibleBlocks = showTiebreak ? [...blocks, tiebreakBlock] : blocks;
   const revealKeys = new Set(blockReveals.map((reveal) => `${reveal.side}:${reveal.block_number}`));
   const lockedSideSet = new Set(lockedSides);
 
@@ -532,17 +549,76 @@ export function MatchSheet({
 export function MatchStatisticsSection({
   achievements,
   awayPlayers,
+  games = [],
   homePlayers,
   playerLabel = defaultPlayerLabel,
   statistics,
 }: MatchStatisticsProps) {
+  const playedPlayerIds = new Set(
+    games.flatMap((game) => [...game.home_player_ids, ...game.away_player_ids]).filter(Boolean),
+  );
+  const statisticsPlayerIds = new Set(
+    statistics
+      .filter((statistic) => statistic.played_matches > 0 || statistic.played_legs > 0)
+      .map((statistic) => statistic.player_id),
+  );
+
+  function visiblePlayers(players: Player[]) {
+    const visibleIds = playedPlayerIds.size > 0 ? playedPlayerIds : statisticsPlayerIds;
+    return players.filter((player) => visibleIds.has(player.id));
+  }
+
+  function formatDecimal(value: number) {
+    return new Intl.NumberFormat("cs-CZ", {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 1,
+    }).format(value);
+  }
+
+  function buildStatisticRows(players: Player[]): StatisticRow[] {
+    return visiblePlayers(players)
+      .map((player) => {
+        const statistic = statistics.find((item) => item.player_id === player.id) ?? { played_matches: 0, won_matches: 0, lost_matches: 0, played_legs: 0, won_legs: 0, lost_legs: 0 };
+        const totals = achievementTypes.map((type) => achievements.filter((item) => item.player_id === player.id && item.achievement_type === type).reduce((sum, item) => sum + item.achievement_count, 0));
+        const usefulnessScore = calculateUsefulnessScore(
+          {
+            playedMatches: statistic.played_matches,
+            wonMatches: statistic.won_matches,
+            wonLegs: statistic.won_legs,
+            lostLegs: statistic.lost_legs,
+            score95Plus: totals[achievementTypes.indexOf("score_95_plus")] ?? 0,
+            score133Plus: totals[achievementTypes.indexOf("score_133_plus")] ?? 0,
+            score171Plus: totals[achievementTypes.indexOf("score_171_plus")] ?? 0,
+            checkout100Plus: totals[achievementTypes.indexOf("checkout_100_plus")] ?? 0,
+          },
+          Math.max(4, statistic.played_matches),
+        );
+
+        return { player, statistic, totals, usefulnessScore };
+      })
+      .sort((first, second) => {
+        const usefulnessDiff = second.usefulnessScore - first.usefulnessScore;
+        if (usefulnessDiff !== 0) return usefulnessDiff;
+
+        const winsDiff = second.statistic.won_matches - first.statistic.won_matches;
+        if (winsDiff !== 0) return winsDiff;
+
+        const legDiff =
+          second.statistic.won_legs -
+          second.statistic.lost_legs -
+          (first.statistic.won_legs - first.statistic.lost_legs);
+        if (legDiff !== 0) return legDiff;
+
+        return playerLabel(first.player).localeCompare(playerLabel(second.player), "cs");
+      });
+  }
+
   function statisticRows(players: Player[]) {
-    return players.map((player) => {
-      const statistic = statistics.find((item) => item.player_id === player.id) ?? { played_matches: 0, won_matches: 0, lost_matches: 0, played_legs: 0, won_legs: 0, lost_legs: 0 };
-      const totals = achievementTypes.map((type) => achievements.filter((item) => item.player_id === player.id && item.achievement_type === type).reduce((sum, item) => sum + item.achievement_count, 0));
+    return buildStatisticRows(players).map(({ player, statistic, totals, usefulnessScore }) => {
       return (
         <tr className="border-t border-[var(--admin-border)]" key={player.id}>
           <td className="px-3 py-3 font-medium">{playerLabel(player)}</td>
+          <td className="px-3 py-3 text-right font-black text-[#EF233C]">{formatDecimal(usefulnessScore)}</td>
           <td className="px-3 py-3 text-right">{statistic.played_matches}</td>
           <td className="px-3 py-3 text-right">{statistic.won_matches}</td>
           <td className="px-3 py-3 text-right">{statistic.lost_matches}</td>
@@ -556,18 +632,28 @@ export function MatchStatisticsSection({
   }
 
   function statisticsTable(title: string, players: Player[]) {
+    const rows = statisticRows(players);
+
     return (
       <div>
         <h4 className="font-bold text-[var(--brand-navy)]">{title}</h4>
         <div className="mt-3 overflow-x-auto">
-          <table className="min-w-[900px] text-left text-sm">
+          <table className="min-w-[980px] text-left text-sm">
             <thead className="bg-[var(--admin-soft-blue)] text-[var(--admin-muted)]">
               <tr>
                 <th className="px-3 py-3">Hráč</th>
-                {["OZ", "VZ", "PZ", "OL", "VL", "PL", "95+", "133+", "171+", "Zavření 100+"].map((label) => <th className="px-3 py-3 text-right" key={label}>{label}</th>)}
+                {["Užitečnost", "OZ", "VZ", "PZ", "OL", "VL", "PL", "95+", "133+", "171+", "Zavření 100+"].map((label) => <th className="px-3 py-3 text-right" key={label}>{label}</th>)}
               </tr>
             </thead>
-            <tbody>{statisticRows(players)}</tbody>
+            <tbody>
+              {rows.length > 0 ? rows : (
+                <tr className="border-t border-[var(--admin-border)]">
+                  <td className="px-3 py-3 text-sm font-semibold text-[var(--admin-muted)]" colSpan={12}>
+                    V této části nejsou žádní nasazení hráči.
+                  </td>
+                </tr>
+              )}
+            </tbody>
           </table>
         </div>
       </div>

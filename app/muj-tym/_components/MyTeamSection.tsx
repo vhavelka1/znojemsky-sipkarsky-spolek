@@ -82,6 +82,14 @@ type TeamMatch = {
   awayTeamName: string;
   opponentName: string;
   result: string | null;
+  playerUsefulness?: Array<{
+    playerId: string;
+    displayName: string;
+    playedMatches: number;
+    wonMatches: number;
+    lostMatches: number;
+    usefulnessScore: number;
+  }>;
 };
 
 type RosterRequest = {
@@ -286,6 +294,13 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatDecimal(value: number) {
+  return new Intl.NumberFormat("cs-CZ", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  }).format(value);
 }
 
 function normalizeSearch(value: string) {
@@ -1093,6 +1108,32 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
                       </Link>
                     </div>
                   </div>
+                  {match.playerUsefulness && match.playerUsefulness.length > 0 ? (
+                    <div className="mt-4 overflow-x-auto rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF]">
+                      <table className="min-w-[520px] text-left text-sm">
+                        <thead className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">Hráč</th>
+                            <th className="px-4 py-3 text-right">Užitečnost</th>
+                            <th className="px-4 py-3 text-right">OZ</th>
+                            <th className="px-4 py-3 text-right">VZ</th>
+                            <th className="px-4 py-3 text-right">PZ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#D8E4F2] bg-white">
+                          {match.playerUsefulness.map((player) => (
+                            <tr key={player.playerId}>
+                              <td className="px-4 py-3 font-black text-[#061A3A]">{player.displayName}</td>
+                              <td className="px-4 py-3 text-right font-black text-[#EF233C]">{formatDecimal(player.usefulnessScore)}</td>
+                              <td className="px-4 py-3 text-right font-bold">{player.playedMatches}</td>
+                              <td className="px-4 py-3 text-right font-bold">{player.wonMatches}</td>
+                              <td className="px-4 py-3 text-right font-bold">{player.lostMatches}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </article>
               ))
             )}
