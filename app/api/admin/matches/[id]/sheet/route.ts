@@ -194,6 +194,7 @@ const achievementTypes: AchievementType[] = [
 ];
 const homeSlotCodes: HomeSlotCode[] = ["1", "2", "3", "4"];
 const awaySlotCodes: AwaySlotCode[] = ["A", "B", "C", "D"];
+const maxLineupRevealBlockNumber = 8;
 const singlesSlotPairs = new Map<number, [HomeSlotCode, AwaySlotCode]>([
   [1, ["1", "A"]],
   [2, ["2", "B"]],
@@ -256,9 +257,11 @@ function blockNumberForOrder(orderNumber: number) {
   if (orderNumber >= 1 && orderNumber <= 4) return 1;
   if (orderNumber >= 5 && orderNumber <= 8) return 2;
   if (orderNumber >= 9 && orderNumber <= 10) return 3;
-  if (orderNumber >= 11 && orderNumber <= 14) return 4;
-  if (orderNumber >= 15 && orderNumber <= 18) return 5;
-  if (orderNumber === 19) return 6;
+  if (orderNumber >= 11 && orderNumber <= 12) return 4;
+  if (orderNumber >= 13 && orderNumber <= 14) return 5;
+  if (orderNumber >= 15 && orderNumber <= 16) return 6;
+  if (orderNumber >= 17 && orderNumber <= 18) return 7;
+  if (orderNumber === 19) return 8;
   return null;
 }
 
@@ -1031,7 +1034,7 @@ async function handleAutosaveCell(
   if (cell.type === "lineup_reveal") {
     const side = parseSide(cell.side);
     const blockNumber = parseInteger(cell.block_number);
-    if (!side || !blockNumber || blockNumber < 1 || blockNumber > 6) {
+    if (!side || !blockNumber || blockNumber < 1 || blockNumber > maxLineupRevealBlockNumber) {
       return NextResponse.json({ error: "Blok nasazení není platný." }, { status: 400 });
     }
 

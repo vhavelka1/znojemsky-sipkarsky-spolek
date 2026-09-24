@@ -45,6 +45,7 @@ type Block = {
   title: string;
   subtitle: string;
   orders: number[];
+  revealSegments?: Array<{ blockNumber: number; orders: number[] }>;
   highlighted?: boolean;
 };
 
@@ -141,12 +142,30 @@ const blocks: Block[] = [
   { blockNumber: 1, title: "Blok 1", subtitle: "První dvouhry", orders: [1, 2, 3, 4] },
   { blockNumber: 2, title: "Blok 2", subtitle: "Druhé dvouhry", orders: [5, 6, 7, 8] },
   { blockNumber: 3, title: "Blok 3", subtitle: "Párové hry", orders: [9, 10], highlighted: true },
-  { blockNumber: 4, title: "Blok 4", subtitle: "Třetí dvouhry", orders: [11, 12, 13, 14] },
-  { blockNumber: 5, title: "Blok 5", subtitle: "Čtvrté dvouhry", orders: [15, 16, 17, 18] },
+  {
+    blockNumber: 4,
+    title: "Blok 4",
+    subtitle: "Třetí dvouhry",
+    orders: [11, 12, 13, 14],
+    revealSegments: [
+      { blockNumber: 4, orders: [11, 12] },
+      { blockNumber: 5, orders: [13, 14] },
+    ],
+  },
+  {
+    blockNumber: 6,
+    title: "Blok 5",
+    subtitle: "Čtvrté dvouhry",
+    orders: [15, 16, 17, 18],
+    revealSegments: [
+      { blockNumber: 6, orders: [15, 16] },
+      { blockNumber: 7, orders: [17, 18] },
+    ],
+  },
 ];
 
 const tiebreakBlock: Block = {
-  blockNumber: 6,
+  blockNumber: 8,
   title: "Povinně při stavu 9:9",
   subtitle: "Rozstřel 701 DO",
   orders: [19],
@@ -432,7 +451,7 @@ export function MatchSheet({
     );
   }
 
-  function renderGame(game: SheetGame, block: Block) {
+  function renderGame(game: SheetGame, blockNumber: number) {
     const pairGame = game.game_type !== "singles";
     const fixedPair = singlesSlotPairs.get(game.order_number);
 
@@ -442,19 +461,19 @@ export function MatchSheet({
           {fixedPair ? `${game.order_number}.` : `${game.order_number}. ${gameTypeLabels[game.game_type]}`}
         </td>
         {paperAchievementTypes.map((type) => (
-          <td className="px-0.5 py-2" key={`home:${type}`}>{renderAchievementCell(game, "home", type, block.blockNumber)}</td>
+          <td className="px-0.5 py-2" key={`home:${type}`}>{renderAchievementCell(game, "home", type, blockNumber)}</td>
         ))}
         <td className="px-1 py-3">
-          {pairGame ? renderPairSlots(game, "home", block.blockNumber) : fixedPair ? renderAssignedPlayer(game, "home", fixedPair[0], block.blockNumber) : null}
+          {pairGame ? renderPairSlots(game, "home", blockNumber) : fixedPair ? renderAssignedPlayer(game, "home", fixedPair[0], blockNumber) : null}
         </td>
         <td className="px-1 py-3 text-center text-[11px] font-bold text-[var(--brand-blue)]">
           {fixedPair ? `${fixedPair[0]}:${fixedPair[1]}` : gameTypeLabels[game.game_type]}
         </td>
         <td className="px-1 py-3">
-          {pairGame ? renderPairSlots(game, "away", block.blockNumber) : fixedPair ? renderAssignedPlayer(game, "away", fixedPair[1], block.blockNumber) : null}
+          {pairGame ? renderPairSlots(game, "away", blockNumber) : fixedPair ? renderAssignedPlayer(game, "away", fixedPair[1], blockNumber) : null}
         </td>
         {paperAchievementTypes.map((type) => (
-          <td className="px-0.5 py-2" key={`away:${type}`}>{renderAchievementCell(game, "away", type, block.blockNumber)}</td>
+          <td className="px-0.5 py-2" key={`away:${type}`}>{renderAchievementCell(game, "away", type, blockNumber)}</td>
         ))}
         <td className="px-1 py-3">{renderLegs(game)}</td>
         <td className="px-1 py-3 text-center text-xs font-bold text-[var(--brand-navy)]">
@@ -464,8 +483,8 @@ export function MatchSheet({
     );
   }
 
-  function renderRevealControl(side: MatchSide, block: Block) {
-    const revealed = isLineupRevealed(side, block.blockNumber);
+  function renderRevealControl(side: MatchSide, blockNumber: number) {
+    const revealed = isLineupRevealed(side, blockNumber);
     const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide !== null);
     const isOwnSide = canManageBothSides || viewerSide === side;
     const buttonClass = isOwnSide
@@ -485,7 +504,7 @@ export function MatchSheet({
         <button
           className={`inline-flex min-h-10 items-center justify-center rounded-full px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${buttonClass}`}
           disabled={isRevealSaving}
-          onClick={() => onRevealLineup?.(side, block.blockNumber)}
+          onClick={() => onRevealLineup?.(side, blockNumber)}
           type="button"
         >
           Zobrazit nasazení soupeři
@@ -500,9 +519,30 @@ export function MatchSheet({
     );
   }
 
+  function renderRevealControls(blockNumber: number) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex justify-start">{renderRevealControl("home", blockNumber)}</div>
+        <div className="flex justify-end">{renderRevealControl("away", blockNumber)}</div>
+      </div>
+    );
+  }
+
+  function renderRevealControlsRow(blockNumber: number) {
+    return (
+      <tr className="border-t border-[var(--admin-border)] bg-white" key={`reveal:${blockNumber}`}>
+        <td className="px-5 py-4" colSpan={14}>
+          {renderRevealControls(blockNumber)}
+        </td>
+      </tr>
+    );
+  }
+
   function renderBlock(block: Block) {
     const blockGames = games.filter((game) => block.orders.includes(game.order_number));
     const score = calculateScore(games.filter((game) => game.order_number <= Math.max(...block.orders)));
+    const revealSegments = block.revealSegments ?? [{ blockNumber: block.blockNumber, orders: block.orders }];
+    const bottomRevealBlockNumber = revealSegments[revealSegments.length - 1]?.blockNumber ?? block.blockNumber;
 
     return (
       <Card className={`overflow-hidden p-0 ${block.highlighted ? "border-[#E2C57A] bg-[#fffdf7]" : ""}`}>
@@ -530,20 +570,32 @@ export function MatchSheet({
                 <th className="w-12 px-1 py-2 text-center">Body</th>
               </tr>
             </thead>
-            <tbody>{blockGames.map((game) => renderGame(game, block))}</tbody>
+            <tbody>
+              {revealSegments.flatMap((segment, index) => {
+                const segmentRows = blockGames
+                  .filter((game) => segment.orders.includes(game.order_number))
+                  .map((game) => renderGame(game, segment.blockNumber));
+
+                if (!readOnly && index < revealSegments.length - 1) {
+                  return [...segmentRows, renderRevealControlsRow(segment.blockNumber)];
+                }
+
+                return segmentRows;
+              })}
+            </tbody>
           </table>
         </div>
         {!readOnly ? (
           <div className="grid gap-3 border-t border-[var(--admin-border)] bg-white px-5 py-4 sm:grid-cols-2">
-            <div className="flex justify-start">{renderRevealControl("home", block)}</div>
-            <div className="flex justify-end">{renderRevealControl("away", block)}</div>
+            <div className="flex justify-start">{renderRevealControl("home", bottomRevealBlockNumber)}</div>
+            <div className="flex justify-end">{renderRevealControl("away", bottomRevealBlockNumber)}</div>
           </div>
         ) : null}
       </Card>
     );
   }
 
-  return <div className="flex flex-col gap-6">{visibleBlocks.map((block) => <div key={block.title}>{renderBlock(block)}</div>)}</div>;
+  return <div className="flex flex-col gap-6">{visibleBlocks.map((block) => <div key={`${block.title}:${block.orders.join("-")}`}>{renderBlock(block)}</div>)}</div>;
 }
 
 export function MatchStatisticsSection({

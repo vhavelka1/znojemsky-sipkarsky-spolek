@@ -9,8 +9,14 @@ create table if not exists public.match_block_lineup_reveals (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,
-  constraint match_block_lineup_reveals_block_valid check (block_number between 1 and 6)
+  constraint match_block_lineup_reveals_block_valid check (block_number between 1 and 8)
 );
+
+alter table public.match_block_lineup_reveals
+  drop constraint if exists match_block_lineup_reveals_block_valid;
+
+alter table public.match_block_lineup_reveals
+  add constraint match_block_lineup_reveals_block_valid check (block_number between 1 and 8);
 
 create unique index if not exists match_block_lineup_reveals_active_uidx
   on public.match_block_lineup_reveals (match_id, side, block_number)
