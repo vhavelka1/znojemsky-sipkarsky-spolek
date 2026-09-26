@@ -111,6 +111,11 @@ function imageKindLabel(kind: ImageKind) {
   return "Rozpis";
 }
 
+function standingsImageHeight(rowCount: number) {
+  if (rowCount <= 0) return 1080;
+  return Math.max(1080, 104 + 174 + 34 + 31 + rowCount * 70 + Math.max(0, rowCount - 1) * 9 + 52);
+}
+
 export default function AdminFacebookPage() {
   const [payload, setPayload] = useState<FacebookPayload | null>(null);
   const [selections, setSelections] = useState<Selections>(emptySelections);
@@ -231,6 +236,18 @@ export default function AdminFacebookPage() {
     !isLoading &&
     !isImageLoading &&
     !isPublishing;
+
+  function standingsCountForImage(image: RoundImage) {
+    return payload?.selectedGroups.find((item) => item.group.id === image.groupId)?.standings.length ?? 0;
+  }
+
+  function imageHeight(image: RoundImage) {
+    return image.kind === "standings" ? standingsImageHeight(standingsCountForImage(image)) : 1080;
+  }
+
+  function imageSizeLabel(image: RoundImage) {
+    return `1080 × ${imageHeight(image)} px`;
+  }
 
   async function handlePublish() {
     if (!canPublish) return;
@@ -420,7 +437,7 @@ export default function AdminFacebookPage() {
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-lg font-black text-[var(--brand-navy)]">Grafiky</h3>
             <span className="rounded-full bg-[#F4F8FF] px-3 py-1 text-xs font-black text-[var(--brand-blue)]">
-              {imageUrls.length} × 1080 × 1080 px
+              {imageUrls.length} grafik
             </span>
           </div>
 
@@ -445,7 +462,8 @@ export default function AdminFacebookPage() {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           alt={image.label}
-                          className="aspect-square w-full object-contain"
+                          className="w-full object-contain"
+                          style={{ aspectRatio: `1080 / ${imageHeight(image)}` }}
                           src={image.url}
                         />
                       </button>
@@ -513,7 +531,7 @@ export default function AdminFacebookPage() {
           onClick={() => setSelectedPreviewImage(null)}
         >
           <div
-            className="flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vh-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-4 border-b border-[var(--admin-border)] px-4 py-3">
@@ -522,7 +540,7 @@ export default function AdminFacebookPage() {
                   {selectedPreviewImage.groupName}
                 </p>
                 <p className="text-xs font-bold text-[var(--admin-muted)]">
-                  {imageKindLabel(selectedPreviewImage.kind)} · 1080 × 1080 px
+                  {imageKindLabel(selectedPreviewImage.kind)} · {imageSizeLabel(selectedPreviewImage)}
                 </p>
               </div>
               <button
@@ -537,7 +555,7 @@ export default function AdminFacebookPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               alt={selectedPreviewImage.label}
-              className="aspect-square h-auto max-h-[calc(100vh-7rem)] w-full object-contain"
+              className="h-auto max-h-[calc(100vh-7rem)] w-full object-contain"
               src={selectedPreviewImage.url}
             />
           </div>

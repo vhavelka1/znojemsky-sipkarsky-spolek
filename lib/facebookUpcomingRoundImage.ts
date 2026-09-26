@@ -17,6 +17,22 @@ type ImageSelection = {
   kind?: FacebookImageKind | null;
 };
 
+const imageWidth = 1080;
+const defaultImageHeight = 1080;
+const standingsRowHeight = 70;
+const standingsRowGap = 9;
+
+function standingsImageHeight(rowCount: number) {
+  if (rowCount <= 0) return defaultImageHeight;
+  const shellVerticalPadding = 104;
+  const titleAreaHeight = 174;
+  const tableTopMargin = 34;
+  const tableHeaderHeight = 31;
+  const rowsHeight = rowCount * standingsRowHeight + Math.max(0, rowCount - 1) * standingsRowGap;
+
+  return Math.max(defaultImageHeight, shellVerticalPadding + titleAreaHeight + tableTopMargin + tableHeaderHeight + rowsHeight + 52);
+}
+
 function absoluteUrl(origin: string, url: string | null) {
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
@@ -529,7 +545,7 @@ function tableRow(row: StandingRow, index: number, origin: string) {
 }
 
 function renderStandings(payload: FacebookRoundPayload, groupRound: FacebookGroupRound, origin: string) {
-  const rows = groupRound.standings.slice(0, 10);
+  const rows = groupRound.standings;
 
   return shell({
     eyebrow: "AKTUÁLNÍ TABULKA",
@@ -585,8 +601,8 @@ export function createFacebookUpcomingRoundImageResponse(
         : renderSchedule(payload, groupRound, origin);
 
   return new ImageResponse(content, {
-    width: 1080,
-    height: 1080,
+    width: imageWidth,
+    height: image?.kind === "standings" ? standingsImageHeight(groupRound?.standings.length ?? 0) : defaultImageHeight,
     headers: {
       "Cache-Control": "no-store",
     },
