@@ -125,6 +125,23 @@ type AutosaveResponse = {
   game?: SheetGame;
   error?: string;
 };
+type SheetPayloadState = typeof emptyPayload;
+type SheetLoadOptions = {
+  merge?: boolean;
+  refreshRescheduleRequests?: boolean;
+  showLoading?: boolean;
+};
+type GameFieldName =
+  | "home_legs"
+  | "away_legs"
+  | `home_player_${number}`
+  | `away_player_${number}`;
+type PendingAchievementSave = {
+  count: number;
+  orderNumber: number;
+  playerId: string;
+  type: AchievementType;
+};
 type RescheduleRequestsPayload = {
   requests?: MatchRescheduleRequest[];
   error?: string;
@@ -230,6 +247,116 @@ function normalizeGame(game: SheetGame): SheetGame {
     away_player_ids: game.away_player_ids.slice(0, limit),
     home_slot_codes: game.home_slot_codes.slice(0, limit),
     away_slot_codes: game.away_slot_codes.slice(0, limit),
+  };
+}
+
+function buildSheetPayloadState(body: SheetPayload): SheetPayloadState {
+  const games = (body.games ?? []).map(normalizeGame);
+
+  return {
+    match: body.match ?? null,
+    season: body.season ?? null,
+    league: body.league ?? null,
+    group: body.group ?? null,
+    teamSeasons: body.teamSeasons ?? [],
+    teams: body.teams ?? [],
+    memberships: body.memberships ?? [],
+    players: body.players ?? [],
+    games,
+    achievements: (body.achievements ?? []).map((achievement) => ({
+      ...achievement,
+      order_number: games.find((game) => game.id === achievement.match_game_id)?.order_number ?? achievement.order_number ?? 1,
+    })),
+    statistics: body.statistics ?? [],
+    slots: body.slots ?? [],
+    confirmations: body.confirmations ?? [],
+    lineupReveals: body.lineupReveals ?? [],
+    lineupRevealSchemaReady: body.lineupRevealSchemaReady ?? false,
+    viewer: body.viewer ?? { side: null, canManageBothSides: true },
+  };
+}
+
+function gameFieldKey(orderNumber: number, field: GameFieldName) {
+  return `game:${orderNumber}:${field}`;
+}
+
+function achievementFieldKey(orderNumber: number, playerId: string, type: AchievementType) {
+  return `achievement:${orderNumber}:${playerId}:${type}`;
+}
+
+function fieldIsProtected(fieldKey: string, protectedFields: Set<string>) {
+  return protectedFields.has(fieldKey);
+}
+
+function mergeGameWithProtectedFields(
+  currentGame: SheetGame,
+  serverGame: SheetGame,
+  protectedFields: Set<string>,
+) {
+  const merged = normalizeGame(serverGame);
+  const orderNumber = serverGame.order_number;
+
+  if (fieldIsProtected(gameFieldKey(orderNumber, "home_legs"), protectedFields)) {
+    merged.home_legs = currentGame.home_legs;
+  }
+  if (fieldIsProtected(gameFieldKey(orderNumber, "away_legs"), protectedFields)) {
+    merged.away_legs = currentGame.away_legs;
+  }
+
+  merged.home_player_ids = merged.home_player_ids.map((playerId, index) =>
+    fieldIsProtected(gameFieldKey(orderNumber, `home_player_${index}`), protectedFields)
+      ? currentGame.home_player_ids[index] ?? ""
+      : playerId,
+  );
+  merged.away_player_ids = merged.away_player_ids.map((playerId, index) =>
+    fieldIsProtected(gameFieldKey(orderNumber, `away_player_${index}`), protectedFields)
+      ? currentGame.away_player_ids[index] ?? ""
+      : playerId,
+  );
+
+  return merged;
+}
+
+function mergeSheetPayload(
+  current: SheetPayloadState,
+  incoming: SheetPayloadState,
+  protectedFields: Set<string>,
+): SheetPayloadState {
+  const currentGameByOrder = new Map(current.games.map((game) => [game.order_number, game]));
+  const games = incoming.games.map((serverGame) => {
+    const currentGame = currentGameByOrder.get(serverGame.order_number);
+    return currentGame
+      ? mergeGameWithProtectedFields(currentGame, serverGame, protectedFields)
+      : serverGame;
+  });
+
+  const incomingAchievementKeys = new Set(
+    incoming.achievements.map((achievement) =>
+      achievementFieldKey(achievement.order_number ?? 0, achievement.player_id, achievement.achievement_type),
+    ),
+  );
+  const achievements = [
+    ...incoming.achievements.map((serverAchievement) => {
+      const orderNumber = serverAchievement.order_number ?? 0;
+      const key = achievementFieldKey(orderNumber, serverAchievement.player_id, serverAchievement.achievement_type);
+      if (!fieldIsProtected(key, protectedFields)) return serverAchievement;
+      return current.achievements.find(
+        (achievement) =>
+          (achievement.order_number ?? 0) === orderNumber &&
+          achievement.player_id === serverAchievement.player_id &&
+          achievement.achievement_type === serverAchievement.achievement_type,
+      ) ?? serverAchievement;
+    }),
+    ...current.achievements.filter((achievement) => {
+      const key = achievementFieldKey(achievement.order_number ?? 0, achievement.player_id, achievement.achievement_type);
+      return fieldIsProtected(key, protectedFields) && !incomingAchievementKeys.has(key);
+    }),
+  ];
+
+  return {
+    ...incoming,
+    games,
+    achievements,
   };
 }
 
@@ -916,7 +1043,12 @@ export default function AdminMatchSheetPage({
   const [rescheduleNotice, setRescheduleNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(!teamView);
   const [authRefreshKey, setAuthRefreshKey] = useState(0);
-  const autosaveRequestId = useRef(0);
+  const autosaveRequestIdByField = useRef(new Map<string, number>());
+  const dirtyFields = useRef(new Set<string>());
+  const focusedFields = useRef(new Set<string>());
+  const pendingFields = useRef(new Set<string>());
+  const achievementSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const pendingAchievementSaves = useRef(new Map<string, PendingAchievementSave>());
   const didAutoOpenRescheduleForm = useRef(false);
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAccessToken = useRef<string | null>(null);
@@ -970,7 +1102,65 @@ export default function AdminMatchSheetPage({
     return requests;
   }
 
-  async function loadSheet(options: { showLoading?: boolean; refreshRescheduleRequests?: boolean } = {}) {
+  function protectedFieldKeys() {
+    return new Set([
+      ...dirtyFields.current,
+      ...focusedFields.current,
+      ...pendingFields.current,
+    ]);
+  }
+
+  function syncAutosavingState() {
+    setIsAutosaving(pendingFields.current.size > 0 || pendingAchievementSaves.current.size > 0);
+  }
+
+  function markFieldFocused(fieldKey: string) {
+    focusedFields.current.add(fieldKey);
+  }
+
+  function markFieldBlurred(fieldKey: string) {
+    focusedFields.current.delete(fieldKey);
+  }
+
+  function beginFieldSave(fieldKey: string) {
+    const requestId = (autosaveRequestIdByField.current.get(fieldKey) ?? 0) + 1;
+    autosaveRequestIdByField.current.set(fieldKey, requestId);
+    dirtyFields.current.add(fieldKey);
+    pendingFields.current.add(fieldKey);
+    syncAutosavingState();
+    return requestId;
+  }
+
+  function beginFieldsSave(fieldKeys: string[]) {
+    const requestIds = new Map<string, number>();
+    fieldKeys.forEach((fieldKey) => {
+      requestIds.set(fieldKey, beginFieldSave(fieldKey));
+    });
+    return requestIds;
+  }
+
+  function requestIsCurrent(fieldKey: string, requestId: number) {
+    return autosaveRequestIdByField.current.get(fieldKey) === requestId;
+  }
+
+  function allRequestsAreCurrent(requestIds: Map<string, number>) {
+    return Array.from(requestIds).every(([fieldKey, requestId]) => requestIsCurrent(fieldKey, requestId));
+  }
+
+  function finishFieldSave(fieldKey: string, requestId: number, options: { keepDirty?: boolean } = {}) {
+    if (!requestIsCurrent(fieldKey, requestId)) return;
+    pendingFields.current.delete(fieldKey);
+    if (!options.keepDirty) {
+      dirtyFields.current.delete(fieldKey);
+    }
+    syncAutosavingState();
+  }
+
+  function finishFieldsSave(requestIds: Map<string, number>, options: { keepDirty?: boolean } = {}) {
+    requestIds.forEach((requestId, fieldKey) => finishFieldSave(fieldKey, requestId, options));
+  }
+
+  async function loadSheet(options: SheetLoadOptions = {}) {
     const showLoading = options.showLoading ?? true;
     const refreshRescheduleRequests = options.refreshRescheduleRequests ?? true;
     if (showLoading) setIsLoading(true);
@@ -979,29 +1169,12 @@ export default function AdminMatchSheetPage({
       const response = await adminFetch(sheetApiUrl);
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
       if (!response.ok) throw new Error(body.error ?? "Zápis utkání se nepodařilo načíst.");
-      const slots = body.slots ?? [];
-      const games = (body.games ?? []).map(normalizeGame);
-      setPayload({
-        match: body.match ?? null,
-        season: body.season ?? null,
-        league: body.league ?? null,
-        group: body.group ?? null,
-        teamSeasons: body.teamSeasons ?? [],
-        teams: body.teams ?? [],
-        memberships: body.memberships ?? [],
-        players: body.players ?? [],
-        games,
-        achievements: (body.achievements ?? []).map((achievement) => ({
-          ...achievement,
-          order_number: games.find((game) => game.id === achievement.match_game_id)?.order_number ?? 1,
-        })),
-        statistics: body.statistics ?? [],
-        slots,
-        confirmations: body.confirmations ?? [],
-        lineupReveals: body.lineupReveals ?? [],
-        lineupRevealSchemaReady: body.lineupRevealSchemaReady ?? false,
-        viewer: body.viewer ?? { side: null, canManageBothSides: true },
-      });
+      const nextPayload = buildSheetPayloadState(body);
+      setPayload((current) =>
+        options.merge
+          ? mergeSheetPayload(current, nextPayload, protectedFieldKeys())
+          : nextPayload,
+      );
       const loadedRequests = refreshRescheduleRequests
         ? await loadRescheduleRequests().catch((requestError) => {
             setError(requestError instanceof Error ? requestError.message : "Žádosti o změnu termínu se nepodařilo načíst.");
@@ -1036,7 +1209,7 @@ export default function AdminMatchSheetPage({
 
     realtimeReloadTimer.current = setTimeout(() => {
       realtimeReloadTimer.current = null;
-      void loadSheet({ showLoading: false, refreshRescheduleRequests: false });
+      void loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
     }, 300);
   }
 
@@ -1277,10 +1450,8 @@ export default function AdminMatchSheetPage({
     }));
   }
 
-  async function saveGameCell(game: SheetGame) {
-    const requestId = autosaveRequestId.current + 1;
-    autosaveRequestId.current = requestId;
-    setIsAutosaving(true);
+  async function saveGameCell(game: SheetGame, fieldKeys: string[]) {
+    const requestIds = beginFieldsSave(fieldKeys);
     setError(null);
 
     try {
@@ -1299,6 +1470,11 @@ export default function AdminMatchSheetPage({
       if (!response.ok) {
         throw new Error(body.error ?? "Změnu zápisu se nepodařilo uložit.");
       }
+
+      if (!allRequestsAreCurrent(requestIds)) {
+        return;
+      }
+      finishFieldsSave(requestIds);
 
       if (body.game) {
         setPayload((current) => {
@@ -1325,11 +1501,10 @@ export default function AdminMatchSheetPage({
       }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Změnu zápisu se nepodařilo uložit.");
-      await loadSheet();
+      finishFieldsSave(requestIds, { keepDirty: true });
+      await loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
     } finally {
-      if (autosaveRequestId.current === requestId) {
-        setIsAutosaving(false);
-      }
+      syncAutosavingState();
     }
   }
 
@@ -1339,9 +1514,8 @@ export default function AdminMatchSheetPage({
     type: AchievementType,
     count: number,
   ) {
-    const requestId = autosaveRequestId.current + 1;
-    autosaveRequestId.current = requestId;
-    setIsAutosaving(true);
+    const fieldKey = achievementFieldKey(orderNumber, playerId, type);
+    const requestId = beginFieldSave(fieldKey);
     setError(null);
 
     try {
@@ -1364,14 +1538,27 @@ export default function AdminMatchSheetPage({
       if (!response.ok) {
         throw new Error(body.error ?? "Statistiku se nepodařilo uložit.");
       }
+      if (!requestIsCurrent(fieldKey, requestId)) {
+        return;
+      }
+      finishFieldSave(fieldKey, requestId);
       setPayload((current) => ({ ...current, confirmations: [] }));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Statistiku se nepodařilo uložit.");
-      await loadSheet();
+      finishFieldSave(fieldKey, requestId, { keepDirty: true });
+      await loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
     } finally {
-      if (autosaveRequestId.current === requestId) {
-        setIsAutosaving(false);
+      const pendingSave = pendingAchievementSaves.current.get(fieldKey);
+      if (
+        pendingSave &&
+        pendingSave.orderNumber === orderNumber &&
+        pendingSave.playerId === playerId &&
+        pendingSave.type === type &&
+        pendingSave.count === count
+      ) {
+        pendingAchievementSaves.current.delete(fieldKey);
       }
+      syncAutosavingState();
     }
   }
 
@@ -1401,7 +1588,10 @@ export default function AdminMatchSheetPage({
       [otherSide]: otherValue,
       winner_side: winnerSide,
     });
-    void saveGameCell(normalizeGame(updated));
+    void saveGameCell(normalizeGame(updated), [
+      gameFieldKey(game.order_number, side),
+      gameFieldKey(game.order_number, otherSide),
+    ]);
   }
 
   function firstBlockSuggestion(side: MatchSide, slotCode: SlotCode) {
@@ -1445,7 +1635,9 @@ export default function AdminMatchSheetPage({
     const playerIds = [...game[key]];
     playerIds[index] = suggestedPlayerId;
     updateGame(game.order_number, { [key]: playerIds } as Partial<SheetGame>);
-    void saveGameCell(normalizeGame({ ...game, [key]: playerIds }));
+    void saveGameCell(normalizeGame({ ...game, [key]: playerIds }), [
+      gameFieldKey(game.order_number, side === "home" ? `home_player_${index}` : `away_player_${index}`),
+    ]);
   }
 
   function updateRowPlayer(game: SheetGame, side: MatchSide, index: number, playerId: string) {
@@ -1464,7 +1656,9 @@ export default function AdminMatchSheetPage({
       removePlayerAchievements(game.order_number, previousPlayerId);
     }
     updateGame(game.order_number, { [key]: playerIds } as Partial<SheetGame>);
-    void saveGameCell(normalizeGame({ ...game, [key]: playerIds }));
+    void saveGameCell(normalizeGame({ ...game, [key]: playerIds }), [
+      gameFieldKey(game.order_number, side === "home" ? `home_player_${index}` : `away_player_${index}`),
+    ]);
   }
 
   function removePlayerAchievements(orderNumber: number, playerId: string) {
@@ -1512,6 +1706,51 @@ export default function AdminMatchSheetPage({
     }
   }
 
+  function flushAchievementSave(fieldKey: string) {
+    const pendingSave = pendingAchievementSaves.current.get(fieldKey);
+    if (!pendingSave) return;
+    const timer = achievementSaveTimers.current.get(fieldKey);
+    if (timer) {
+      clearTimeout(timer);
+      achievementSaveTimers.current.delete(fieldKey);
+    }
+    void saveAchievementCell(
+      pendingSave.orderNumber,
+      pendingSave.playerId,
+      pendingSave.type,
+      pendingSave.count,
+    );
+  }
+
+  function flushAllAchievementSaves() {
+    Array.from(pendingAchievementSaves.current.keys()).forEach(flushAchievementSave);
+  }
+
+  function scheduleAchievementSave(
+    orderNumber: number,
+    playerId: string,
+    type: AchievementType,
+    count: number,
+  ) {
+    const fieldKey = achievementFieldKey(orderNumber, playerId, type);
+    const existingTimer = achievementSaveTimers.current.get(fieldKey);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    dirtyFields.current.add(fieldKey);
+    pendingAchievementSaves.current.set(fieldKey, { count, orderNumber, playerId, type });
+    syncAutosavingState();
+
+    achievementSaveTimers.current.set(
+      fieldKey,
+      setTimeout(() => {
+        achievementSaveTimers.current.delete(fieldKey);
+        flushAchievementSave(fieldKey);
+      }, 400),
+    );
+  }
+
   function updateInlineAchievement(
     orderNumber: number,
     playerId: string,
@@ -1550,8 +1789,49 @@ export default function AdminMatchSheetPage({
           : achievements,
       };
     });
-    void saveAchievementCell(orderNumber, playerId, type, normalizedCount);
+    scheduleAchievementSave(orderNumber, playerId, type, normalizedCount);
   }
+
+  function handleLegsFocus(game: SheetGame, side: "home_legs" | "away_legs") {
+    markFieldFocused(gameFieldKey(game.order_number, side));
+  }
+
+  function handleLegsBlur(game: SheetGame, side: "home_legs" | "away_legs") {
+    markFieldBlurred(gameFieldKey(game.order_number, side));
+  }
+
+  function handlePlayerFocus(game: SheetGame, side: MatchSide, index: number) {
+    markFieldFocused(gameFieldKey(game.order_number, side === "home" ? `home_player_${index}` : `away_player_${index}`));
+    prefillRowPlayer(game, side, index);
+  }
+
+  function handlePlayerBlur(game: SheetGame, side: MatchSide, index: number) {
+    markFieldBlurred(gameFieldKey(game.order_number, side === "home" ? `home_player_${index}` : `away_player_${index}`));
+  }
+
+  function handleAchievementFocus(orderNumber: number, playerId: string, type: AchievementType) {
+    markFieldFocused(achievementFieldKey(orderNumber, playerId, type));
+  }
+
+  function handleAchievementBlur(orderNumber: number, playerId: string, type: AchievementType) {
+    const fieldKey = achievementFieldKey(orderNumber, playerId, type);
+    markFieldBlurred(fieldKey);
+    flushAchievementSave(fieldKey);
+  }
+
+  useEffect(() => {
+    const timers = achievementSaveTimers.current;
+    const flushPending = () => flushAllAchievementSaves();
+    window.addEventListener("pagehide", flushPending);
+
+    return () => {
+      window.removeEventListener("pagehide", flushPending);
+      flushAllAchievementSaves();
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (isLoading) return <Card><p className="text-sm text-[var(--admin-muted)]">Načítám zápis utkání...</p></Card>;
   if (!payload.match) return <Card><p className="text-sm text-red-700">{error ?? "Zápas nebyl nalezen."}</p></Card>;
@@ -1699,10 +1979,15 @@ export default function AdminMatchSheetPage({
           lineupRevealSchemaReady={payload.lineupRevealSchemaReady}
           lineupsVisibleForAll={payload.match?.status === "confirmed"}
           lockedSides={lockedSides}
+          onAchievementBlur={handleAchievementBlur}
           onAchievementChange={updateInlineAchievement}
+          onAchievementFocus={handleAchievementFocus}
+          onLegsBlur={handleLegsBlur}
           onLegsChange={updateLegs}
+          onLegsFocus={handleLegsFocus}
           onPlayerChange={updateRowPlayer}
-          onPlayerFocus={prefillRowPlayer}
+          onPlayerBlur={handlePlayerBlur}
+          onPlayerFocus={handlePlayerFocus}
           onRevealLineup={handleRevealLineup}
           playerUsesDifferentSlot={playerUsesDifferentSlot}
           viewerSide={payload.viewer.side}

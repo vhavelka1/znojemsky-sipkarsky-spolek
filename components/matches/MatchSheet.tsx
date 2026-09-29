@@ -68,8 +68,13 @@ type MatchSheetProps = {
   error?: string | null;
   viewerSide?: MatchSide | null;
   onAchievementChange?: (orderNumber: number, playerId: string, type: AchievementType, count: number) => void;
+  onAchievementBlur?: (orderNumber: number, playerId: string, type: AchievementType) => void;
+  onAchievementFocus?: (orderNumber: number, playerId: string, type: AchievementType) => void;
+  onLegsBlur?: (game: SheetGame, side: "home_legs" | "away_legs") => void;
   onLegsChange?: (game: SheetGame, side: "home_legs" | "away_legs", value: number) => void;
+  onLegsFocus?: (game: SheetGame, side: "home_legs" | "away_legs") => void;
   onPlayerChange?: (game: SheetGame, side: MatchSide, index: number, playerId: string) => void;
+  onPlayerBlur?: (game: SheetGame, side: MatchSide, index: number) => void;
   onPlayerFocus?: (game: SheetGame, side: MatchSide, index: number) => void;
   playerUsesDifferentSlot?: (side: MatchSide, slotCode: SlotCode, playerId: string) => boolean;
 };
@@ -282,8 +287,13 @@ export function MatchSheet({
   readOnly = false,
   viewerSide = null,
   onAchievementChange,
+  onAchievementBlur,
+  onAchievementFocus,
+  onLegsBlur,
   onLegsChange,
+  onLegsFocus,
   onPlayerChange,
+  onPlayerBlur,
   onPlayerFocus,
   playerUsesDifferentSlot = () => false,
 }: MatchSheetProps) {
@@ -339,7 +349,11 @@ export function MatchSheet({
         pattern="[0-9]*"
         type="text"
         value={playerId ? value : 0}
-        onFocus={(event) => event.currentTarget.select()}
+        onBlur={() => onAchievementBlur?.(game.order_number, playerId, type)}
+        onFocus={(event) => {
+          onAchievementFocus?.(game.order_number, playerId, type);
+          event.currentTarget.select();
+        }}
         onChange={(event) =>
           onAchievementChange?.(
             game.order_number,
@@ -372,6 +386,7 @@ export function MatchSheet({
           <select
             className={`${inputClass} min-w-0 px-2 py-1.5 text-xs`}
             value={playerIds[0] ?? ""}
+            onBlur={() => onPlayerBlur?.(game, side, 0)}
             onFocus={() => onPlayerFocus?.(game, side, 0)}
             onChange={(event) => onPlayerChange?.(game, side, 0, event.target.value)}
           >
@@ -421,6 +436,7 @@ export function MatchSheet({
                 aria-label={`${side === "home" ? "Domácí" : "Hosté"} hráč ${index + 1}`}
                 className={`${inputClass} min-w-0 px-1 py-1 text-[11px]`}
                 value={playerIds[index] ?? ""}
+                onBlur={() => onPlayerBlur?.(game, side, index)}
                 onFocus={() => onPlayerFocus?.(game, side, index)}
                 onChange={(event) => onPlayerChange?.(game, side, index, event.target.value)}
               >
@@ -444,9 +460,47 @@ export function MatchSheet({
 
     return (
       <div className="grid grid-cols-[46px_8px_46px] items-center justify-center gap-0.5">
-        <input className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`} inputMode="numeric" maxLength={1} pattern={legsPattern} type="text" value={game.home_legs} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onLegsChange?.(game, "home_legs", Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0))} />
+        <input
+          className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`}
+          inputMode="numeric"
+          maxLength={1}
+          pattern={legsPattern}
+          type="text"
+          value={game.home_legs}
+          onBlur={() => onLegsBlur?.(game, "home_legs")}
+          onFocus={(event) => {
+            onLegsFocus?.(game, "home_legs");
+            event.currentTarget.select();
+          }}
+          onChange={(event) =>
+            onLegsChange?.(
+              game,
+              "home_legs",
+              Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0),
+            )
+          }
+        />
         <span className="text-center">:</span>
-        <input className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`} inputMode="numeric" maxLength={1} pattern={legsPattern} type="text" value={game.away_legs} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onLegsChange?.(game, "away_legs", Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0))} />
+        <input
+          className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`}
+          inputMode="numeric"
+          maxLength={1}
+          pattern={legsPattern}
+          type="text"
+          value={game.away_legs}
+          onBlur={() => onLegsBlur?.(game, "away_legs")}
+          onFocus={(event) => {
+            onLegsFocus?.(game, "away_legs");
+            event.currentTarget.select();
+          }}
+          onChange={(event) =>
+            onLegsChange?.(
+              game,
+              "away_legs",
+              Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0),
+            )
+          }
+        />
       </div>
     );
   }
