@@ -237,6 +237,8 @@ export function PublicFooter() {
           <Link href="/galerie">Galerie</Link>
           <Link href="/scoreboard">Počítadlo</Link>
           <Link href="/prihlaseni">Přihlášení</Link>
+          <Link href="/ochrana-osobnich-udaju">Ochrana osobních údajů</Link>
+          <Link href="/smazani-dat">Odstranění údajů</Link>
         </div>
       </div>
     </footer>
