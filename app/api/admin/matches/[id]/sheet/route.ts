@@ -938,16 +938,12 @@ async function updateMatchSummary(
     return NextResponse.json({ error: gamesError.message }, { status: 500 });
   }
 
-  const matchScore = calculateMatchScore(games ?? []);
+  const coreGames = (games ?? []).filter((game) => game.order_number <= 18);
+  const matchScore = calculateMatchScore(coreGames);
   const completedCoreGames = (games ?? []).filter(
     (game) => game.order_number <= 18 && Boolean(game.winner_side),
   ).length;
-  const coreScore = calculateMatchScore((games ?? []).filter((game) => game.order_number <= 18));
-  const tiebreakRequired = coreScore.home_points === 9 && coreScore.away_points === 9;
-  const tiebreak = (games ?? []).find((game) => game.game_type === "tiebreak_701");
-  const isComplete =
-    completedCoreGames === 18 &&
-    (!tiebreakRequired || Boolean(tiebreak?.winner_side));
+  const isComplete = completedCoreGames === 18;
 
   const { data: existingResult, error: existingResultError } = await supabase
     .from("match_results")
@@ -1758,13 +1754,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const coreScore = calculateMatchScore(
-    gamesToInsert.filter((game) => game.order_number <= 18),
-  );
   const tiebreak = gamesToInsert.find((game) => game.game_type === "tiebreak_701");
-  const tiebreakRequired = coreScore.home_points === 9 && coreScore.away_points === 9;
 
-  if (!tiebreakRequired && tiebreak) {
+  if (tiebreak) {
     return NextResponse.json(
       { error: "Rozstřel 701 DO se hraje pouze při stavu utkání 9:9." },
       { status: 400 },
@@ -2007,13 +1999,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
-  const matchScore = calculateMatchScore(gamesToInsert);
+  const matchScore = calculateMatchScore(gamesToInsert.filter((game) => game.order_number <= 18));
   const completedCoreGames = gamesToInsert.filter(
     (game) => game.order_number <= 18 && Boolean(game.winner_side),
   ).length;
-  const isComplete =
-    completedCoreGames === 18 &&
-    (!tiebreakRequired || Boolean(tiebreak?.winner_side));
+  const isComplete = completedCoreGames === 18;
   const { data: existingResult, error: existingResultError } = await supabase
     .from("match_results")
     .select("id")

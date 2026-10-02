@@ -210,18 +210,10 @@ function calculateScore(games: SheetGame[]): Score {
 
 function matchStatusForGames(games: SheetGame[]): MatchStatus {
   const coreGames = games.filter((game) => game.order_number <= 18);
-  const coreScore = calculateScore(coreGames);
-  const tiebreakNeeded = coreScore.home_points === 9 && coreScore.away_points === 9;
   const completedCoreGames = coreGames.filter((game) => Boolean(game.winner_side)).length;
-  const tiebreak = games.find((game) => game.game_type === "tiebreak_701");
-  return completedCoreGames === 18 && (!tiebreakNeeded || Boolean(tiebreak?.winner_side))
+  return completedCoreGames === 18
     ? "awaiting_confirmation"
     : "scheduled";
-}
-
-function sheetTiebreakPlayed(games: SheetGame[]) {
-  const tiebreak = games.find((game) => game.order_number === 19 || game.game_type === "tiebreak_701");
-  return tiebreak ? getWinner(tiebreak) !== null : false;
 }
 
 function formatDateTime(value: string) {
@@ -1070,14 +1062,7 @@ export default function AdminMatchSheetPage({
     .filter((membership) => membership.team_season_id === payload.match?.away_team_id)
     .map((membership) => playerById.get(membership.player_id))
     .filter((player): player is Player => Boolean(player));
-  const coreGames = payload.games.filter((game) => game.order_number <= 18);
-  const coreScore = calculateScore(coreGames);
-  const tiebreakNeeded =
-    coreScore.home_points === 9 && coreScore.away_points === 9;
-  const includeTiebreak = tiebreakNeeded && sheetTiebreakPlayed(payload.games);
-  const totalScore = calculateScore(
-    payload.games.filter((game) => game.order_number <= 18 || includeTiebreak),
-  );
+  const totalScore = calculateScore(payload.games.filter((game) => game.order_number <= 18));
   const confirmationBySide = new Map(
     payload.confirmations.map((confirmation) => [confirmation.side, confirmation]),
   );
@@ -1678,7 +1663,7 @@ export default function AdminMatchSheetPage({
     setError(null);
 
     try {
-      const exportGames = payload.games.filter((game) => game.order_number <= 18 || includeTiebreak);
+      const exportGames = payload.games.filter((game) => game.order_number <= 18);
       const exportContext: ExportContext = {
         achievements: payload.achievements,
         awayPlayers,

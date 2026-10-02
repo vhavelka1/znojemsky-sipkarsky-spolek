@@ -9,8 +9,6 @@ import {
   MatchInfo,
   MatchSheet,
   MatchStatisticsSection,
-  sheetTiebreakPlayed,
-  sheetTiebreakNeeded,
   statusLabels,
   type MatchStatus,
   type Player,
@@ -165,8 +163,7 @@ export default function PublicMatchDetailPage() {
     .filter((membership) => membership.team_season_id === payload.match?.away_team_id)
     .map((membership) => playerById.get(membership.player_id))
     .filter((player): player is Player => Boolean(player));
-  const includeTiebreak = sheetTiebreakNeeded(payload.games) && sheetTiebreakPlayed(payload.games);
-  const score = calculateScore(payload.games.filter((game) => game.order_number <= 18 || includeTiebreak));
+  const score = calculateScore(payload.games.filter((game) => game.order_number <= 18));
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#F4F8FF] text-[#0B1F3A]">

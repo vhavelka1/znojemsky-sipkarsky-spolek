@@ -174,20 +174,6 @@ function getWinner(gameType: MatchGameType, homeLegs: number, awayLegs: number) 
   return null;
 }
 
-function calculateCoreScore(games: SheetGame[]) {
-  return games
-    .filter((game) => game.order_number <= 18)
-    .reduce(
-      (score, game) => {
-        const winner = getWinner(game.game_type, game.home_legs, game.away_legs);
-        if (winner === "home") score.home += 1;
-        if (winner === "away") score.away += 1;
-        return score;
-      },
-      { home: 0, away: 0 },
-    );
-}
-
 function playerLabel(player: Player) {
   return player.display_name;
 }
@@ -392,15 +378,12 @@ export default function MatchScoreboardPage() {
     () => payload.games.find((game) => game.order_number === selectedOrder) ?? null,
     [payload.games, selectedOrder],
   );
-  const coreScore = useMemo(() => calculateCoreScore(payload.games), [payload.games]);
-  const tiebreakAvailable = coreScore.home === 9 && coreScore.away === 9;
   const gameOptions = useMemo(
     () =>
       payload.games.filter(
-        (game) =>
-          game.order_number <= 18 || (game.order_number === 19 && tiebreakAvailable),
+        (game) => game.order_number <= 18,
       ),
-    [payload.games, tiebreakAvailable],
+    [payload.games],
   );
 
   const homeTeamName = useMemo(() => {
@@ -474,7 +457,7 @@ export default function MatchScoreboardPage() {
       };
       const updatedGames = payload.games
         .map((game) => (game.order_number === selectedGame.order_number ? updatedGame : game))
-        .filter((game) => game.order_number <= 18 || (game.order_number === 19 && tiebreakAvailable));
+        .filter((game) => game.order_number <= 18);
       const achievements = payload.achievements.filter(
         (achievement) => (achievement.order_number ?? 0) <= 18,
       );

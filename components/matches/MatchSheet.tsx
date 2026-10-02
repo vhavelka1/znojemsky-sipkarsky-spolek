@@ -217,9 +217,9 @@ export function calculateScore(games: SheetGame[]): Score {
   );
 }
 
-export function sheetTiebreakNeeded(games: SheetGame[]) {
-  const coreScore = calculateScore(games.filter((game) => game.order_number <= 18));
-  return coreScore.home_points === 9 && coreScore.away_points === 9;
+export function sheetTiebreakNeeded(_games: SheetGame[]) {
+  void _games;
+  return false;
 }
 
 export function sheetTiebreakPlayed(games: SheetGame[]) {
