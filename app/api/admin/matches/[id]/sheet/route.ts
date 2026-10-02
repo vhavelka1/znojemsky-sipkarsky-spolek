@@ -269,6 +269,10 @@ function revealKey(side: MatchSide, blockNumber: number) {
   return `${side}:${blockNumber}`;
 }
 
+function isBlockMutuallyRevealed(reveals: Set<string>, blockNumber: number) {
+  return reveals.has(revealKey("home", blockNumber)) && reveals.has(revealKey("away", blockNumber));
+}
+
 function normalizedTeamName(value: string | null | undefined) {
   return (value ?? "")
     .normalize("NFD")
@@ -463,7 +467,7 @@ function canViewerSeeSideInBlock(
     return true;
   }
 
-  return reveals.has(revealKey(side, blockNumber));
+  return isBlockMutuallyRevealed(reveals, blockNumber);
 }
 
 async function confirmedSidesForMatch(supabase: ReturnType<typeof createSupabaseAdminClient>, matchId: string) {
@@ -1063,6 +1067,9 @@ async function handleAutosaveCell(
     const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
     if (!viewer.canManageBothSides && !viewer.side) {
       return NextResponse.json({ error: "Nemate opravneni zobrazit nasazeni tohoto zapasu." }, { status: 403 });
+    }
+    if (!viewer.canManageBothSides && viewer.side !== side) {
+      return NextResponse.json({ error: "Nasazeni muze potvrdit jen vlastni strana." }, { status: 403 });
     }
 
     const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);

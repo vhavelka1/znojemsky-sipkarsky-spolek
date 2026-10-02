@@ -684,10 +684,8 @@ async function drawMatchSheetExport(exportContext: ExportContext) {
   }
 
   function gamePointsText(game: SheetGame) {
-    const winner = getWinner(game);
-    if (winner === "home") return "1:0";
-    if (winner === "away") return "0:1";
-    return "-";
+    const score = calculateScore(exportContext.games.filter((item) => item.order_number <= game.order_number));
+    return score.home_points > 0 || score.away_points > 0 ? `${score.home_points}:${score.away_points}` : "-";
   }
 
   visibleBlocks.forEach((block) => {
@@ -1303,12 +1301,8 @@ export default function AdminMatchSheetPage({
   }
 
   async function handleRevealLineup(side: MatchSide, blockNumber: number) {
-    if (
-      payload.viewer.side &&
-      !payload.viewer.canManageBothSides &&
-      payload.viewer.side !== side &&
-      !window.confirm("Opravdu chces zobrazit souperovu soupisku? Tu by mel zverejnit souper")
-    ) {
+    if (payload.viewer.side && !payload.viewer.canManageBothSides && payload.viewer.side !== side) {
+      setError("Nasazení může potvrdit jen vlastní strana.");
       return;
     }
 

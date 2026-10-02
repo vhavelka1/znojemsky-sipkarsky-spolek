@@ -145,7 +145,16 @@ export const singlesSlotPairs = new Map<number, [HomeSlotCode, AwaySlotCode]>([
 
 const blocks: Block[] = [
   { blockNumber: 1, title: "Blok 1", subtitle: "První dvouhry", orders: [1, 2, 3, 4] },
-  { blockNumber: 2, title: "Blok 2", subtitle: "Druhé dvouhry", orders: [5, 6, 7, 8] },
+  {
+    blockNumber: 2,
+    title: "Blok 2",
+    subtitle: "Druhé dvouhry",
+    orders: [5, 6, 7, 8],
+    revealSegments: [
+      { blockNumber: 2, orders: [5, 6] },
+      { blockNumber: 8, orders: [7, 8] },
+    ],
+  },
   { blockNumber: 3, title: "Blok 3", subtitle: "Párové hry", orders: [9, 10], highlighted: true },
   {
     blockNumber: 4,
@@ -307,8 +316,12 @@ export function MatchSheet({
     return revealKeys.has(`${side}:${blockNumber}`);
   }
 
+  function isBlockMutuallyRevealed(blockNumber: number) {
+    return isLineupRevealed("home", blockNumber) && isLineupRevealed("away", blockNumber);
+  }
+
   function canSeeLineup(side: MatchSide, blockNumber: number) {
-    return lineupsVisibleForAll || canManageBothSides || viewerSide === side || isLineupRevealed(side, blockNumber);
+    return lineupsVisibleForAll || canManageBothSides || viewerSide === side || isBlockMutuallyRevealed(blockNumber);
   }
 
   function canEditLineup(side: MatchSide) {
@@ -505,6 +518,11 @@ export function MatchSheet({
     );
   }
 
+  function cumulativeScoreText(game: SheetGame) {
+    const score = calculateScore(games.filter((item) => item.order_number <= game.order_number));
+    return score.home_points > 0 || score.away_points > 0 ? `${score.home_points}:${score.away_points}` : "-";
+  }
+
   function renderGame(game: SheetGame, blockNumber: number) {
     const pairGame = game.game_type !== "singles";
     const fixedPair = singlesSlotPairs.get(game.order_number);
@@ -531,7 +549,7 @@ export function MatchSheet({
         ))}
         <td className="px-1 py-3">{renderLegs(game)}</td>
         <td className="px-1 py-3 text-center text-xs font-bold text-[var(--brand-navy)]">
-          {getWinner(game) === "home" ? "1:0" : getWinner(game) === "away" ? "0:1" : "-"}
+          {cumulativeScoreText(game)}
         </td>
       </tr>
     );
@@ -539,16 +557,25 @@ export function MatchSheet({
 
   function renderRevealControl(side: MatchSide, blockNumber: number) {
     const revealed = isLineupRevealed(side, blockNumber);
-    const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide !== null);
+    const mutuallyRevealed = isBlockMutuallyRevealed(blockNumber);
+    const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
     const isOwnSide = canManageBothSides || viewerSide === side;
     const buttonClass = isOwnSide
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"
       : "border border-slate-300 bg-slate-100 text-slate-600 hover:bg-slate-200";
 
-    if (lineupsVisibleForAll || revealed) {
+    if (lineupsVisibleForAll || mutuallyRevealed) {
       return (
         <span className="inline-flex min-h-10 items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-700">
-          {lineupsVisibleForAll ? "Nasazení zveřejněno" : "Nasazení zobrazeno soupeři"}
+          {lineupsVisibleForAll ? "Nasazení zveřejněno" : "Nasazení potvrzeno oběma"}
+        </span>
+      );
+    }
+
+    if (revealed) {
+      return (
+        <span className="inline-flex min-h-10 items-center rounded-full border border-amber-200 bg-amber-50 px-4 text-xs font-black text-amber-700">
+          Nasazení potvrzeno, čeká na soupeře
         </span>
       );
     }
@@ -561,14 +588,14 @@ export function MatchSheet({
           onClick={() => onRevealLineup?.(side, blockNumber)}
           type="button"
         >
-          Zobrazit nasazení soupeře
+          Potvrdit nasazení
         </button>
       );
     }
 
     return (
       <span className="inline-flex min-h-10 items-center rounded-full border border-slate-200 bg-slate-50 px-4 text-xs font-bold text-slate-500">
-        Čeká na zveřejnění
+        Čeká na potvrzení
       </span>
     );
   }
