@@ -2018,7 +2018,7 @@ export default function AdminMatchSheetPage({
             })}
           </div>
         </Card>
-        <Card>
+        <Card className="min-w-0">
           <h3 className="text-lg font-bold text-[var(--brand-navy)]">Statistiky</h3>
           <p className="mt-2 text-sm text-[var(--admin-muted)]">Herní statistiky se počítají pouze z dvouher. Výkony jsou evidované u jednotlivých dílčích her.</p>
           <MatchStatisticsSection

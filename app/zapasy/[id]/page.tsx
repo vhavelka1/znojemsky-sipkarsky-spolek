@@ -222,7 +222,7 @@ export default function PublicMatchDetailPage() {
               readOnly
             />
 
-            <section className="rounded-[24px] border border-[#D8E4F2] bg-white p-5 shadow-[0_18px_48px_rgba(6,26,58,0.08)] sm:p-6">
+            <section className="min-w-0 rounded-[24px] border border-[#D8E4F2] bg-white p-5 shadow-[0_18px_48px_rgba(6,26,58,0.08)] sm:p-6">
               <h2 className="text-xl font-black text-[#061A3A]">Statistiky</h2>
               <MatchStatisticsSection
                 achievements={payload.achievements}

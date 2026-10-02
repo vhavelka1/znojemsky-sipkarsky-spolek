@@ -768,9 +768,9 @@ export function MatchStatisticsSection({
     const rows = statisticRows(players);
 
     return (
-      <div>
+      <div className="min-w-0">
         <h4 className="font-bold text-[var(--brand-navy)]">{title}</h4>
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-[980px] text-left text-sm">
             <thead className="bg-[var(--admin-soft-blue)] text-[var(--admin-muted)]">
               <tr>
@@ -793,5 +793,5 @@ export function MatchStatisticsSection({
     );
   }
 
-  return <div className="mt-5 grid gap-7">{statisticsTable("Domácí hráči", homePlayers)}{statisticsTable("Hostující hráči", awayPlayers)}</div>;
+  return <div className="mt-5 grid min-w-0 gap-7">{statisticsTable("Domácí hráči", homePlayers)}{statisticsTable("Hostující hráči", awayPlayers)}</div>;
 }
