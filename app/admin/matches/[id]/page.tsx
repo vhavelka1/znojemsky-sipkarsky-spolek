@@ -125,6 +125,26 @@ type AutosaveResponse = {
   game?: SheetGame;
   error?: string;
 };
+type MatchSheetHistoryEntry = {
+  id: string;
+  created_at: string;
+  game_id: string | null;
+  game_order_number: number | null;
+  entity_type: string;
+  field_name: string;
+  operation: string;
+  old_value: unknown;
+  new_value: unknown;
+  actor_player_id: string | null;
+  actor_display_name: string | null;
+  actor_role: string | null;
+  source: string;
+  request_id: string;
+};
+type MatchSheetHistoryPayload = {
+  history?: MatchSheetHistoryEntry[];
+  error?: string;
+};
 type SheetPayloadState = typeof emptyPayload;
 type SheetLoadOptions = {
   merge?: boolean;
@@ -220,6 +240,36 @@ function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("cs-CZ", { dateStyle: "medium", timeStyle: "short" }).format(
     new Date(value),
   );
+}
+
+function formatAuditValue(value: unknown) {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const player = record.player;
+    if (player && typeof player === "object" && "name" in player) {
+      return String((player as Record<string, unknown>).name ?? "-");
+    }
+    if ("achievement_count" in record) return String(record.achievement_count ?? "-");
+    if ("status" in record) return String(record.status ?? "-");
+    if ("side" in record && "block_number" in record) return `${record.side} blok ${record.block_number}`;
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function auditFieldLabel(fieldName: string) {
+  if (fieldName === "home_legs") return "Legy domácí";
+  if (fieldName === "away_legs") return "Legy hosté";
+  if (fieldName.startsWith("player:home")) return "Domácí hráč";
+  if (fieldName.startsWith("player:away")) return "Hostující hráč";
+  if (fieldName.startsWith("achievement:")) return fieldName.replace("achievement:", "Statistika ");
+  if (fieldName.startsWith("confirmation:")) return fieldName.replace("confirmation:", "Potvrzení ");
+  if (fieldName.startsWith("lineup_reveal:")) return "Odkrytí sestavy";
+  return fieldName;
 }
 
 function playerLabel(player: Player) {
@@ -1029,6 +1079,12 @@ export default function AdminMatchSheetPage({
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState(false);
   const [confirmingSide, setConfirmingSide] = useState<MatchSide | null>(null);
   const [unlockingSide, setUnlockingSide] = useState<MatchSide | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<MatchSheetHistoryEntry[]>([]);
+  const [historyGameFilter, setHistoryGameFilter] = useState("");
+  const [historyActorFilter, setHistoryActorFilter] = useState("");
+  const [historyTypeFilter, setHistoryTypeFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [rescheduleNotice, setRescheduleNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(!teamView);
@@ -1083,6 +1139,24 @@ export default function AdminMatchSheetPage({
     const requests = body.requests ?? [];
     setRescheduleRequests(requests);
     return requests;
+  }
+
+  async function loadHistory() {
+    setIsHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "150" });
+      if (historyGameFilter) params.set("game_id", historyGameFilter);
+      if (historyActorFilter) params.set("actor_player_id", historyActorFilter);
+      if (historyTypeFilter) params.set("entity_type", historyTypeFilter);
+      const response = await adminFetch(`/api/admin/matches/${matchId}/sheet/history?${params.toString()}`, { cache: "no-store" });
+      const body = (await response.json().catch(() => ({}))) as MatchSheetHistoryPayload;
+      if (!response.ok) throw new Error(body.error ?? "Historii změn se nepodařilo načíst.");
+      setHistoryEntries(body.history ?? []);
+    } catch (historyError) {
+      setError(historyError instanceof Error ? historyError.message : "Historii změn se nepodařilo načíst.");
+    } finally {
+      setIsHistoryLoading(false);
+    }
   }
 
   function protectedFieldKeys() {
@@ -1376,6 +1450,15 @@ export default function AdminMatchSheetPage({
   }, [matchId, sheetApiUrl, teamView, isAuthReady, authRefreshKey]);
 
   useEffect(() => {
+    if (!isHistoryOpen) return;
+    const historyLoadTimer = window.setTimeout(() => {
+      void loadHistory();
+    }, 0);
+    return () => window.clearTimeout(historyLoadTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHistoryOpen, historyGameFilter, historyActorFilter, historyTypeFilter]);
+
+  useEffect(() => {
     const channel = supabase
       .channel(`match-sheet:${matchId}`)
       .on(
@@ -1434,15 +1517,34 @@ export default function AdminMatchSheetPage({
     setError(null);
 
     try {
+      const firstFieldKey = fieldKeys[0] ?? "";
+      const playerField = firstFieldKey.match(/^game:(\d+):(home|away)_player_(\d+)$/);
+      const cell = playerField
+        ? (() => {
+            const side = playerField[2] as MatchSide;
+            const index = Number(playerField[3]);
+            const playerIds = side === "home" ? game.home_player_ids : game.away_player_ids;
+            return {
+              type: "player" as const,
+              order_number: game.order_number,
+              side,
+              position: index + 1,
+              slot_code: slotCodesForGame(game, side)[index] ?? null,
+              player_id: playerIds[index] || null,
+            };
+          })()
+        : {
+            type: "legs" as const,
+            order_number: game.order_number,
+            expected_updated_at: game.updated_at,
+            ...(fieldKeys.some((fieldKey) => fieldKey.endsWith(":home_legs")) ? { home_legs: game.home_legs } : {}),
+            ...(fieldKeys.some((fieldKey) => fieldKey.endsWith(":away_legs")) ? { away_legs: game.away_legs } : {}),
+          };
       const response = await adminFetch(sheetApiUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cell: {
-            type: "game",
-            expected_updated_at: game.updated_at,
-            game,
-          },
+          cell,
         }),
       });
       const body = (await response.json().catch(() => ({}))) as AutosaveResponse;
@@ -2017,6 +2119,83 @@ export default function AdminMatchSheetPage({
               );
             })}
           </div>
+        </Card>
+        <Card className="min-w-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-[var(--brand-navy)]">Historie změn zápasu</h3>
+              <p className="mt-1 text-sm text-[var(--admin-muted)]">Audit jednotlivých změn zápisu podle requestu.</p>
+            </div>
+            <Button onClick={() => setIsHistoryOpen((open) => !open)} type="button" variant="secondary">
+              {isHistoryOpen ? "Skrýt historii" : "Zobrazit historii"}
+            </Button>
+          </div>
+          {isHistoryOpen ? (
+            <div className="mt-5 grid gap-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="grid gap-1 text-sm font-bold text-[var(--brand-navy)]">
+                  Hra
+                  <select className="rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm" value={historyGameFilter} onChange={(event) => setHistoryGameFilter(event.target.value)}>
+                    <option value="">Všechny hry</option>
+                    {payload.games.filter((game) => game.id).map((game) => (
+                      <option key={game.id ?? game.order_number} value={game.id ?? ""}>Hra {game.order_number}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm font-bold text-[var(--brand-navy)]">
+                  Uživatel
+                  <select className="rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm" value={historyActorFilter} onChange={(event) => setHistoryActorFilter(event.target.value)}>
+                    <option value="">Všichni uživatelé</option>
+                    {payload.players.map((player) => (
+                      <option key={player.id} value={player.id}>{playerLabel(player)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm font-bold text-[var(--brand-navy)]">
+                  Typ změny
+                  <select className="rounded-xl border border-[var(--admin-border)] bg-white px-3 py-2 text-sm" value={historyTypeFilter} onChange={(event) => setHistoryTypeFilter(event.target.value)}>
+                    <option value="">Všechny typy</option>
+                    <option value="match_game">Legy / hra</option>
+                    <option value="match_game_player">Hráči</option>
+                    <option value="match_game_achievement">Statistiky</option>
+                    <option value="match_block_lineup_reveal">Odkrytí sestavy</option>
+                    <option value="match_confirmation">Potvrzení</option>
+                    <option value="match">Stav zápasu</option>
+                  </select>
+                </label>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-[860px] text-left text-sm">
+                  <thead className="bg-[var(--admin-soft-blue)] text-[var(--admin-muted)]">
+                    <tr>
+                      <th className="px-3 py-3">Čas</th>
+                      <th className="px-3 py-3">Uživatel</th>
+                      <th className="px-3 py-3">Hra</th>
+                      <th className="px-3 py-3">Pole</th>
+                      <th className="px-3 py-3">Původní</th>
+                      <th className="px-3 py-3">Nová</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isHistoryLoading ? (
+                      <tr><td className="px-3 py-4 text-[var(--admin-muted)]" colSpan={6}>Načítám historii...</td></tr>
+                    ) : historyEntries.length > 0 ? historyEntries.map((entry) => (
+                      <tr className="border-t border-[var(--admin-border)]" key={entry.id}>
+                        <td className="px-3 py-3 whitespace-nowrap">{formatDateTime(entry.created_at)}</td>
+                        <td className="px-3 py-3">{entry.actor_display_name ?? (entry.actor_role ? `Admin ${entry.actor_role}` : entry.source)}</td>
+                        <td className="px-3 py-3">{entry.game_order_number ? `Hra ${entry.game_order_number}` : "-"}</td>
+                        <td className="px-3 py-3">{auditFieldLabel(entry.field_name)}</td>
+                        <td className="px-3 py-3">{formatAuditValue(entry.old_value)}</td>
+                        <td className="px-3 py-3">{formatAuditValue(entry.new_value)}</td>
+                      </tr>
+                    )) : (
+                      <tr><td className="px-3 py-4 text-[var(--admin-muted)]" colSpan={6}>Zatím tu nejsou žádné auditní záznamy.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </Card>
         <Card className="min-w-0">
           <h3 className="text-lg font-bold text-[var(--brand-navy)]">Statistiky</h3>

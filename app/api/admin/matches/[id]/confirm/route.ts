@@ -29,7 +29,45 @@ function schemaError(message: string) {
   );
 }
 
+function auditSource(role: string | null | undefined) {
+  return role === "moderator" || role === "admin" ? "admin_sheet" : "captain_sheet";
+}
+
+async function insertConfirmationAudit(
+  supabase: Awaited<ReturnType<typeof authorizeMatchAccess>>["supabase"],
+  entry: {
+    matchId: string;
+    entityId?: string | null;
+    fieldName: string;
+    operation: "confirm" | "unlock" | "status_update";
+    oldValue?: unknown;
+    newValue?: unknown;
+    access: Awaited<ReturnType<typeof authorizeMatchAccess>>;
+    requestId: string;
+    actorTeamSeasonId?: string | null;
+  },
+) {
+  const { error } = await supabase.from("match_sheet_audit_logs").insert({
+    match_id: entry.matchId,
+    game_id: null,
+    entity_type: entry.operation === "status_update" ? "match" : "match_confirmation",
+    entity_id: entry.entityId ?? null,
+    field_name: entry.fieldName,
+    operation: entry.operation,
+    old_value: entry.oldValue ?? null,
+    new_value: entry.newValue ?? null,
+    actor_user_id: entry.access.requester?.userId ?? null,
+    actor_player_id: entry.access.requester?.playerId ?? null,
+    actor_role: entry.access.requester?.role ?? null,
+    actor_team_season_id: entry.actorTeamSeasonId ?? null,
+    source: auditSource(entry.access.requester?.role),
+    request_id: entry.requestId,
+  });
+  return error;
+}
+
 export async function POST(request: Request, context: RouteContext) {
+  const requestId = crypto.randomUUID();
   const body = (await request.json().catch(() => null)) as ConfirmBody | null;
   const side = parseSide(body?.side);
   if (!side) {
@@ -99,15 +137,31 @@ export async function POST(request: Request, context: RouteContext) {
     return schemaError(confirmationLookupError.message);
   }
 
+  let confirmationId = existingConfirmation?.id ?? null;
   if (!existingConfirmation) {
-    const { error } = await supabase.from("match_confirmations").insert({
+    const { data: insertedConfirmation, error } = await supabase.from("match_confirmations").insert({
       match_id: matchId,
       side,
       captain_player_id: confirmingPlayerId ?? captain.player_id,
-    });
+    }).select("id, match_id, side, captain_player_id, confirmed_at").single();
 
     if (error) {
       return schemaError(error.message);
+    }
+    confirmationId = insertedConfirmation?.id ?? null;
+    const auditError = await insertConfirmationAudit(supabase, {
+      matchId,
+      entityId: confirmationId,
+      fieldName: `confirmation:${side}`,
+      operation: "confirm",
+      oldValue: null,
+      newValue: insertedConfirmation,
+      access,
+      requestId,
+      actorTeamSeasonId: teamSeasonId,
+    });
+    if (auditError) {
+      return schemaError(auditError.message);
     }
   }
 
@@ -123,19 +177,39 @@ export async function POST(request: Request, context: RouteContext) {
 
   const confirmedSides = new Set((confirmations ?? []).map((confirmation) => confirmation.side));
   const isConfirmed = confirmedSides.has("home") && confirmedSides.has("away");
+  const oldStatus = match.status;
+  const nextStatus = isConfirmed ? "confirmed" : "awaiting_confirmation";
   const { error: updateError } = await supabase
     .from("matches")
-    .update({ status: isConfirmed ? "confirmed" : "awaiting_confirmation" })
+    .update({ status: nextStatus })
     .eq("id", matchId);
 
   if (updateError) {
     return schemaError(updateError.message);
   }
 
-  return NextResponse.json({ status: isConfirmed ? "confirmed" : "awaiting_confirmation" });
+  if (oldStatus !== nextStatus) {
+    const auditError = await insertConfirmationAudit(supabase, {
+      matchId,
+      entityId: matchId,
+      fieldName: "status",
+      operation: "status_update",
+      oldValue: oldStatus,
+      newValue: nextStatus,
+      access,
+      requestId,
+      actorTeamSeasonId: teamSeasonId,
+    });
+    if (auditError) {
+      return schemaError(auditError.message);
+    }
+  }
+
+  return NextResponse.json({ status: nextStatus, request_id: requestId });
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
+  const requestId = crypto.randomUUID();
   const body = (await request.json().catch(() => null)) as ConfirmBody | null;
   const side = parseSide(body?.side);
   if (!side) {
@@ -158,6 +232,29 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
 
   const supabase = access.supabase;
+  const { data: confirmationBeforeUnlock, error: confirmationBeforeUnlockError } = await supabase
+    .from("match_confirmations")
+    .select("id, match_id, side, captain_player_id, confirmed_at")
+    .eq("match_id", matchId)
+    .eq("side", side)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (confirmationBeforeUnlockError) {
+    return schemaError(confirmationBeforeUnlockError.message);
+  }
+
+  const { data: matchBeforeUnlock, error: matchBeforeUnlockError } = await supabase
+    .from("matches")
+    .select("id, home_team_id, away_team_id, status")
+    .eq("id", matchId)
+    .is("deleted_at", null)
+    .single();
+
+  if (matchBeforeUnlockError || !matchBeforeUnlock) {
+    return schemaError(matchBeforeUnlockError?.message ?? "Zapas nebyl nalezen.");
+  }
+
   const { error: deleteError } = await supabase
     .from("match_confirmations")
     .update({ deleted_at: new Date().toISOString() })
@@ -167,6 +264,23 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   if (deleteError) {
     return schemaError(deleteError.message);
+  }
+
+  if (confirmationBeforeUnlock) {
+    const auditError = await insertConfirmationAudit(supabase, {
+      matchId,
+      entityId: confirmationBeforeUnlock.id,
+      fieldName: `confirmation:${side}`,
+      operation: "unlock",
+      oldValue: confirmationBeforeUnlock,
+      newValue: null,
+      access,
+      requestId,
+      actorTeamSeasonId: side === "home" ? matchBeforeUnlock.home_team_id : matchBeforeUnlock.away_team_id,
+    });
+    if (auditError) {
+      return schemaError(auditError.message);
+    }
   }
 
   const { error: updateError } = await supabase
@@ -179,5 +293,22 @@ export async function DELETE(request: Request, context: RouteContext) {
     return schemaError(updateError.message);
   }
 
-  return NextResponse.json({ status: "awaiting_confirmation" });
+  if (matchBeforeUnlock.status !== "awaiting_confirmation") {
+    const auditError = await insertConfirmationAudit(supabase, {
+      matchId,
+      entityId: matchId,
+      fieldName: "status",
+      operation: "status_update",
+      oldValue: matchBeforeUnlock.status,
+      newValue: "awaiting_confirmation",
+      access,
+      requestId,
+      actorTeamSeasonId: side === "home" ? matchBeforeUnlock.home_team_id : matchBeforeUnlock.away_team_id,
+    });
+    if (auditError) {
+      return schemaError(auditError.message);
+    }
+  }
+
+  return NextResponse.json({ status: "awaiting_confirmation", request_id: requestId });
 }

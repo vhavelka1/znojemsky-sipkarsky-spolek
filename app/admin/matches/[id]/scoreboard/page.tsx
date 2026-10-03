@@ -33,6 +33,7 @@ type Team = { id: string; name: string };
 type Player = { id: string; display_name: string };
 type SheetGame = {
   id: string | null;
+  updated_at: string | null;
   game_type: MatchGameType;
   order_number: number;
   home_legs: number;
@@ -65,6 +66,7 @@ type SheetPayload = {
   teams?: Team[];
   players?: Player[];
   games?: SheetGame[];
+  game?: SheetGame;
   achievements?: SheetAchievement[];
   slots?: MatchPlayerSlot[];
   error?: string;
@@ -455,19 +457,17 @@ export default function MatchScoreboardPage() {
           state.sides.away.legs,
         ),
       };
-      const updatedGames = payload.games
-        .map((game) => (game.order_number === selectedGame.order_number ? updatedGame : game))
-        .filter((game) => game.order_number <= 18);
-      const achievements = payload.achievements.filter(
-        (achievement) => (achievement.order_number ?? 0) <= 18,
-      );
       const response = await adminFetch(`/api/admin/matches/${matchId}/sheet`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          games: updatedGames,
-          achievements,
-          slots: payload.slots,
+          cell: {
+            type: "legs",
+            order_number: updatedGame.order_number,
+            expected_updated_at: selectedGame.updated_at,
+            home_legs: updatedGame.home_legs,
+            away_legs: updatedGame.away_legs,
+          },
         }),
       });
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
@@ -475,17 +475,11 @@ export default function MatchScoreboardPage() {
 
       setPayload((current) => ({
         ...current,
-        ...body,
-        match: body.match ?? current.match,
-        season: body.season ?? current.season,
-        league: body.league ?? current.league,
-        group: body.group ?? current.group,
-        teamSeasons: body.teamSeasons ?? current.teamSeasons,
-        teams: body.teams ?? current.teams,
-        players: body.players ?? current.players,
-        games: body.games ?? current.games,
-        achievements: body.achievements ?? current.achievements,
-        slots: body.slots ?? current.slots,
+        games: current.games.map((game) => (
+          game.order_number === selectedGame.order_number
+            ? { ...game, ...body.game }
+            : game
+        )),
       }));
       setScoreboard((current) => ({ ...current, isSaved: true }));
     } catch (saveError) {
