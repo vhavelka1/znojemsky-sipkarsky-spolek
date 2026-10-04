@@ -233,7 +233,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: matchError?.message ?? "Zápas nebyl nalezen." }, { status: 404 });
     }
 
-    const [season, league, group, teamSeasons, teamsWithOptionalColumns, memberships, players, games, gamePlayers, achievements, result] =
+    const [season, league, group, teamSeasons, teamsWithOptionalColumns, memberships, players, games, achievements, result] =
       await Promise.all([
         supabase.from("seasons").select("id, name").eq("id", match.season_id).is("deleted_at", null).single(),
         supabase.from("leagues").select("id, name").eq("id", match.league_id).is("deleted_at", null).single(),
@@ -243,7 +243,6 @@ export async function GET(_request: Request, context: RouteContext) {
         supabase.from("team_memberships").select("team_season_id, player_id, member_role").in("team_season_id", [match.home_team_id, match.away_team_id]).is("deleted_at", null).is("left_on", null).returns<MembershipRow[]>(),
         supabase.from("players").select("id, display_name").is("deleted_at", null).order("display_name", { ascending: true }).returns<PlayerRow[]>(),
         supabase.from("match_games").select("id, match_id, game_type, order_number, home_legs, away_legs, winner_side, updated_at").eq("match_id", id).is("deleted_at", null).order("order_number", { ascending: true }).returns<MatchGameRow[]>(),
-        supabase.from("match_game_players").select("match_game_id, side, player_id, position, slot_code").is("deleted_at", null).returns<MatchGamePlayerRow[]>(),
         supabase.from("match_game_achievements").select("id, match_id, match_game_id, player_id, achievement_type, achievement_count").eq("match_id", id).is("deleted_at", null).returns<MatchAchievementRow[]>(),
         supabase.from("match_results").select("match_id, home_points, away_points").eq("match_id", id).is("deleted_at", null).maybeSingle<MatchResultRow>(),
       ]);
@@ -261,7 +260,6 @@ export async function GET(_request: Request, context: RouteContext) {
       memberships.error ??
       players.error ??
       games.error ??
-      gamePlayers.error ??
       achievements.error ??
       result.error;
 
@@ -284,8 +282,22 @@ export async function GET(_request: Request, context: RouteContext) {
       teamRows = fallback.data;
     }
 
-    const activeGameIds = new Set((games.data ?? []).map((game) => game.id));
-    const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) => activeGameIds.has(gamePlayer.match_game_id));
+    const activeGameIds = (games.data ?? []).map((game) => game.id);
+    const gamePlayers = activeGameIds.length > 0
+      ? await supabase
+          .from("match_game_players")
+          .select("match_game_id, side, player_id, position, slot_code")
+          .in("match_game_id", activeGameIds)
+          .is("deleted_at", null)
+          .returns<MatchGamePlayerRow[]>()
+      : { data: [] as MatchGamePlayerRow[], error: null };
+
+    if (gamePlayers.error) {
+      return missingSheetSchemaResponse(gamePlayers.error.message) ?? NextResponse.json({ error: gamePlayers.error.message }, { status: 500 });
+    }
+
+    const activeGameIdSet = new Set(activeGameIds);
+    const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) => activeGameIdSet.has(gamePlayer.match_game_id));
     const playersByGame = new Map<string, MatchGamePlayerRow[]>();
     relevantGamePlayers.forEach((gamePlayer) => {
       playersByGame.set(gamePlayer.match_game_id, [...(playersByGame.get(gamePlayer.match_game_id) ?? []), gamePlayer]);

@@ -752,7 +752,7 @@ async function loadSheetData(
     return { data: null, error: matchError?.message ?? "Zápas nebyl nalezen." };
   }
 
-  const [seasons, leagues, groups, teamSeasons, teamsWithOptionalColumns, memberships, players, games, gamePlayers, achievements, slots, confirmations, revealResult] =
+  const [seasons, leagues, groups, teamSeasons, teamsWithOptionalColumns, memberships, players, games, achievements, slots, confirmations, revealResult] =
     await Promise.all([
       supabase
         .from("seasons")
@@ -799,11 +799,6 @@ async function loadSheetData(
         .is("deleted_at", null)
         .order("order_number", { ascending: true })
         .returns<MatchGameRow[]>(),
-      supabase
-        .from("match_game_players")
-        .select("id, match_game_id, side, player_id, position, slot_code")
-        .is("deleted_at", null)
-        .returns<MatchGamePlayerRow[]>(),
       supabase
         .from("match_game_achievements")
         .select("id, match_id, match_game_id, player_id, achievement_type, achievement_count")
@@ -855,7 +850,6 @@ async function loadSheetData(
     memberships.error ??
     players.error ??
     games.error ??
-    gamePlayers.error ??
     achievements.error ??
     slots.error ??
     confirmations.error ??
@@ -865,14 +859,28 @@ async function loadSheetData(
     return { data: null, error: error.message };
   }
 
+  const activeGameIds = (games.data ?? []).map((game) => game.id);
+  const gamePlayers = activeGameIds.length > 0
+    ? await supabase
+        .from("match_game_players")
+        .select("id, match_game_id, side, player_id, position, slot_code")
+        .in("match_game_id", activeGameIds)
+        .is("deleted_at", null)
+        .returns<MatchGamePlayerRow[]>()
+    : { data: [] as MatchGamePlayerRow[], error: null };
+
+  if (gamePlayers.error) {
+    return { data: null, error: gamePlayers.error.message };
+  }
+
   const forcedTeamSide = options.preferTeamSide
     ? await resolveRequestedTeamSide(supabase, requester, match, teamSeasons.data ?? [], options.teamSeasonId)
     : null;
   const viewer = viewerContextForMatch(requester, match, memberships.data ?? [], { ...options, forcedTeamSide });
   const lineupsVisibleForAll = match.status === "confirmed";
-  const activeGameIds = new Set((games.data ?? []).map((game) => game.id));
+  const activeGameIdSet = new Set(activeGameIds);
   const relevantGamePlayers = (gamePlayers.data ?? []).filter((gamePlayer) =>
-    activeGameIds.has(gamePlayer.match_game_id),
+    activeGameIdSet.has(gamePlayer.match_game_id),
   );
   const revealSet = new Set(lineupReveals.map((reveal) => revealKey(reveal.side, reveal.block_number)));
   const gamesByOrder = new Map((games.data ?? []).map((game) => [game.order_number, game]));
