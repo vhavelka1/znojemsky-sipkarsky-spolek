@@ -46,10 +46,12 @@ type TablePayload = {
   seasons?: Season[];
   leagues?: League[];
   groups?: LeagueGroup[];
+  rounds?: number[];
   selected?: {
     seasonId: string;
     leagueId: string;
     groupId: string;
+    roundNumber: string;
   };
   standings?: StandingRow[];
   error?: string;
@@ -59,6 +61,7 @@ type Filters = {
   seasonId: string;
   leagueId: string;
   groupId: string;
+  roundNumber: string;
 };
 
 
@@ -66,6 +69,7 @@ const emptyFilters: Filters = {
   seasonId: "",
   leagueId: "",
   groupId: "",
+  roundNumber: "",
 };
 
 function initialFiltersFromUrl(): Filters {
@@ -76,6 +80,7 @@ function initialFiltersFromUrl(): Filters {
     seasonId: params.get("season_id") ?? "",
     leagueId: params.get("league_id") ?? "",
     groupId: params.get("group_id") ?? "",
+    roundNumber: params.get("round_number") ?? "",
   };
 }
 
@@ -112,6 +117,7 @@ async function fetchTables(filters: Filters) {
   if (filters.seasonId) params.set("season_id", filters.seasonId);
   if (filters.leagueId) params.set("league_id", filters.leagueId);
   if (filters.groupId) params.set("group_id", filters.groupId);
+  if (filters.roundNumber) params.set("round_number", filters.roundNumber);
 
   const response = await fetch(`/api/public/tables?${params.toString()}`, {
     cache: "no-store",
@@ -125,6 +131,7 @@ export default function PublicTablesPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [groups, setGroups] = useState<LeagueGroup[]>([]);
+  const [rounds, setRounds] = useState<number[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [filters, setFilters] = useState<Filters>(initialFiltersFromUrl);
   const [isLoading, setIsLoading] = useState(true);
@@ -152,22 +159,26 @@ export default function PublicTablesPage() {
         seasonId: filters.seasonId,
         leagueId: filters.leagueId,
         groupId: filters.groupId,
+        roundNumber: filters.roundNumber,
       })
         .then((body) => {
           if (!isMounted) return;
           setSeasons(body.seasons ?? []);
           setLeagues(body.leagues ?? []);
           setGroups(body.groups ?? []);
+          setRounds(body.rounds ?? []);
           setStandings(body.standings ?? []);
           setFilters((current) => {
             const nextFilters = {
               seasonId: body.selected?.seasonId ?? "",
               leagueId: body.selected?.leagueId ?? "",
               groupId: body.selected?.groupId ?? "",
+              roundNumber: body.selected?.roundNumber ?? "",
             };
             return current.seasonId === nextFilters.seasonId &&
               current.leagueId === nextFilters.leagueId &&
-              current.groupId === nextFilters.groupId
+              current.groupId === nextFilters.groupId &&
+              current.roundNumber === nextFilters.roundNumber
               ? current
               : nextFilters;
           });
@@ -184,7 +195,20 @@ export default function PublicTablesPage() {
       isMounted = false;
       window.clearTimeout(timeoutId);
     };
-  }, [filters.groupId, filters.leagueId, filters.seasonId]);
+  }, [filters.groupId, filters.leagueId, filters.roundNumber, filters.seasonId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filters.seasonId) params.set("season_id", filters.seasonId);
+    if (filters.leagueId) params.set("league_id", filters.leagueId);
+    if (filters.groupId) params.set("group_id", filters.groupId);
+    if (filters.roundNumber) params.set("round_number", filters.roundNumber);
+
+    const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+    if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+      window.history.replaceState(null, "", nextUrl);
+    }
+  }, [filters.groupId, filters.leagueId, filters.roundNumber, filters.seasonId]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#F4F8FF] text-[#0B1F3A]">
@@ -212,13 +236,14 @@ export default function PublicTablesPage() {
             {selectedSeason ? <span className="rounded-full bg-white/10 px-4 py-2">{selectedSeason.name}</span> : null}
             {selectedLeague ? <span className="rounded-full bg-white/10 px-4 py-2">{selectedLeague.name}</span> : null}
             {selectedGroup ? <span className="rounded-full bg-[#EF233C] px-4 py-2 text-white">{selectedGroup.name}</span> : null}
+            {filters.roundNumber ? <span className="rounded-full bg-white/10 px-4 py-2">{filters.roundNumber}. kolo</span> : null}
           </div>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="rounded-[28px] border border-[#D8E4F2] bg-white p-5 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <label className="flex flex-col gap-2 text-sm font-black text-[#061A3A]">
               Sezóna
               <select
@@ -231,6 +256,7 @@ export default function PublicTablesPage() {
                     seasonId,
                     leagueId: nextLeague?.id ?? "",
                     groupId: nextGroup?.id ?? "",
+                    roundNumber: "",
                   });
                 }}
                 value={filters.seasonId}
@@ -256,6 +282,7 @@ export default function PublicTablesPage() {
                     ...current,
                     leagueId,
                     groupId: nextGroup?.id ?? "",
+                    roundNumber: "",
                   }));
                 }}
                 value={filters.leagueId}
@@ -274,7 +301,7 @@ export default function PublicTablesPage() {
               <select
                 className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none transition focus:border-[#0F4FA8]"
                 onChange={(event) =>
-                  setFilters((current) => ({ ...current, groupId: event.target.value }))
+                  setFilters((current) => ({ ...current, groupId: event.target.value, roundNumber: "" }))
                 }
                 value={filters.groupId}
               >
@@ -282,6 +309,24 @@ export default function PublicTablesPage() {
                 {filteredGroups.map((group) => (
                   <option key={group.id} value={group.id}>
                     {group.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm font-black text-[#061A3A]">
+              Kolo
+              <select
+                className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none transition focus:border-[#0F4FA8]"
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, roundNumber: event.target.value }))
+                }
+                value={filters.roundNumber}
+              >
+                <option value="">Všechna kola</option>
+                {rounds.map((round) => (
+                  <option key={round} value={String(round)}>
+                    {round}. kolo
                   </option>
                 ))}
               </select>
@@ -298,7 +343,7 @@ export default function PublicTablesPage() {
                 {selectedGroup?.name ?? "Skupina"}
               </p>
               <h2 className="mt-1 text-2xl font-black tracking-tight text-[#061A3A]">
-                Ligová tabulka
+                {filters.roundNumber ? `Ligová tabulka po ${filters.roundNumber}. kole` : "Ligová tabulka"}
               </h2>
             </div>
             <p className="text-sm font-bold text-slate-500">

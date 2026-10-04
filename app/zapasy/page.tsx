@@ -64,8 +64,10 @@ type MatchesPayload = {
     leagueId: string;
     groupId: string;
     teamSeasonId: string;
+    roundNumber: string;
   };
   teams?: MatchTeam[];
+  rounds?: number[];
   matches?: PublicMatch[];
   byes?: PublicMatchBye[];
   hasGroupsForSelectedLeague?: boolean;
@@ -77,6 +79,7 @@ type Filters = {
   leagueId: string;
   groupId: string;
   teamSeasonId: string;
+  roundNumber: string;
 };
 
 type ViewMode = "rounds" | "team";
@@ -111,6 +114,7 @@ const emptyFilters: Filters = {
   leagueId: "",
   groupId: "",
   teamSeasonId: "",
+  roundNumber: "",
 };
 
 const statusLabels: Record<MatchStatus, string> = {
@@ -138,6 +142,7 @@ function initialFiltersFromUrl(): Filters {
     leagueId: params.get("league_id") ?? "",
     groupId: params.get("group_id") ?? "",
     teamSeasonId: params.get("team_season_id") ?? "",
+    roundNumber: params.get("round_number") ?? "",
   };
 }
 
@@ -172,6 +177,7 @@ function updateUrl(filters: Filters, viewMode: ViewMode, sideFilter: MatchSideFi
   if (filters.leagueId) params.set("league_id", filters.leagueId);
   if (filters.groupId) params.set("group_id", filters.groupId);
   if (filters.teamSeasonId) params.set("team_season_id", filters.teamSeasonId);
+  if (filters.roundNumber) params.set("round_number", filters.roundNumber);
   params.set("view", viewMode);
   if (filters.teamSeasonId && sideFilter !== "all") params.set("side", sideFilter);
   const query = params.toString();
@@ -350,6 +356,7 @@ async function fetchMatches(filters: Filters) {
   if (filters.leagueId) params.set("league_id", filters.leagueId);
   if (filters.groupId) params.set("group_id", filters.groupId);
   if (filters.teamSeasonId) params.set("team_season_id", filters.teamSeasonId);
+  if (filters.roundNumber) params.set("round_number", filters.roundNumber);
 
   const response = await fetch(`/api/public/matches?${params.toString()}`, {
     cache: "no-store",
@@ -505,6 +512,7 @@ export default function PublicMatchesPage() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [groups, setGroups] = useState<LeagueGroup[]>([]);
   const [teams, setTeams] = useState<MatchTeam[]>([]);
+  const [rounds, setRounds] = useState<number[]>([]);
   const [matches, setMatches] = useState<PublicMatch[]>([]);
   const [byes, setByes] = useState<PublicMatchBye[]>([]);
   const [filters, setFilters] = useState<Filters>(initialFiltersFromUrl);
@@ -546,6 +554,7 @@ export default function PublicMatchesPage() {
         leagueId: params.get("league_id") ?? "",
         groupId: params.get("group_id") ?? "",
         teamSeasonId: params.get("team_season_id") ?? "",
+        roundNumber: params.get("round_number") ?? "",
       });
       setViewMode(viewModeFromParams(params));
       setSideFilter(params.get("team_season_id") ? sideFilterFromParams(params) : "all");
@@ -571,12 +580,14 @@ export default function PublicMatchesPage() {
             leagueId: body.selected?.leagueId ?? "",
             groupId: body.selected?.groupId ?? "",
             teamSeasonId: body.selected?.teamSeasonId ?? "",
+            roundNumber: body.selected?.roundNumber ?? "",
           };
 
           setSeasons(body.seasons ?? []);
           setLeagues(body.leagues ?? []);
           setGroups(body.groups ?? []);
           setTeams(body.teams ?? []);
+          setRounds(body.rounds ?? []);
           setMatches(body.matches ?? []);
           setByes(body.byes ?? []);
           setHasGroupsForSelectedLeague(body.hasGroupsForSelectedLeague ?? true);
@@ -584,7 +595,8 @@ export default function PublicMatchesPage() {
             current.seasonId === nextFilters.seasonId &&
             current.leagueId === nextFilters.leagueId &&
             current.groupId === nextFilters.groupId &&
-            current.teamSeasonId === nextFilters.teamSeasonId
+            current.teamSeasonId === nextFilters.teamSeasonId &&
+            current.roundNumber === nextFilters.roundNumber
               ? current
               : nextFilters,
           );
@@ -658,6 +670,7 @@ export default function PublicMatchesPage() {
             {selectedSeason ? <span className="rounded-full bg-white/10 px-4 py-2">{selectedSeason.name}</span> : null}
             {selectedLeague ? <span className="rounded-full bg-white/10 px-4 py-2">{selectedLeague.name}</span> : null}
             {selectedGroup ? <span className="rounded-full bg-[#EF233C] px-4 py-2 text-white">{selectedGroup.name}</span> : null}
+            {filters.roundNumber ? <span className="rounded-full bg-white/10 px-4 py-2">{filters.roundNumber}. kolo</span> : null}
             {selectedTeam ? <span className="rounded-full bg-white px-4 py-2 text-[#061A3A]">{selectedTeam.name}</span> : null}
           </div>
         </div>
@@ -665,7 +678,7 @@ export default function PublicMatchesPage() {
 
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="rounded-[28px] border border-[#D8E4F2] bg-white p-5 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <label className="flex flex-col gap-2 text-sm font-black text-[#061A3A]">
               Sezóna
               <select
@@ -679,6 +692,7 @@ export default function PublicMatchesPage() {
                     leagueId: nextLeague?.id ?? "",
                     groupId: nextGroup?.id ?? "",
                     teamSeasonId: "",
+                    roundNumber: "",
                   }, "rounds");
                 }}
                 value={filters.seasonId}
@@ -705,6 +719,7 @@ export default function PublicMatchesPage() {
                     leagueId,
                     groupId: nextGroup?.id ?? "",
                     teamSeasonId: "",
+                    roundNumber: "",
                   }, "rounds");
                 }}
                 value={filters.leagueId}
@@ -724,7 +739,7 @@ export default function PublicMatchesPage() {
                 className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none transition focus:border-[#0F4FA8] disabled:cursor-not-allowed disabled:text-slate-400"
                 disabled={!hasGroupsForSelectedLeague}
                 onChange={(event) =>
-                  changeFilters({ ...filters, groupId: event.target.value, teamSeasonId: "" }, "rounds")
+                  changeFilters({ ...filters, groupId: event.target.value, teamSeasonId: "", roundNumber: "" }, "rounds")
                 }
                 value={filters.groupId}
               >
@@ -752,6 +767,22 @@ export default function PublicMatchesPage() {
                 {teams.map((team) => (
                   <option key={team.teamSeasonId} value={team.teamSeasonId}>
                     {team.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm font-black text-[#061A3A]">
+              Kolo
+              <select
+                className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none transition focus:border-[#0F4FA8]"
+                onChange={(event) => changeFilters({ ...filters, roundNumber: event.target.value }, effectiveView)}
+                value={filters.roundNumber}
+              >
+                <option value="">Všechna kola</option>
+                {rounds.map((roundNumber) => (
+                  <option key={roundNumber} value={String(roundNumber)}>
+                    {roundNumber}. kolo
                   </option>
                 ))}
               </select>

@@ -313,6 +313,10 @@ export async function GET(request: NextRequest) {
           .filter((roundNumber): roundNumber is number => roundNumber !== null),
       ),
     ).sort((first, second) => first - second);
+    const requestedRoundNumber = roundValue(request.nextUrl.searchParams.get("round_number"));
+    const selectedRoundNumber = roundNumbers.includes(requestedRoundNumber ?? 0)
+      ? requestedRoundNumber
+      : null;
 
     const byes: PublicMatchBye[] = roundNumbers.flatMap((roundNumber) => {
       const roundMatches = matchesForSelectedCompetition.filter((match) => match.roundNumber === roundNumber);
@@ -328,9 +332,10 @@ export async function GET(request: NextRequest) {
     const filteredMatches = matchesForSelectedCompetition
       .filter(
         (match) =>
-          !selectedTeamSeasonId ||
-          match.homeTeam.teamSeasonId === selectedTeamSeasonId ||
-          match.awayTeam.teamSeasonId === selectedTeamSeasonId,
+          (!selectedRoundNumber || match.roundNumber === selectedRoundNumber) &&
+          (!selectedTeamSeasonId ||
+            match.homeTeam.teamSeasonId === selectedTeamSeasonId ||
+            match.awayTeam.teamSeasonId === selectedTeamSeasonId),
       )
       .sort((first, second) => {
         const firstRound = first.roundNumber ?? Number.MAX_SAFE_INTEGER;
@@ -341,7 +346,9 @@ export async function GET(request: NextRequest) {
         return first.id.localeCompare(second.id);
       });
     const filteredByes = byes.filter(
-      (bye) => !selectedTeamSeasonId || bye.team.teamSeasonId === selectedTeamSeasonId,
+      (bye) =>
+        (!selectedRoundNumber || bye.roundNumber === selectedRoundNumber) &&
+        (!selectedTeamSeasonId || bye.team.teamSeasonId === selectedTeamSeasonId),
     );
 
     return NextResponse.json({
@@ -353,8 +360,10 @@ export async function GET(request: NextRequest) {
         leagueId: selectedLeague?.id ?? "",
         groupId: selectedGroup?.id ?? "",
         teamSeasonId: selectedTeamSeasonId,
+        roundNumber: selectedRoundNumber ? String(selectedRoundNumber) : "",
       },
       teams: availableTeams,
+      rounds: roundNumbers,
       matches: filteredMatches,
       byes: filteredByes,
       hasGroupsForSelectedLeague: groupsInSelectedLeague.length > 0,

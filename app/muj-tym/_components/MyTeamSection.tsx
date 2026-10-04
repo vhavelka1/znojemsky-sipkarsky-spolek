@@ -296,13 +296,6 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatDecimal(value: number) {
-  return new Intl.NumberFormat("cs-CZ", {
-    maximumFractionDigits: 1,
-    minimumFractionDigits: 1,
-  }).format(value);
-}
-
 function normalizeSearch(value: string) {
   return value
     .normalize("NFD")
@@ -426,6 +419,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [existingPlayerSearch, setExistingPlayerSearch] = useState("");
   const [debouncedExistingPlayerSearch, setDebouncedExistingPlayerSearch] = useState("");
   const [matchSeasonFilter, setMatchSeasonFilter] = useState("");
+  const [matchRoundFilter, setMatchRoundFilter] = useState("all");
   const [matchSearch, setMatchSearch] = useState("");
   const [matchStatusFilter, setMatchStatusFilter] = useState("all");
   const [matchSideFilter, setMatchSideFilter] = useState("all");
@@ -700,19 +694,33 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
         .sort((first, second) => new Date(second.playedAt ?? second.scheduledAt).getTime() - new Date(first.playedAt ?? first.scheduledAt).getTime()),
     [matches],
   );
+  const matchRounds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          matches
+            .filter((match) => !matchSeasonFilter || match.seasonId === matchSeasonFilter)
+            .map((match) => match.roundNumber)
+            .filter((roundNumber): roundNumber is number => roundNumber !== null),
+        ),
+      ).sort((first, second) => first - second),
+    [matchSeasonFilter, matches],
+  );
   const filteredMatches = useMemo(() => {
     const normalizedSearch = normalizeSearch(matchSearch);
+    const selectedRoundNumber = matchRoundFilter === "all" ? null : Number(matchRoundFilter);
 
     return matches
       .filter((match) => {
         if (matchSeasonFilter && match.seasonId !== matchSeasonFilter) return false;
+        if (selectedRoundNumber !== null && match.roundNumber !== selectedRoundNumber) return false;
         if (matchStatusFilter !== "all" && match.status !== matchStatusFilter) return false;
         if (matchSideFilter !== "all" && match.side !== matchSideFilter) return false;
         if (normalizedSearch && !normalizeSearch(matchTitle(match)).includes(normalizedSearch)) return false;
         return true;
       })
       .sort((first, second) => new Date(first.scheduledAt).getTime() - new Date(second.scheduledAt).getTime());
-  }, [matchSearch, matchSeasonFilter, matchSideFilter, matchStatusFilter, matches]);
+  }, [matchRoundFilter, matchSearch, matchSeasonFilter, matchSideFilter, matchStatusFilter, matches]);
 
   const renderRosterTable = (players: RosterPlayer[]) => {
     if (players.length === 0) return <EmptyState>V této části nejsou žádní hráči.</EmptyState>;
@@ -1016,18 +1024,36 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
           </div>
 
           <div className="border-b border-[#D8E4F2] bg-[#F4F8FF] p-4">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.2fr)_minmax(240px,1fr)_180px_180px]">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.1fr)_150px_minmax(220px,1fr)_180px_180px]">
               <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                 Sezóna
                 <select
                   className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
-                  onChange={(event) => setMatchSeasonFilter(event.target.value)}
+                  onChange={(event) => {
+                    setMatchSeasonFilter(event.target.value);
+                    setMatchRoundFilter("all");
+                  }}
                   value={matchSeasonFilter}
                 >
                   <option value="">Všechny sezóny</option>
                   {seasons.map((season) => (
                     <option key={season.id} value={season.id}>
                       {season.name}{season.isActive ? " - aktivní" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
+                Kolo
+                <select
+                  className="rounded-2xl border border-[#D8E4F2] bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]"
+                  onChange={(event) => setMatchRoundFilter(event.target.value)}
+                  value={matchRoundFilter}
+                >
+                  <option value="all">Všechna kola</option>
+                  {matchRounds.map((roundNumber) => (
+                    <option key={roundNumber} value={String(roundNumber)}>
+                      {roundNumber}. kolo
                     </option>
                   ))}
                 </select>
@@ -1108,32 +1134,6 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
                       </Link>
                     </div>
                   </div>
-                  {match.playerUsefulness && match.playerUsefulness.length > 0 ? (
-                    <div className="mt-4 overflow-x-auto rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF]">
-                      <table className="min-w-[520px] text-left text-sm">
-                        <thead className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
-                          <tr>
-                            <th className="px-4 py-3">Hráč</th>
-                            <th className="px-4 py-3 text-right">Užitečnost</th>
-                            <th className="px-4 py-3 text-right">OZ</th>
-                            <th className="px-4 py-3 text-right">VZ</th>
-                            <th className="px-4 py-3 text-right">PZ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#D8E4F2] bg-white">
-                          {match.playerUsefulness.map((player) => (
-                            <tr key={player.playerId}>
-                              <td className="px-4 py-3 font-black text-[#061A3A]">{player.displayName}</td>
-                              <td className="px-4 py-3 text-right font-black text-[#EF233C]">{formatDecimal(player.usefulnessScore)}</td>
-                              <td className="px-4 py-3 text-right font-bold">{player.playedMatches}</td>
-                              <td className="px-4 py-3 text-right font-bold">{player.wonMatches}</td>
-                              <td className="px-4 py-3 text-right font-bold">{player.lostMatches}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
                 </article>
               ))
             )}

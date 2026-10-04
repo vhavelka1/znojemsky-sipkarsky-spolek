@@ -49,6 +49,7 @@ type Match = {
   group_id: string;
   home_team_id: string;
   away_team_id: string;
+  round_number: number | string | null;
   scheduled_at: string;
   played_at: string | null;
   status: MatchStatus;
@@ -65,6 +66,12 @@ type MatchGame = {
   home_legs: number;
   away_legs: number;
 };
+
+function roundValue(value: string | number | null | undefined) {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) return Number(value);
+  return null;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -114,7 +121,7 @@ export async function GET(request: NextRequest) {
         .order("name", { ascending: true }),
       supabase
         .from("matches")
-        .select("id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status")
+        .select("id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at, played_at, status")
         .is("deleted_at", null)
         .returns<Match[]>(),
       supabase
@@ -179,14 +186,42 @@ export async function GET(request: NextRequest) {
       logo_url: teamLogoUrl(team.slug, team.logo_url),
     }));
     const resultByMatchId = new Map((results.data ?? []).map((result) => [result.match_id, result]));
+    const selectedRoundParam = roundValue(request.nextUrl.searchParams.get("round_number"));
+    const availableRounds = Array.from(
+      new Set(
+        (matches.data ?? [])
+          .filter(
+            (match) =>
+              match.season_id === selectedSeasonId &&
+              match.league_id === selectedLeague?.id &&
+              match.group_id === selectedGroup?.id,
+          )
+          .map((match) => roundValue(match.round_number))
+          .filter((value): value is number => value !== null),
+      ),
+    ).sort((first, second) => first - second);
+    const selectedRoundNumber = availableRounds.includes(selectedRoundParam ?? 0)
+      ? selectedRoundParam
+      : null;
+    const matchesForStandings = (matches.data ?? []).filter((match) => {
+      if (
+        match.season_id !== selectedSeasonId ||
+        match.league_id !== selectedLeague?.id ||
+        match.group_id !== selectedGroup?.id
+      ) {
+        return false;
+      }
 
-    const matchIdsForLegs = (matches.data ?? [])
+      if (!selectedRoundNumber) return true;
+
+      const matchRound = roundValue(match.round_number);
+      return matchRound !== null && matchRound <= selectedRoundNumber;
+    });
+
+    const matchIdsForLegs = matchesForStandings
       .filter(
         (match) =>
           isFinishedMatch(match) &&
-          match.season_id === selectedSeasonId &&
-          match.league_id === selectedLeague?.id &&
-          match.group_id === selectedGroup?.id &&
           resultByMatchId.has(match.id),
       )
       .map((match) => match.id);
@@ -207,11 +242,7 @@ export async function GET(request: NextRequest) {
       ? buildLeagueGroupStandings({
           assignments: assignments.data ?? [],
           groupId: selectedGroup.id,
-          matches: (matches.data ?? []).filter(
-            (match) =>
-              match.season_id === selectedSeasonId &&
-              match.league_id === selectedLeague?.id,
-          ),
+          matches: matchesForStandings,
           matchGames,
           results: results.data ?? [],
           teams: teamRows,
@@ -223,10 +254,12 @@ export async function GET(request: NextRequest) {
       seasons: seasons.data ?? [],
       leagues: leagues.data ?? [],
       groups: groups.data ?? [],
+      rounds: availableRounds,
       selected: {
         seasonId: selectedSeasonId,
         leagueId: selectedLeague?.id ?? "",
         groupId: selectedGroup?.id ?? "",
+        roundNumber: selectedRoundNumber ? String(selectedRoundNumber) : "",
       },
       standings,
     });
