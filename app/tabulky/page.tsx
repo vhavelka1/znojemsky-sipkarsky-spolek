@@ -31,8 +31,7 @@ type StandingRow = {
   logoUrl: string | null;
   played: number;
   wins: number;
-  overtimeWins: number;
-  overtimeLosses: number;
+  draws: number;
   losses: number;
   matchScoreFor: number;
   matchScoreAgainst: number;
@@ -317,7 +316,7 @@ export default function PublicTablesPage() {
             <div className="px-6 py-8 text-sm font-bold text-slate-500">Tabulka zatím není dostupná.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] text-left text-sm">
+              <table className="w-full min-w-[1120px] text-left text-sm">
                 <thead className="bg-[#F4F8FF] text-xs font-black uppercase tracking-[0.08em] text-[#64748b]">
                   <tr>
                     <th className="px-4 py-4">Pořadí</th>
@@ -325,8 +324,7 @@ export default function PublicTablesPage() {
                     <th className="px-4 py-4">Tým</th>
                     <th className="px-3 py-4 text-right">Z</th>
                     <th className="px-3 py-4 text-right">V</th>
-                    <th className="px-3 py-4 text-right">Vp</th>
-                    <th className="px-3 py-4 text-right">Pp</th>
+                    <th className="px-3 py-4 text-right">R</th>
                     <th className="px-3 py-4 text-right">P</th>
                     <th className="px-4 py-4 text-right">Skóre zápasy</th>
                     <th className="px-4 py-4 text-right">Rozdíl zápasy</th>
@@ -364,8 +362,7 @@ export default function PublicTablesPage() {
                       </td>
                       <td className="px-3 py-4 text-right font-bold">{row.played}</td>
                       <td className="px-3 py-4 text-right font-bold">{row.wins}</td>
-                      <td className="px-3 py-4 text-right font-bold">{row.overtimeWins}</td>
-                      <td className="px-3 py-4 text-right font-bold">{row.overtimeLosses}</td>
+                      <td className="px-3 py-4 text-right font-bold">{row.draws}</td>
                       <td className="px-3 py-4 text-right font-bold">{row.losses}</td>
                       <td className="px-4 py-4 text-right font-bold">
                         {row.matchScoreFor} : {row.matchScoreAgainst}

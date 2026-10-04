@@ -498,7 +498,6 @@ function tableRow(row: StandingRow, index: number, origin: string) {
     logoUrl: row.logoUrl,
     venue: null,
   };
-  const draws = row.played - row.wins - row.losses;
   const cell = (text: string | number, width: number, align: "left" | "right" = "right", color = "#061A3A") =>
     h("div", { style: { width, textAlign: align, fontSize: 24, fontWeight: 900, color } }, String(text));
 
@@ -537,7 +536,7 @@ function tableRow(row: StandingRow, index: number, origin: string) {
     ),
     cell(row.played, 46),
     cell(row.wins, 46),
-    cell(draws, 46),
+    cell(row.draws, 46),
     cell(row.losses, 46),
     cell(`${row.matchScoreFor}:${row.matchScoreAgainst}`, 118),
     cell(row.points, 74, "right", "#EF233C"),

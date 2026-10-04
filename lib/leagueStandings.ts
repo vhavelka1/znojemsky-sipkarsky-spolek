@@ -43,8 +43,7 @@ export type StandingRow = {
   logoUrl: string | null;
   played: number;
   wins: number;
-  overtimeWins: number;
-  overtimeLosses: number;
+  draws: number;
   losses: number;
   matchScoreFor: number;
   matchScoreAgainst: number;
@@ -86,8 +85,7 @@ function createEmptyRow(teamSeasonId: string, teamName: string, logoUrl: string 
     logoUrl,
     played: 0,
     wins: 0,
-    overtimeWins: 0,
-    overtimeLosses: 0,
+    draws: 0,
     losses: 0,
     matchScoreFor: 0,
     matchScoreAgainst: 0,
@@ -175,6 +173,8 @@ export function buildLeagueGroupStandings({
         away.points += 3;
         home.losses += 1;
       } else {
+        home.draws += 1;
+        away.draws += 1;
         home.points += 1;
         away.points += 1;
       }
