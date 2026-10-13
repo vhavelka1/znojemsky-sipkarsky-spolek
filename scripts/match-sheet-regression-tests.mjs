@@ -91,6 +91,129 @@ function updatePlayer(state, patch, context = actorContext()) {
   }
 }
 
+class AsyncMutex {
+  constructor() {
+    this.tail = Promise.resolve();
+  }
+
+  async runExclusive(callback) {
+    const previous = this.tail;
+    let release;
+    this.tail = new Promise((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await callback();
+    } finally {
+      release();
+    }
+  }
+}
+
+function createStartGate(expectedCount) {
+  let waiting = 0;
+  let release;
+  const ready = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  return async () => {
+    waiting += 1;
+    if (waiting === expectedCount) release();
+    await ready;
+  };
+}
+
+function createCompleteSummaryState() {
+  return {
+    match: { id: "match-1", status: "scheduled", played_at: null },
+    games: Array.from({ length: 18 }, (_, index) => ({
+      id: `game-${index + 1}`,
+      order_number: index + 1,
+      game_type: "singles",
+      home_legs: 3,
+      away_legs: 1,
+      winner_side: "home",
+      deleted_at: null,
+    })),
+    results: [],
+    confirmations: [
+      { id: "home-confirmation", side: "home", deleted_at: null },
+      { id: "away-confirmation", side: "away", deleted_at: null },
+    ],
+    audit: [],
+    resultInserts: 0,
+    mutex: new AsyncMutex(),
+  };
+}
+
+function summaryScore(state) {
+  return state.games
+    .filter((game) => game.order_number <= 18 && !game.deleted_at)
+    .reduce(
+      (score, game) => {
+        const winningLegs = game.game_type === "tiebreak_701" ? 1 : 3;
+        if (game.home_legs === winningLegs && game.away_legs < winningLegs) score.home_points += 1;
+        if (game.away_legs === winningLegs && game.home_legs < winningLegs) score.away_points += 1;
+        if (game.winner_side) score.completed += 1;
+        return score;
+      },
+      { home_points: 0, away_points: 0, completed: 0 },
+    );
+}
+
+async function atomicallyUpdateMatchSummary(state, options = {}, context = actorContext()) {
+  await options.beforeLock?.();
+
+  return state.mutex.runExclusive(async () => {
+    await options.insideLock?.();
+    const score = summaryScore(state);
+    const existingResult = state.results.find((result) => !result.deleted_at);
+
+    if (existingResult) {
+      existingResult.home_points = score.home_points;
+      existingResult.away_points = score.away_points;
+    } else {
+      state.resultInserts += 1;
+      state.results.push({
+        id: `result-${state.resultInserts}`,
+        match_id: state.match.id,
+        home_points: score.home_points,
+        away_points: score.away_points,
+        deleted_at: null,
+      });
+    }
+
+    const oldStatus = state.match.status;
+    const oldPlayedAt = state.match.played_at;
+    if (options.preserveConfirmationState && oldStatus === "confirmed") {
+      state.match.status = "confirmed";
+      state.match.played_at = oldPlayedAt ?? `played-${state.resultInserts}`;
+    } else {
+      state.match.status = score.completed === 18 ? "awaiting_confirmation" : "scheduled";
+      state.match.played_at = score.completed === 18 ? `played-${state.resultInserts}` : null;
+    }
+    if (oldStatus !== state.match.status || oldPlayedAt !== state.match.played_at) {
+      audit(
+        state,
+        "status",
+        { status: oldStatus, played_at: oldPlayedAt },
+        { status: state.match.status, played_at: state.match.played_at },
+        context,
+      );
+    }
+
+    for (const confirmation of state.confirmations) {
+      if (options.preserveConfirmationState) continue;
+      if (confirmation.deleted_at) continue;
+      if (options.confirmationSideToDelete && confirmation.side !== options.confirmationSideToDelete) continue;
+      confirmation.deleted_at = `deleted-${context.request_id}`;
+      audit(state, `confirmation:${confirmation.side}`, { ...confirmation, deleted_at: null }, null, context);
+    }
+  });
+}
+
 test("legs update does not mutate or soft-delete player rows", () => {
   const state = createState();
   updateLegs(state, { order_number: 1, home_legs: 3 });
@@ -169,4 +292,49 @@ test("stale legs request cannot roll back a newer change", () => {
   );
   assert.equal(state.games[0].home_legs, 3);
   assert.equal(state.games[0].updated_at, newerUpdatedAt);
+});
+
+test("three concurrent summary updates create one active match result", async () => {
+  const state = createCompleteSummaryState();
+  const startTogether = createStartGate(3);
+  const contexts = ["request-1", "request-2", "request-3"].map((requestId) => actorContext(requestId));
+
+  await Promise.all(
+    contexts.map((context) =>
+      atomicallyUpdateMatchSummary(
+        state,
+        { beforeLock: startTogether, confirmationSideToDelete: "home" },
+        context,
+      ),
+    ),
+  );
+
+  assert.equal(state.results.filter((result) => !result.deleted_at).length, 1);
+  assert.equal(state.resultInserts, 1);
+  assert.deepEqual(
+    state.results.map(({ home_points, away_points }) => ({ home_points, away_points })),
+    [{ home_points: 18, away_points: 0 }],
+  );
+  assert.equal(state.match.status, "awaiting_confirmation");
+  assert.equal(state.confirmations.find((confirmation) => confirmation.side === "home").deleted_at !== null, true);
+  assert.equal(state.confirmations.find((confirmation) => confirmation.side === "away").deleted_at, null);
+  assert.equal(state.audit.filter((entry) => entry.field_name === "confirmation:home").length, 1);
+});
+
+test("admin correction can update a confirmed match without clearing confirmations", async () => {
+  const state = createCompleteSummaryState();
+  state.match.status = "confirmed";
+  state.match.played_at = "already-played";
+
+  await atomicallyUpdateMatchSummary(
+    state,
+    { confirmationSideToDelete: null, preserveConfirmationState: true },
+    actorContext("admin-request"),
+  );
+
+  assert.equal(state.results.filter((result) => !result.deleted_at).length, 1);
+  assert.equal(state.match.status, "confirmed");
+  assert.equal(state.match.played_at, "already-played");
+  assert.equal(state.confirmations.filter((confirmation) => !confirmation.deleted_at).length, 2);
+  assert.equal(state.audit.filter((entry) => entry.field_name.startsWith("confirmation:")).length, 0);
 });

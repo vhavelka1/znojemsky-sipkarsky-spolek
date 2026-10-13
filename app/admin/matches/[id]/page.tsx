@@ -123,6 +123,7 @@ type SheetPayload = {
 };
 type AutosaveResponse = {
   game?: SheetGame;
+  lineupReveal?: MatchBlockLineupReveal | null;
   error?: string;
 };
 type MatchSheetHistoryEntry = {
@@ -324,6 +325,10 @@ function gameFieldKey(orderNumber: number, field: GameFieldName) {
 
 function achievementFieldKey(orderNumber: number, playerId: string, type: AchievementType) {
   return `achievement:${orderNumber}:${playerId}:${type}`;
+}
+
+function lineupRevealFieldKey(side: MatchSide, blockNumber: number) {
+  return `${side}:${blockNumber}`;
 }
 
 function fieldIsProtected(fieldKey: string, protectedFields: Set<string>) {
@@ -1395,11 +1400,27 @@ export default function AdminMatchSheetPage({
           },
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as SheetPayload;
+      const body = (await response.json().catch(() => ({}))) as AutosaveResponse;
       if (!response.ok) {
         throw new Error(body.error ?? "Nasazení se nepodařilo zobrazit soupeři.");
       }
-      await loadSheet();
+      const lineupReveal = body.lineupReveal ?? {
+        match_id: matchId,
+        side,
+        block_number: blockNumber,
+        revealed_by_player_id: null,
+        revealed_at: new Date().toISOString(),
+      };
+      setPayload((current) => {
+        const revealKey = lineupRevealFieldKey(lineupReveal.side, lineupReveal.block_number);
+        const otherReveals = current.lineupReveals.filter(
+          (reveal) => lineupRevealFieldKey(reveal.side, reveal.block_number) !== revealKey,
+        );
+        return {
+          ...current,
+          lineupReveals: [...otherReveals, lineupReveal],
+        };
+      });
     } catch (revealError) {
       setError(revealError instanceof Error ? revealError.message : "Nasazení se nepodařilo zobrazit soupeři.");
     } finally {
@@ -1570,12 +1591,13 @@ export default function AdminMatchSheetPage({
                 })
               : currentGame
           ));
+          const preserveConfirmedState = current.match?.status === "confirmed";
           return {
             ...current,
-            confirmations: [],
+            confirmations: preserveConfirmedState ? current.confirmations : [],
             games,
             match: current.match
-              ? { ...current.match, status: matchStatusForGames(games) }
+              ? { ...current.match, status: preserveConfirmedState ? "confirmed" : matchStatusForGames(games) }
               : current.match,
           };
         });
@@ -1623,7 +1645,9 @@ export default function AdminMatchSheetPage({
         return;
       }
       finishFieldSave(fieldKey, requestId);
-      setPayload((current) => ({ ...current, confirmations: [] }));
+      setPayload((current) => (
+        current.match?.status === "confirmed" ? current : { ...current, confirmations: [] }
+      ));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Statistiku se nepodařilo uložit.");
       finishFieldSave(fieldKey, requestId, { keepDirty: true });

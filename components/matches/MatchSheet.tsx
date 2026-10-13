@@ -325,11 +325,11 @@ export function MatchSheet({
   }
 
   function canEditLineup(side: MatchSide) {
-    return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
+    return !readOnly && (canManageBothSides || (viewerSide === side && !lockedSideSet.has(side)));
   }
 
   function canEditAchievements(side: MatchSide) {
-    return !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide !== null);
+    return !readOnly && (canManageBothSides || (viewerSide !== null && !lockedSideSet.has(side)));
   }
 
   function canEditLegs() {
@@ -558,7 +558,7 @@ export function MatchSheet({
   function renderRevealControl(side: MatchSide, blockNumber: number) {
     const revealed = isLineupRevealed(side, blockNumber);
     const mutuallyRevealed = isBlockMutuallyRevealed(blockNumber);
-    const canReveal = !readOnly && !lockedSideSet.has(side) && (canManageBothSides || viewerSide === side);
+    const canReveal = !readOnly && (canManageBothSides || (viewerSide === side && !lockedSideSet.has(side)));
     const isOwnSide = canManageBothSides || viewerSide === side;
     const buttonClass = isOwnSide
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"

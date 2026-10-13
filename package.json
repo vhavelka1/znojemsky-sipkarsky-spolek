@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:match-sheet": "node --test scripts/match-sheet-regression-tests.mjs"
+    "test:match-sheet": "node --test scripts/match-sheet-regression-tests.mjs",
+    "test:e2e:match-concurrent": "playwright test e2e/match-sheet-concurrent.spec.ts",
+    "test:e2e:match-concurrent:staging": "node e2e/run-match-sheet-concurrent.mjs",
+    "test:e2e:match-concurrent:production": "node e2e/run-match-sheet-concurrent.mjs --production --production-match=d18533e4-63bf-412d-9bb8-79bf54703005"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
@@ -16,6 +19,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

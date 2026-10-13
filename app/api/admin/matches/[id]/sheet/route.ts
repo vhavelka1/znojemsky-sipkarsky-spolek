@@ -1012,149 +1012,30 @@ async function updateMatchSummary(
   matchId: string,
   confirmationSideToDelete?: MatchSide | null,
   auditContext?: MatchSheetAuditContext,
+  preserveConfirmationState = false,
 ) {
-  const { data: games, error: gamesError } = await supabase
-    .from("match_games")
-    .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
-    .eq("match_id", matchId)
-    .is("deleted_at", null)
-    .returns<MatchGameRow[]>();
+  const { error } = await supabase.rpc("match_sheet_update_summary", {
+    p_match_id: matchId,
+    p_confirmation_side_to_delete: confirmationSideToDelete ?? null,
+    p_preserve_confirmation_state: preserveConfirmationState,
+    p_actor_user_id: auditContext?.actorUserId ?? null,
+    p_actor_player_id: auditContext?.actorPlayerId ?? null,
+    p_actor_role: auditContext?.actorRole ?? null,
+    p_actor_team_season_id: auditContext?.actorTeamSeasonId ?? null,
+    p_source: auditContext?.source ?? null,
+    p_request_id: auditContext?.requestId ?? null,
+  });
 
-  if (gamesError) {
-    return NextResponse.json({ error: gamesError.message }, { status: 500 });
-  }
-
-  const coreGames = (games ?? []).filter((game) => game.order_number <= 18);
-  const matchScore = calculateMatchScore(coreGames);
-  const completedCoreGames = (games ?? []).filter(
-    (game) => game.order_number <= 18 && Boolean(game.winner_side),
-  ).length;
-  const isComplete = completedCoreGames === 18;
-
-  const { data: existingResult, error: existingResultError } = await supabase
-    .from("match_results")
-    .select("id")
-    .eq("match_id", matchId)
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (existingResultError) {
-    return NextResponse.json({ error: existingResultError.message }, { status: 500 });
-  }
-
-  const resultQuery = existingResult
-    ? supabase
-        .from("match_results")
-        .update({
-          home_points: matchScore.home_points,
-          away_points: matchScore.away_points,
-        })
-        .eq("id", existingResult.id)
-    : supabase.from("match_results").insert({
-        match_id: matchId,
-        home_points: matchScore.home_points,
-        away_points: matchScore.away_points,
-      });
-
-  const { error: resultError } = await resultQuery;
-  if (resultError) {
-    return NextResponse.json({ error: resultError.message }, { status: 500 });
-  }
-
-  const { data: currentMatch, error: currentMatchError } = await supabase
-    .from("matches")
-    .select("id, status, played_at")
-    .eq("id", matchId)
-    .is("deleted_at", null)
-    .single<Pick<MatchRow, "id" | "status" | "played_at">>();
-
-  if (currentMatchError || !currentMatch) {
-    return NextResponse.json({ error: currentMatchError?.message ?? "Zapas nebyl nalezen." }, { status: 500 });
-  }
-
-  const nextStatus = isComplete ? "awaiting_confirmation" : "scheduled";
-  const nextPlayedAt = isComplete ? new Date().toISOString() : null;
-  const { error: matchUpdateError } = await supabase
-    .from("matches")
-    .update({
-      status: nextStatus,
-      played_at: nextPlayedAt,
-    })
-    .eq("id", matchId);
-
-  if (matchUpdateError) {
-    return NextResponse.json(
+  if (error) {
+    const schemaResponse = missingSheetSchemaResponse(error.message);
+    return schemaResponse ?? NextResponse.json(
       {
-        error: matchUpdateError.message.includes("awaiting_confirmation")
+        error: error.message.includes("awaiting_confirmation")
           ? "Nejprve spusťte SQL soubor supabase/apply_match_captain_confirmations_in_dashboard.sql v Supabase SQL Editoru."
-          : matchUpdateError.message,
+          : error.message,
       },
       { status: 500 },
     );
-  }
-
-  if (auditContext && (currentMatch.status !== nextStatus || currentMatch.played_at !== nextPlayedAt)) {
-    const auditError = await insertMatchSheetAudit(supabase, {
-      matchId,
-      entityType: "match",
-      entityId: matchId,
-      fieldName: "status",
-      operation: "status_update",
-      oldValue: { status: currentMatch.status, played_at: currentMatch.played_at },
-      newValue: { status: nextStatus, played_at: nextPlayedAt },
-      context: auditContext,
-    });
-    if (auditError) {
-      return NextResponse.json({ error: auditError.message }, { status: 500 });
-    }
-  }
-
-  let confirmationsBeforeDeleteQuery = supabase
-    .from("match_confirmations")
-    .select("id, match_id, side, captain_player_id, confirmed_at")
-    .eq("match_id", matchId)
-    .is("deleted_at", null);
-  if (confirmationSideToDelete) {
-    confirmationsBeforeDeleteQuery = confirmationsBeforeDeleteQuery.eq("side", confirmationSideToDelete);
-  }
-  const { data: confirmationsBeforeDelete, error: confirmationsBeforeDeleteError } = await confirmationsBeforeDeleteQuery;
-
-  if (confirmationsBeforeDeleteError) {
-    const schemaResponse = missingSheetSchemaResponse(confirmationsBeforeDeleteError.message);
-    return schemaResponse ?? NextResponse.json({ error: confirmationsBeforeDeleteError.message }, { status: 500 });
-  }
-
-  let confirmationsDeleteQuery = supabase
-    .from("match_confirmations")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("match_id", matchId)
-    .is("deleted_at", null);
-  if (confirmationSideToDelete) {
-    confirmationsDeleteQuery = confirmationsDeleteQuery.eq("side", confirmationSideToDelete);
-  }
-  const { error: confirmationsDeleteError } = await confirmationsDeleteQuery;
-
-  if (confirmationsDeleteError) {
-    const schemaResponse = missingSheetSchemaResponse(confirmationsDeleteError.message);
-    return schemaResponse ?? NextResponse.json({ error: confirmationsDeleteError.message }, { status: 500 });
-  }
-
-  if (auditContext) {
-    for (const confirmation of confirmationsBeforeDelete ?? []) {
-      const auditError = await insertMatchSheetAudit(supabase, {
-        matchId,
-        entityType: "match_confirmation",
-        entityId: confirmation.id,
-        fieldName: `confirmation:${confirmation.side}`,
-        operation: "soft_delete",
-        oldValue: confirmation,
-        newValue: null,
-        context: auditContext,
-      });
-      if (auditError) {
-        return NextResponse.json({ error: auditError.message }, { status: 500 });
-      }
-    }
   }
 
   return null;
@@ -1175,6 +1056,7 @@ async function handleAutosaveCell(
   }
 
   const supabase = access.supabase;
+  const canManageConfirmedMatch = hasAtLeastRole(access.requester?.role, "moderator");
 
   if (cell.type === "lineup_reveal") {
     const side = parseSide(cell.side);
@@ -1205,7 +1087,7 @@ async function handleAutosaveCell(
         { status: 500 },
       );
     }
-    if (matchResult.data.status === "confirmed") {
+    if (matchResult.data.status === "confirmed" && !canManageConfirmedMatch) {
       return lockedConfirmedMatchResponse();
     }
 
@@ -1225,24 +1107,25 @@ async function handleAutosaveCell(
       const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
       return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
     }
-    if (confirmedSides.has(side)) {
+    if (!canManageConfirmedMatch && confirmedSides.has(side)) {
       return lockedSideResponse();
     }
 
     const { data: existingReveal, error: revealLookupError } = await supabase
       .from("match_block_lineup_reveals")
-      .select("id")
+      .select("id, match_id, side, block_number, revealed_by_player_id, revealed_at")
       .eq("match_id", matchId)
       .eq("side", side)
       .eq("block_number", blockNumber)
       .is("deleted_at", null)
-      .maybeSingle();
+      .maybeSingle<MatchBlockLineupRevealRow>();
 
     if (revealLookupError) {
       const schemaResponse = missingSheetSchemaResponse(revealLookupError.message);
       return schemaResponse ?? NextResponse.json({ error: revealLookupError.message }, { status: 500 });
     }
 
+    let savedReveal = existingReveal;
     if (!existingReveal) {
       const { data: insertedReveal, error: revealInsertError } = await supabase
         .from("match_block_lineup_reveals")
@@ -1259,6 +1142,7 @@ async function handleAutosaveCell(
         const schemaResponse = missingSheetSchemaResponse(revealInsertError.message);
         return schemaResponse ?? NextResponse.json({ error: revealInsertError.message }, { status: 500 });
       }
+      savedReveal = insertedReveal;
       const auditContext = auditContextForRequester(access.requester, matchResult.data, viewer, requestId);
       const auditError = await insertMatchSheetAudit(supabase, {
         matchId,
@@ -1275,7 +1159,7 @@ async function handleAutosaveCell(
       }
     }
 
-    return NextResponse.json({ ok: true, request_id: requestId });
+    return NextResponse.json({ ok: true, lineupReveal: savedReveal, request_id: requestId });
   }
 
   if (cell.type === "legs") {
@@ -1319,7 +1203,7 @@ async function handleAutosaveCell(
         { status: 500 },
       );
     }
-    if (matchResult.data.status === "confirmed") {
+    if (matchResult.data.status === "confirmed" && !canManageConfirmedMatch) {
       return lockedConfirmedMatchResponse();
     }
     const existingGame = existingGameResult.data;
@@ -1402,6 +1286,7 @@ async function handleAutosaveCell(
       matchId,
       viewer.canManageBothSides ? null : viewer.side,
       auditContext,
+      matchResult.data.status === "confirmed" && canManageConfirmedMatch,
     );
     if (summaryError) {
       return summaryError;
@@ -1453,7 +1338,7 @@ async function handleAutosaveCell(
         { status: 500 },
       );
     }
-    if (matchResult.data.status === "confirmed") {
+    if (matchResult.data.status === "confirmed" && !canManageConfirmedMatch) {
       return lockedConfirmedMatchResponse();
     }
 
@@ -1469,7 +1354,7 @@ async function handleAutosaveCell(
       const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
       return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
     }
-    if (confirmedSides.has(side)) {
+    if (!canManageConfirmedMatch && confirmedSides.has(side)) {
       return lockedSideResponse();
     }
 
@@ -1626,7 +1511,7 @@ async function handleAutosaveCell(
         { status: 500 },
       );
     }
-    if (matchForAchievement.status === "confirmed") {
+    if (matchForAchievement.status === "confirmed" && !canManageConfirmedMatch) {
       return lockedConfirmedMatchResponse();
     }
 
@@ -1712,7 +1597,13 @@ async function handleAutosaveCell(
     }
 
     if (oldTotal !== achievementCount) {
-      const summaryError = await updateMatchSummary(supabase, matchId, null, auditContext);
+      const summaryError = await updateMatchSummary(
+        supabase,
+        matchId,
+        null,
+        auditContext,
+        matchForAchievement.status === "confirmed" && canManageConfirmedMatch,
+      );
       if (summaryError) {
         return summaryError;
       }
