@@ -939,8 +939,9 @@ function achievementInput(page: Page, target: AchievementTarget) {
   return row.getByLabel(achievementInputLabel(target), { exact: true });
 }
 
-function achievementInputLabel(target: AchievementTargetPreference) {
-  return `${achievementLabels[target.type]} ${target.side === "home" ? "domácí" : "hosté"} 1`;
+function achievementInputLabel(target: AchievementTargetPreference & { orderNumber?: number }) {
+  const label = achievementLabels[target.type].replace("+", "\\+");
+  return new RegExp(`^${label} ${target.side === "home" ? "domácí" : "hosté"} hra ${target.orderNumber ?? "\\d+"}$`);
 }
 
 async function readAchievementValue(page: Page, target: AchievementTarget) {
@@ -953,14 +954,14 @@ async function readAchievementValue(page: Page, target: AchievementTarget) {
   return value;
 }
 
-async function setAchievementAndWaitForAutosave(page: Page, target: AchievementTarget, value: number) {
+async function setAchievementAndWaitForCommit(page: Page, target: AchievementTarget, value: number) {
   const input = achievementInput(page, target);
   await input.fill(String(value));
   const responsePromise = page.waitForResponse(
     (response) => response.url().includes(sheetApiPath) && response.request().method() === "PATCH",
     { timeout: 20_000 },
   );
-  await input.blur();
+  await input.press("Enter");
   const response = await responsePromise;
   if (!response.ok()) {
     throw new Error(await autosaveFailureMessage(response, `Autosave failed for ${targetName(target)}`));
@@ -988,7 +989,7 @@ async function setAchievementsConcurrently(sessions: ActorSession[], values: Rec
     ),
   );
 
-  await Promise.all(prepared.map(({ input }) => input.blur()));
+  await Promise.all(prepared.map(({ input }) => input.press("Enter")));
 
   const responses = await Promise.all(responsePromises);
   for (const [index, response] of responses.entries()) {
@@ -1033,7 +1034,7 @@ async function restoreOriginalValues(sessions: ActorSession[], values: RecordedV
     const ownerSession = sessions.find((session) => session.key === value.tester && !session.page.isClosed()) ?? restoreSession;
     try {
       if ((await readAchievementValue(ownerSession.page, value)) !== value.originalValue) {
-        await setAchievementAndWaitForAutosave(ownerSession.page, value, value.originalValue);
+        await setAchievementAndWaitForCommit(ownerSession.page, value, value.originalValue);
       }
     } catch (error) {
       restoreErrors.push(`${targetName(value)}: ${errorMessage(error)}`);

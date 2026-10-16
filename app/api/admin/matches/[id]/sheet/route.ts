@@ -24,6 +24,9 @@ type AchievementType =
 type AutosaveCell =
   | {
       type?: "legs";
+      confirmed?: unknown;
+      edited?: unknown;
+      request_id?: unknown;
       order_number?: unknown;
       home_legs?: unknown;
       away_legs?: unknown;
@@ -44,6 +47,10 @@ type AutosaveCell =
     }
   | {
       type?: "achievement";
+      confirmed?: unknown;
+      edited?: unknown;
+      request_id?: unknown;
+      expected_count?: unknown;
       achievement?: unknown;
     }
   | {
@@ -223,12 +230,13 @@ function parseString(value: unknown) {
 }
 
 function parseInteger(value: unknown) {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
     return value;
   }
 
   if (typeof value === "string" && /^\d+$/.test(value)) {
-    return Number(value);
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
   }
 
   return null;
@@ -1007,40 +1015,6 @@ async function loadSheetData(
   };
 }
 
-async function updateMatchSummary(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  matchId: string,
-  confirmationSideToDelete?: MatchSide | null,
-  auditContext?: MatchSheetAuditContext,
-  preserveConfirmationState = false,
-) {
-  const { error } = await supabase.rpc("match_sheet_update_summary", {
-    p_match_id: matchId,
-    p_confirmation_side_to_delete: confirmationSideToDelete ?? null,
-    p_preserve_confirmation_state: preserveConfirmationState,
-    p_actor_user_id: auditContext?.actorUserId ?? null,
-    p_actor_player_id: auditContext?.actorPlayerId ?? null,
-    p_actor_role: auditContext?.actorRole ?? null,
-    p_actor_team_season_id: auditContext?.actorTeamSeasonId ?? null,
-    p_source: auditContext?.source ?? null,
-    p_request_id: auditContext?.requestId ?? null,
-  });
-
-  if (error) {
-    const schemaResponse = missingSheetSchemaResponse(error.message);
-    return schemaResponse ?? NextResponse.json(
-      {
-        error: error.message.includes("awaiting_confirmation")
-          ? "Nejprve spusťte SQL soubor supabase/apply_match_captain_confirmations_in_dashboard.sql v Supabase SQL Editoru."
-          : error.message,
-      },
-      { status: 500 },
-    );
-  }
-
-  return null;
-}
-
 async function handleAutosaveCell(
   request: Request,
   matchId: string,
@@ -1160,139 +1134,6 @@ async function handleAutosaveCell(
     }
 
     return NextResponse.json({ ok: true, lineupReveal: savedReveal, request_id: requestId });
-  }
-
-  if (cell.type === "legs") {
-    const orderNumber = parseInteger(cell.order_number);
-    const hasHomeLegs = hasOwnField(cell, "home_legs");
-    const hasAwayLegs = hasOwnField(cell, "away_legs");
-    const submittedHomeLegs = hasHomeLegs ? parseInteger(cell.home_legs) : null;
-    const submittedAwayLegs = hasAwayLegs ? parseInteger(cell.away_legs) : null;
-    const expectedUpdatedAt = parseString(cell.expected_updated_at);
-
-    if (!orderNumber || (!hasHomeLegs && !hasAwayLegs) || (hasHomeLegs && submittedHomeLegs === null) || (hasAwayLegs && submittedAwayLegs === null)) {
-      return NextResponse.json({ error: "Zmena legu neni platna." }, { status: 400 });
-    }
-
-    const [matchResult, membershipsResult, existingGameResult] = await Promise.all([
-      supabase
-        .from("matches")
-        .select("id, home_team_id, away_team_id, status")
-        .eq("id", matchId)
-        .is("deleted_at", null)
-        .single<MatchRow>(),
-      supabase
-        .from("team_memberships")
-        .select("team_season_id, player_id, member_role")
-        .is("deleted_at", null)
-        .is("left_on", null)
-        .returns<MembershipRow[]>(),
-      supabase
-        .from("match_games")
-        .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
-        .eq("match_id", matchId)
-        .eq("order_number", orderNumber)
-        .is("deleted_at", null)
-        .maybeSingle<MatchGameRow>(),
-    ]);
-
-    const lookupError = matchResult.error ?? membershipsResult.error ?? existingGameResult.error;
-    if (lookupError || !matchResult.data) {
-      return NextResponse.json(
-        { error: lookupError?.message ?? "Zapas nebyl nalezen." },
-        { status: 500 },
-      );
-    }
-    if (matchResult.data.status === "confirmed" && !canManageConfirmedMatch) {
-      return lockedConfirmedMatchResponse();
-    }
-    const existingGame = existingGameResult.data;
-    if (!existingGame) {
-      return NextResponse.json({ error: "Nejprve ulozte nasazeni hry." }, { status: 400 });
-    }
-    if (existingGame && expectedUpdatedAt && existingGame.updated_at !== expectedUpdatedAt) {
-      return NextResponse.json(
-        { error: "Tuto hru mezitim upravil nekdo jiny. Nacitam aktualni zapis." },
-        { status: 409 },
-      );
-    }
-
-    const forcedTeamSide = preferTeamSide
-      ? await forcedTeamSideForRequest(supabase, access.requester, matchResult.data, requestedTeamSeasonId)
-      : null;
-    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
-    if (!viewer.canManageBothSides && !viewer.side) {
-      return NextResponse.json({ error: "Nemate opravneni upravit zapis tohoto zapasu." }, { status: 403 });
-    }
-    const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
-    if (confirmationsLookupError) {
-      const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
-      return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
-    }
-    if (!viewer.canManageBothSides && viewer.side && confirmedSides.has(viewer.side)) {
-      return lockedSideResponse();
-    }
-
-    const nextHomeLegs = hasHomeLegs ? submittedHomeLegs ?? existingGame.home_legs : existingGame.home_legs;
-    const nextAwayLegs = hasAwayLegs ? submittedAwayLegs ?? existingGame.away_legs : existingGame.away_legs;
-    const winningLegs = existingGame.game_type === "tiebreak_701" ? 1 : 3;
-    if (
-      nextHomeLegs > winningLegs ||
-      nextAwayLegs > winningLegs ||
-      (nextHomeLegs === winningLegs && nextAwayLegs === winningLegs)
-    ) {
-      return NextResponse.json({ error: "Hra musi mit platny pocet legu." }, { status: 400 });
-    }
-
-    const nextWinnerSide = calculateWinner(existingGame.game_type, nextHomeLegs, nextAwayLegs);
-    const { data: savedGame, error: saveGameError } = await supabase
-      .from("match_games")
-      .update({
-        home_legs: nextHomeLegs,
-        away_legs: nextAwayLegs,
-        winner_side: nextWinnerSide,
-      })
-      .eq("id", existingGame.id)
-      .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
-      .single<MatchGameRow>();
-
-    if (saveGameError || !savedGame) {
-      return NextResponse.json({ error: saveGameError?.message ?? "Hru se nepodarilo ulozit." }, { status: 500 });
-    }
-
-    const auditContext = auditContextForRequester(access.requester, matchResult.data, viewer, requestId);
-    for (const fieldName of ["home_legs", "away_legs"] as const) {
-      const oldValue = existingGame[fieldName];
-      const newValue = savedGame[fieldName];
-      if (oldValue === newValue) continue;
-      const auditError = await insertMatchSheetAudit(supabase, {
-        matchId,
-        gameId: savedGame.id,
-        entityType: "match_game",
-        entityId: savedGame.id,
-        fieldName,
-        operation: "update",
-        oldValue,
-        newValue,
-        context: auditContext,
-      });
-      if (auditError) {
-        return NextResponse.json({ error: auditError.message }, { status: 500 });
-      }
-    }
-
-    const summaryError = await updateMatchSummary(
-      supabase,
-      matchId,
-      viewer.canManageBothSides ? null : viewer.side,
-      auditContext,
-      matchResult.data.status === "confirmed" && canManageConfirmedMatch,
-    );
-    if (summaryError) {
-      return summaryError;
-    }
-
-    return NextResponse.json({ game: savedGame, request_id: requestId });
   }
 
   if (cell.type === "player") {
@@ -1465,151 +1306,64 @@ async function handleAutosaveCell(
 
 
 
-  if (cell.type === "achievement") {
-    const achievement = typeof cell.achievement === "object" && cell.achievement !== null
-      ? cell.achievement as SubmittedAchievement
-      : {};
-    const orderNumber = parseInteger(achievement.order_number);
-    const playerId = parseString(achievement.player_id);
-    const achievementType = parseString(achievement.achievement_type);
-    const achievementCount = parseInteger(achievement.achievement_count) ?? 0;
-
-    if (
-      !orderNumber ||
-      !playerId ||
-      !achievementType ||
-      !achievementTypes.includes(achievementType as AchievementType)
-    ) {
-      return NextResponse.json({ error: "Statistika není platná." }, { status: 400 });
+  if (cell.type === "legs" || cell.type === "achievement") {
+    const submittedRequestId = parseString(cell.request_id);
+    if ((cell.edited !== true && cell.confirmed !== true) || !submittedRequestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(submittedRequestId)) {
+      return NextResponse.json({ error: "Obnovte stránku. Tato verze zápisu ještě nepodporuje bezpečné ukládání změn." }, { status: 400 });
+    }
+    let normalizedCell: Record<string, unknown>;
+    if (cell.type === "legs") {
+      const orderNumber = parseInteger(cell.order_number);
+      const expectedUpdatedAt = parseString(cell.expected_updated_at);
+      const fields = (["home_legs", "away_legs"] as const).filter((field) => hasOwnField(cell, field));
+      if (!orderNumber || orderNumber > 19 || !expectedUpdatedAt || !Number.isFinite(Date.parse(expectedUpdatedAt)) || fields.length === 0 || fields.some((field) => parseInteger(cell[field]) === null || Number(cell[field]) > 3)) {
+        return NextResponse.json({ error: "Změna legů není platná. Obnovte zápis a zadejte celé číslo." }, { status: 400 });
+      }
+      normalizedCell = { type: "legs", order_number: orderNumber, expected_updated_at: expectedUpdatedAt };
+      for (const field of fields) normalizedCell[field] = parseInteger(cell[field]);
+    } else if (cell.type === "achievement") {
+      const achievement = typeof cell.achievement === "object" && cell.achievement !== null ? cell.achievement as SubmittedAchievement : {};
+      const orderNumber = parseInteger(achievement.order_number);
+      const playerId = parseString(achievement.player_id);
+      const achievementType = parseString(achievement.achievement_type);
+      const count = parseInteger(achievement.achievement_count);
+      const expectedCount = parseInteger(cell.expected_count);
+      if (!orderNumber || orderNumber > 19 || !playerId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(playerId) || !achievementType || !achievementTypes.includes(achievementType as AchievementType) || count === null || count > 2147483647 || expectedCount === null || expectedCount > 2147483647) {
+        return NextResponse.json({ error: "Statistika není platná. Prázdné ani neplatné číslo se neukládá." }, { status: 400 });
+      }
+      normalizedCell = { type: "achievement", order_number: orderNumber, player_id: playerId, achievement_type: achievementType, achievement_count: count, expected_count: expectedCount };
+    } else {
+      return NextResponse.json({ error: "Neplatná změna pole." }, { status: 400 });
     }
 
-    const { data: game, error: gameError } = await supabase
-      .from("match_games")
-      .select("id, match_id, order_number, game_type, home_legs, away_legs, winner_side, updated_at")
-      .eq("match_id", matchId)
-      .eq("order_number", orderNumber)
-      .is("deleted_at", null)
-      .maybeSingle<MatchGameRow>();
-
-    if (gameError || !game) {
-      return NextResponse.json(
-        { error: gameError?.message ?? "Nejprve uložte hráče pro tuto hru." },
-        { status: gameError ? 500 : 400 },
-      );
-    }
-
-    const { data: matchForAchievement, error: matchForAchievementError } = await supabase
-      .from("matches")
-      .select("id, season_id, league_id, group_id, home_team_id, away_team_id, scheduled_at, played_at, status")
-      .eq("id", matchId)
-      .is("deleted_at", null)
-      .single<MatchRow>();
-
-    if (matchForAchievementError || !matchForAchievement) {
-      return NextResponse.json(
-        { error: matchForAchievementError?.message ?? "Zapas nebyl nalezen." },
-        { status: 500 },
-      );
-    }
-    if (matchForAchievement.status === "confirmed" && !canManageConfirmedMatch) {
-      return lockedConfirmedMatchResponse();
-    }
-
-    if (game.game_type !== "singles") {
-      return NextResponse.json({ error: "Statistiky lze zapisovat jen u dvouher." }, { status: 400 });
-    }
-
-    const { data: assignedPlayer, error: assignedPlayerError } = await supabase
-      .from("match_game_players")
-      .select("id, side")
-      .eq("match_game_id", game.id)
-      .eq("player_id", playerId)
-      .is("deleted_at", null)
-      .maybeSingle<{ id: string; side: MatchSide }>();
-
-    if (assignedPlayerError) {
-      return NextResponse.json({ error: assignedPlayerError.message }, { status: 500 });
-    }
-
-    if (!assignedPlayer) {
-      return NextResponse.json(
-        { error: "Vybraný hráč není v této hře nasazený." },
-        { status: 400 },
-      );
-    }
-
-    const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
-    if (confirmationsLookupError) {
-      const schemaResponse = missingSheetSchemaResponse(confirmationsLookupError.message);
-      return schemaResponse ?? NextResponse.json({ error: confirmationsLookupError.message }, { status: 500 });
-    }
-    if (!hasAtLeastRole(access.requester?.role, "moderator") && confirmedSides.has(assignedPlayer.side)) {
-      return lockedSideResponse();
-    }
-
-    const { data: existingAchievements, error: existingAchievementsError } = await supabase
-      .from("match_game_achievements")
-      .select("id, match_id, match_game_id, player_id, achievement_type, achievement_count")
-      .eq("match_id", matchId)
-      .eq("match_game_id", game.id)
-      .eq("player_id", playerId)
-      .eq("achievement_type", achievementType)
-      .is("deleted_at", null)
-      .returns<MatchAchievementRow[]>();
-
-    if (existingAchievementsError) {
-      return NextResponse.json({ error: existingAchievementsError.message }, { status: 500 });
-    }
-
-    if (achievementType === "checkout_100_plus" && achievementCount > 3) {
-      return NextResponse.json(
-        { error: "Zavření 100+ může mít jeden hráč v zápasu nejvýše 3×." },
-        { status: 400 },
-      );
-    }
-
-    const oldTotal = (existingAchievements ?? []).reduce((sum, item) => sum + item.achievement_count, 0);
-    const auditContext = auditContextForRequester(
-      access.requester,
-      matchForAchievement,
-      { side: assignedPlayer.side, canManageBothSides: hasAtLeastRole(access.requester?.role, "moderator") },
-      requestId,
-    );
-
-    const { error: saveAchievementError } = await supabase.rpc("match_sheet_save_achievement", {
+    const [matchResult, membershipsResult] = await Promise.all([
+      supabase.from("matches").select("id, home_team_id, away_team_id, status").eq("id", matchId).is("deleted_at", null).single<MatchRow>(),
+      supabase.from("team_memberships").select("team_season_id, player_id, member_role").is("deleted_at", null).is("left_on", null).returns<MembershipRow[]>(),
+    ]);
+    const lookupError = matchResult.error ?? membershipsResult.error;
+    if (lookupError || !matchResult.data) return NextResponse.json({ error: lookupError?.message ?? "Zápas nebyl nalezen." }, { status: 500 });
+    const forcedTeamSide = preferTeamSide ? await forcedTeamSideForRequest(supabase, access.requester, matchResult.data, requestedTeamSeasonId) : null;
+    const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
+    if (!viewer.canManageBothSides && !viewer.side) return NextResponse.json({ error: "Nemáte oprávnění upravit tento zápis." }, { status: 403 });
+    const auditContext = auditContextForRequester(access.requester, matchResult.data, viewer, submittedRequestId);
+    const { data, error } = await supabase.rpc("match_sheet_commit_numeric_cell", {
       p_match_id: matchId,
-      p_game_id: game.id,
-      p_player_id: playerId,
-      p_achievement_type: achievementType,
-      p_achievement_count: achievementCount,
+      p_cell: normalizedCell,
+      p_viewer_side: viewer.side,
+      p_can_manage_both_sides: viewer.canManageBothSides,
+      p_can_manage_confirmed_match: canManageConfirmedMatch,
       p_actor_user_id: auditContext.actorUserId,
       p_actor_player_id: auditContext.actorPlayerId,
       p_actor_role: auditContext.actorRole,
       p_actor_team_season_id: auditContext.actorTeamSeasonId,
       p_source: auditContext.source,
-      p_request_id: requestId,
-      p_old_value: { player_id: playerId, achievement_type: achievementType, achievement_count: oldTotal },
-      p_new_value: { player_id: playerId, achievement_type: achievementType, achievement_count: achievementCount },
+      p_request_id: submittedRequestId,
     });
-
-    if (saveAchievementError) {
-      return NextResponse.json({ error: saveAchievementError.message }, { status: 500 });
+    if (error) {
+      const status = error.code === "40001" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 500;
+      return NextResponse.json({ error: error.message }, { status });
     }
-
-    if (oldTotal !== achievementCount) {
-      const summaryError = await updateMatchSummary(
-        supabase,
-        matchId,
-        null,
-        auditContext,
-        matchForAchievement.status === "confirmed" && canManageConfirmedMatch,
-      );
-      if (summaryError) {
-        return summaryError;
-      }
-    }
-
-    return NextResponse.json({ ok: true, request_id: requestId });
+    return NextResponse.json({ game: data, request_id: submittedRequestId });
   }
 
   return NextResponse.json({ error: "Změna zápisu není platná." }, { status: 400 });

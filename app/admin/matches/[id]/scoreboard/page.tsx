@@ -463,6 +463,8 @@ export default function MatchScoreboardPage() {
         body: JSON.stringify({
           cell: {
             type: "legs",
+            confirmed: true,
+            request_id: crypto.randomUUID(),
             order_number: updatedGame.order_number,
             expected_updated_at: selectedGame.updated_at,
             home_legs: updatedGame.home_legs,

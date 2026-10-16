@@ -5,7 +5,7 @@ This Playwright test verifies the captain match-sheet lifecycle with three signe
 - staged home and away lineup assignment
 - hidden opponent lineups before reveal
 - lineup reveal for both first-block sides
-- concurrent achievement autosaves
+- concurrent per-field achievement saves (Enter, equivalent to leaving the edited field)
 - reload verification from all three sessions
 
 ## Safe default

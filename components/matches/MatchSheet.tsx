@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { AutosaveNumberField, type NumberFieldBaseline } from "./AutosaveNumberField";
 import { Card } from "@/components/ui/admin";
 import { calculateUsefulnessScore } from "@/lib/playerUsefulness";
 
@@ -67,12 +68,9 @@ type MatchSheetProps = {
   readOnly?: boolean;
   error?: string | null;
   viewerSide?: MatchSide | null;
-  onAchievementChange?: (orderNumber: number, playerId: string, type: AchievementType, count: number) => void;
-  onAchievementBlur?: (orderNumber: number, playerId: string, type: AchievementType) => void;
-  onAchievementFocus?: (orderNumber: number, playerId: string, type: AchievementType) => void;
-  onLegsBlur?: (game: SheetGame, side: "home_legs" | "away_legs") => void;
-  onLegsChange?: (game: SheetGame, side: "home_legs" | "away_legs", value: number) => void;
-  onLegsFocus?: (game: SheetGame, side: "home_legs" | "away_legs") => void;
+  onDraftChange?: (key: string, dirty: boolean) => void;
+  onAchievementCommit?: (orderNumber: number, playerId: string, type: AchievementType, count: number, baseline: NumberFieldBaseline) => Promise<void>;
+  onLegsCommit?: (game: SheetGame, side: "home_legs" | "away_legs", value: number, baseline: NumberFieldBaseline) => Promise<void>;
   onPlayerChange?: (game: SheetGame, side: MatchSide, index: number, playerId: string) => void;
   onPlayerBlur?: (game: SheetGame, side: MatchSide, index: number) => void;
   onPlayerFocus?: (game: SheetGame, side: MatchSide, index: number) => void;
@@ -295,12 +293,9 @@ export function MatchSheet({
   playerLabel = defaultPlayerLabel,
   readOnly = false,
   viewerSide = null,
-  onAchievementChange,
-  onAchievementBlur,
-  onAchievementFocus,
-  onLegsBlur,
-  onLegsChange,
-  onLegsFocus,
+  onDraftChange,
+  onAchievementCommit,
+  onLegsCommit,
   onPlayerChange,
   onPlayerBlur,
   onPlayerFocus,
@@ -337,12 +332,12 @@ export function MatchSheet({
   }
 
   function achievementCount(orderNumber: number, playerId: string, type: AchievementType) {
-    return achievements.find(
+    return achievements.filter(
       (achievement) =>
         achievement.order_number === orderNumber &&
         achievement.player_id === playerId &&
         achievement.achievement_type === type,
-    )?.achievement_count ?? 0;
+    ).reduce((sum, achievement) => sum + achievement.achievement_count, 0);
   }
 
   function renderAchievementCell(game: SheetGame, side: MatchSide, type: AchievementType, blockNumber: number) {
@@ -354,27 +349,14 @@ export function MatchSheet({
     if (readOnly || !canEditAchievements(side)) return <span className="block text-center text-xs font-bold text-[var(--brand-navy)]">{value || "-"}</span>;
 
     return (
-      <input
-        aria-label={`${achievementLabels[type]} ${side === "home" ? "domácí" : "hosté"} 1`}
-        className="h-8 w-8 rounded-md border border-[var(--admin-border)] bg-white px-0.5 text-center text-xs outline-none focus:border-[var(--brand-blue)] disabled:bg-slate-50"
-        disabled={!playerId}
-        inputMode="numeric"
-        pattern="[0-9]*"
-        type="text"
-        value={playerId ? value : 0}
-        onBlur={() => onAchievementBlur?.(game.order_number, playerId, type)}
-        onFocus={(event) => {
-          onAchievementFocus?.(game.order_number, playerId, type);
-          event.currentTarget.select();
-        }}
-        onChange={(event) =>
-          onAchievementChange?.(
-            game.order_number,
-            playerId,
-            type,
-            Number(event.target.value.replace(/[^0-9]/g, "") || 0),
-          )
-        }
+      <AutosaveNumberField
+        key={playerId || "empty"}
+        label={`${achievementLabels[type]} ${side === "home" ? "domácí" : "hosté"} hra ${game.order_number}`}
+        disabled={!playerId || !onAchievementCommit}
+        value={value}
+        maximum={type === "checkout_100_plus" ? 3 : 2147483647}
+        onDraftChange={onDraftChange}
+        onCommit={(count, baseline) => onAchievementCommit!(game.order_number, playerId, type, count, baseline)}
       />
     );
   }
@@ -469,51 +451,23 @@ export function MatchSheet({
     if (!canEditLegs()) return <span className="block text-center text-sm font-black text-[var(--brand-navy)]">{game.home_legs}:{game.away_legs}</span>;
 
     const maximumLegs = game.game_type === "tiebreak_701" ? 1 : 3;
-    const legsPattern = game.game_type === "tiebreak_701" ? "[0-1]" : "[0-3]";
-
     return (
-      <div className="grid grid-cols-[46px_8px_46px] items-center justify-center gap-0.5">
-        <input
-          className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`}
-          inputMode="numeric"
-          maxLength={1}
-          pattern={legsPattern}
-          type="text"
-          value={game.home_legs}
-          onBlur={() => onLegsBlur?.(game, "home_legs")}
-          onFocus={(event) => {
-            onLegsFocus?.(game, "home_legs");
-            event.currentTarget.select();
-          }}
-          onChange={(event) =>
-            onLegsChange?.(
-              game,
-              "home_legs",
-              Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0),
-            )
-          }
-        />
-        <span className="text-center">:</span>
-        <input
-          className={`${inputClass} h-8 w-full px-1 py-0 text-center text-sm font-semibold`}
-          inputMode="numeric"
-          maxLength={1}
-          pattern={legsPattern}
-          type="text"
-          value={game.away_legs}
-          onBlur={() => onLegsBlur?.(game, "away_legs")}
-          onFocus={(event) => {
-            onLegsFocus?.(game, "away_legs");
-            event.currentTarget.select();
-          }}
-          onChange={(event) =>
-            onLegsChange?.(
-              game,
-              "away_legs",
-              Number(event.target.value.replace(maximumLegs === 1 ? /[^0-1]/g : /[^0-3]/g, "") || 0),
-            )
-          }
-        />
+      <div className="flex items-start justify-center gap-1">
+        {(["home_legs", "away_legs"] as const).map((side, index) => (
+          <div key={side} className="flex items-start gap-1">
+            {index === 1 ? <span className="pt-1">:</span> : null}
+            <AutosaveNumberField
+              label={`Legy ${side === "home_legs" ? "domácí" : "hosté"} hra ${game.order_number}`}
+              className={`${inputClass} h-8 w-11 px-1 py-0 text-center text-sm font-semibold`}
+              value={game[side]}
+              revision={game.updated_at}
+              maximum={maximumLegs}
+              disabled={!onLegsCommit}
+              onDraftChange={onDraftChange}
+              onCommit={(value, baseline) => onLegsCommit!(game, side, value, baseline)}
+            />
+          </div>
+        ))}
       </div>
     );
   }

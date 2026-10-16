@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:match-sheet": "node --test scripts/match-sheet-regression-tests.mjs",
+    "test:match-sheet": "node --test scripts/match-sheet-regression-tests.mjs scripts/match-sheet-numeric-db-tests.mjs",
     "test:e2e:match-concurrent": "playwright test e2e/match-sheet-concurrent.spec.ts",
     "test:e2e:match-concurrent:staging": "node e2e/run-match-sheet-concurrent.mjs",
-    "test:e2e:match-concurrent:production": "node e2e/run-match-sheet-concurrent.mjs --production --production-match=d18533e4-63bf-412d-9bb8-79bf54703005"
+    "test:e2e:match-concurrent:production": "node e2e/run-match-sheet-concurrent.mjs --production --production-match=d18533e4-63bf-412d-9bb8-79bf54703005",
+    "test:e2e:match-fields": "playwright test e2e/match-sheet-autosave-fields.spec.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
@@ -19,6 +20,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

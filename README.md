@@ -43,6 +43,13 @@ Run these SQL files in Supabase SQL Editor when deploying the related modules:
 - `supabase/apply_gallery_in_dashboard.sql`
 - `supabase/apply_discussions_in_dashboard.sql`
 - `supabase/migrations/20261016090000_team_match_venues.sql` (multiple team venues and per-match venue selection)
+- `supabase/migrations/20261016210000_confirmed_numeric_match_cells.sql` (atomic per-field saves and conflict protection; requires `20261013090000_atomic_match_summary_rpc.sql`)
+
+For the numeric match-sheet fix, apply the new migration **before deploying the application**, then ask users with an already open sheet to reload it. The migration is additive and does not change historical results. Old browser clients will receive a request to reload instead of silently saving numeric edits. A deployment without the migration will reject numeric saves; the API deliberately has no unsafe fallback.
+
+Legs and achievements save automatically when leaving an edited field; Enter also saves. There are no per-field confirmation buttons. Focus, unchanged values, incoming realtime data and page exit do not trigger writes. An empty field restores the stored value on blur; writing zero requires explicitly entering 0. Escape cancels the edit. Conflicts retain the draft and show the current stored value. A fresh direct edit after a conflict starts from that current value; the conflicting draft is never retried automatically. Failed saves offer an explicit retry with the same request ID. Only submitted leg fields change; the other side is never inferred.
+
+Run `npm run test:match-sheet` for regression and in-memory PostgreSQL RPC tests, and `npm run test:e2e:match-fields` for browser tests with mocked API data (local server only, no writes to Supabase). The PostgreSQL tests exercise actual migrations but do not simulate multiple database connections contending for locks. The authenticated staging concurrency test also exercises saving with Enter; do not run its production variant against ongoing matches.
 
 Create the first administrator manually in `public.user_profiles` after inviting or creating the Supabase Auth user. Further users can be managed from `/admin/users`.
 
