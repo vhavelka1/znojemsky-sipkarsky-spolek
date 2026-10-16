@@ -71,15 +71,13 @@ begin
     if not found then
       raise exception using errcode = 'PT409', message = 'Nasazení hráče se změnilo. Obnovte zápis.';
     end if;
-    if not p_can_manage_both_sides and v_side is distinct from p_viewer_side then
-      raise exception using errcode = '42501', message = 'Můžete upravit jen statistiky vlastní strany.';
-    end if;
+    -- Captains can record achievements for either team; target-side locks still apply below.
   end if;
 
   if not p_can_manage_both_sides and exists (
     select 1 from public.match_confirmations where match_id = p_match_id and side = v_side and deleted_at is null
   ) then
-    raise exception using errcode = '42501', message = 'Vaše strana zápisu je již potvrzená.';
+    raise exception using errcode = '42501', message = 'Tato strana zápisu je již potvrzená.';
   end if;
 
   -- A retry after a lost response must never replay an already applied edit.

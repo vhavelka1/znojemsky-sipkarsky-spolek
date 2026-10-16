@@ -44,6 +44,7 @@ Run these SQL files in Supabase SQL Editor when deploying the related modules:
 - `supabase/apply_discussions_in_dashboard.sql`
 - `supabase/migrations/20261016090000_team_match_venues.sql` (multiple team venues and per-match venue selection)
 - `supabase/migrations/20261016220000_non_retryable_match_sheet_conflicts.sql` (urgent hotfix for existing installations: replaces serialization-failure codes with non-retryable HTTP conflicts; apply after the numeric-cell migration)
+- `supabase/migrations/20261016230000_restore_captain_achievement_access.sql` (restores captain achievement editing for either team; confirmed target sides remain locked; requires the non-retryable-conflict hotfix)
 - `supabase/migrations/20261016210000_confirmed_numeric_match_cells.sql` (atomic per-field saves and conflict protection; requires `20261013090000_atomic_match_summary_rpc.sql`)
 
 For the numeric match-sheet fix, apply the new migration **before deploying the application**, then ask users with an already open sheet to reload it. The migration is additive and does not change historical results. Old browser clients will receive a request to reload instead of silently saving numeric edits. A deployment without the migration will reject numeric saves; the API deliberately has no unsafe fallback.

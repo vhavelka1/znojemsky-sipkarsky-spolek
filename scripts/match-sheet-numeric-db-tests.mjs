@@ -25,12 +25,20 @@ before(async () => {
     create table match_sheet_audit_logs (id uuid default gen_random_uuid(), match_id uuid, game_id uuid, entity_type text, entity_id uuid, field_name text, operation text, old_value jsonb, new_value jsonb, actor_user_id uuid, actor_player_id uuid, actor_role text, actor_team_season_id uuid, source text, request_id uuid);
   `);
   await db.exec(readFileSync(new URL("../supabase/migrations/20261013090000_atomic_match_summary_rpc.sql", import.meta.url), "utf8"));
-  await db.exec(readFileSync(new URL("../supabase/migrations/20261016210000_confirmed_numeric_match_cells.sql", import.meta.url), "utf8").replaceAll("errcode = 'PT409'", "errcode = '40001'"));
+  const legacyRestriction = "    if not p_can_manage_both_sides and v_side is distinct from p_viewer_side then\n      raise exception using errcode = '42501', message = 'Můžete upravit jen statistiky vlastní strany.';\n    end if;";
+  const originalMigration = readFileSync(new URL("../supabase/migrations/20261016210000_confirmed_numeric_match_cells.sql", import.meta.url), "utf8");
+  await db.exec(originalMigration
+    .replaceAll("errcode = 'PT409'", "errcode = '40001'")
+    .replace("    -- Captains can record achievements for either team; target-side locks still apply below.", legacyRestriction));
   await db.exec(readFileSync(new URL("../supabase/migrations/20261016220000_non_retryable_match_sheet_conflicts.sql", import.meta.url), "utf8"));
   await db.exec(readFileSync(new URL("../supabase/migrations/20261016220000_non_retryable_match_sheet_conflicts.sql", import.meta.url), "utf8"));
+  const accessHotfix = readFileSync(new URL("../supabase/migrations/20261016230000_restore_captain_achievement_access.sql", import.meta.url), "utf8");
+  await db.exec(accessHotfix);
+  await db.exec(accessHotfix);
   const { rows } = await db.query("select pg_get_functiondef(oid) as definition from pg_proc where proname = 'match_sheet_commit_numeric_cell'");
   assert.ok(rows[0].definition.includes("PT409"));
   assert.ok(!rows[0].definition.includes("40001"));
+  assert.ok(!rows[0].definition.includes("Můžete upravit jen statistiky vlastní strany."));
 });
 beforeEach(async () => {
   await db.exec("truncate matches, match_games, match_game_players, match_game_achievements, match_results, match_confirmations, match_sheet_audit_logs;");
@@ -106,10 +114,24 @@ test("summary failure rolls back data and audit together", async () => {
     assert.equal((await db.query("select * from match_sheet_audit_logs")).rows.length, 0);
   } finally { await db.exec("alter table match_results drop constraint reject_test_summary;"); }
 });
-test("captains cannot change opposing achievements or confirmed matches", async () => {
-  await assert.rejects(commit(achievement(0), { side: "away" }), { code: "42501" });
+test("captains can record either team achievements, but confirmed matches remain locked", async () => {
+  await commit(achievement(5), { side: "away" });
+  assert.equal(await count(), 5);
   await db.query("update matches set status='confirmed' where id=$1", [match]);
   await assert.rejects(commit(achievement(0)), { code: "42501" });
+  assert.equal(await count(), 5);
+});
+test("a captain cannot change achievements on a confirmed opponent side", async () => {
+  await db.query("insert into match_confirmations (match_id,side) values ($1,'home')", [match]);
+  await assert.rejects(commit(achievement(0), { side: "away" }), { code: "42501" });
+  assert.equal(await count(), 4);
+});
+test("access still requires a match captain side or staff privileges", async () => {
+  await assert.rejects(commit(achievement(0), { side: null }), { code: "42501" });
+  assert.equal(await count(), 4);
+});
+test("an unassigned player cannot receive achievements", async () => {
+  await assert.rejects(commit({ ...achievement(5), player_id: randomUUID() }, { side: "away" }), { code: "PT409" });
   assert.equal(await count(), 4);
 });
 test("confirmed own side is locked; staff corrections preserve confirmations", async () => {
