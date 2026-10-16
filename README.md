@@ -42,6 +42,7 @@ Run these SQL files in Supabase SQL Editor when deploying the related modules:
 - `supabase/apply_user_profiles_in_dashboard.sql`
 - `supabase/apply_gallery_in_dashboard.sql`
 - `supabase/apply_discussions_in_dashboard.sql`
+- `supabase/migrations/20261016090000_team_match_venues.sql` (multiple team venues and per-match venue selection)
 
 Create the first administrator manually in `public.user_profiles` after inviting or creating the Supabase Auth user. Further users can be managed from `/admin/users`.
 

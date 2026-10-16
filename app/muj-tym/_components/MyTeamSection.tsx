@@ -18,6 +18,7 @@ type CaptainTeamPayload = {
     logoUrl: string | null;
     publicDescription: string;
     homeVenue: string;
+    homeVenues: string[];
     publicContactEmail: string;
     websiteUrl: string;
     seasonName: string;
@@ -68,6 +69,10 @@ type RosterPlayer = {
 };
 
 type TeamMatch = {
+  venue: string | null;
+  venueOverride: string | null;
+  availableVenues: string[];
+  canChangeVenue: boolean;
   id: string;
   teamSeasonId: string;
   seasonId: string;
@@ -146,7 +151,7 @@ type TeamRegistrationStatus = "draft" | "submitted" | "approved" | "returned" | 
 
 type TeamForm = {
   public_description: string;
-  home_venue: string;
+  home_venues: string[];
   public_contact_email: string;
   website_url: string;
 };
@@ -165,7 +170,7 @@ type RequestForm = {
 
 const emptyTeamForm: TeamForm = {
   public_description: "",
-  home_venue: "",
+  home_venues: [""],
   public_contact_email: "",
   website_url: "",
 };
@@ -431,6 +436,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
   const [competitionRulesFileUrl, setCompetitionRulesFileUrl] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingTeam, setIsSavingTeam] = useState(false);
+  const [savingVenueId, setSavingVenueId] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [rescheduleNotes, setRescheduleNotes] = useState<Record<string, string>>({});
@@ -465,7 +471,7 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
         setCompetitionRulesFileUrl(body.competitionRulesFileUrl ?? "");
         setTeamForm({
           public_description: body.team?.publicDescription ?? "",
-          home_venue: body.team?.homeVenue ?? "",
+          home_venues: body.team?.homeVenues?.length ? body.team.homeVenues : [body.team?.homeVenue ?? ""],
           public_contact_email: body.team?.publicContactEmail ?? "",
           website_url: body.team?.websiteUrl ?? "",
         });
@@ -505,6 +511,28 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
 
     setMessage("Údaje týmu byly uloženy.");
     loadTeam();
+  };
+
+  const saveMatchVenue = async (match: TeamMatch, venue: string) => {
+    setSavingVenueId(match.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await authFetch(`/api/captain/matches/${match.id}/venue`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ venue: venue || null }),
+      });
+      const body = await response.json() as { error?: string; venue: string | null; venueOverride: string | null };
+      if (!response.ok) throw new Error(body.error ?? "Hrací místo se nepodařilo uložit.");
+      setMatches((current) => current.map((item) => item.id === match.id
+        ? { ...item, venue: body.venue, venueOverride: body.venueOverride } : item));
+      setMessage("Hrací místo zápasu bylo uloženo.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Hrací místo se nepodařilo uložit.");
+    } finally {
+      setSavingVenueId(null);
+    }
   };
 
   const uploadLogo = async (logo: File | undefined) => {
@@ -1114,6 +1142,21 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
                         {matchTitle(match)}
                       </h3>
                       <p className="mt-1 text-sm font-bold text-slate-500">{formatDateTime(match.playedAt ?? match.scheduledAt)}</p>
+                      <p className="mt-2 text-sm font-bold text-[#061A3A]">Hrací místo: {match.venue || "Nezadáno"}</p>
+                      {match.canChangeVenue && (match.availableVenues.length > 1 || match.venueOverride) ? (
+                        <label className="mt-3 grid gap-2 text-sm font-black text-[#061A3A]">
+                          Změnit hrací místo
+                          <select className={inputClass} disabled={savingVenueId !== null}
+                            value={match.venueOverride ?? ""}
+                            onChange={(event) => void saveMatchVenue(match, event.target.value)}>
+                            <option value="">Výchozí: {match.availableVenues[0] || "Nezadáno"}</option>
+                            {match.venueOverride && !match.availableVenues.includes(match.venueOverride)
+                              ? <option value={match.venueOverride}>{match.venueOverride} (dříve přiřazeno)</option> : null}
+                            {match.availableVenues.map((venue) => <option key={venue} value={venue}>{venue}</option>)}
+                          </select>
+                          {savingVenueId === match.id ? <span role="status">Ukládám...</span> : null}
+                        </label>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                       {match.result ? <span className="rounded-full bg-[#061A3A] px-4 py-2 text-sm font-black text-white">{match.result}</span> : null}
@@ -1304,11 +1347,29 @@ export function MyTeamSection({ section }: { section: MyTeamSectionKey }) {
               <textarea className="min-h-28 rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3 text-sm font-bold outline-none focus:border-[#0F4FA8]" onChange={(event) => setTeamForm((current) => ({ ...current, public_description: event.target.value }))} value={teamForm.public_description} />
             </label>
 
+            <fieldset className="grid gap-3">
+              <legend className="text-sm font-black text-[#061A3A]">Hrací místa</legend>
+              <p className="text-sm font-bold text-slate-500">První místo je výchozí pro domácí zápasy. Jiné uložené místo vyberete u konkrétního zápasu v sekci Zápasy.</p>
+              {teamForm.home_venues.map((venue, index) => (
+                <div className="flex items-end gap-2" key={index}>
+                  <label className="grid flex-1 gap-2 text-sm font-black text-[#061A3A]">
+                    {index === 0 ? "Výchozí hrací místo" : `Hrací místo ${index + 1}`}
+                    <input className={inputClass} maxLength={500} value={venue}
+                      onChange={(event) => setTeamForm((current) => ({ ...current, home_venues: current.home_venues.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} />
+                  </label>
+                  {teamForm.home_venues.length > 1 ? (
+                    <button className="rounded-xl border border-[#D8E4F2] px-3 py-3 text-sm font-black text-red-600" type="button"
+                      aria-label={`Odebrat hrací místo ${index + 1}`}
+                      onClick={() => setTeamForm((current) => ({ ...current, home_venues: current.home_venues.filter((_, itemIndex) => itemIndex !== index) }))}>Odebrat</button>
+                  ) : null}
+                </div>
+              ))}
+              <button className="w-fit rounded-full border border-[#0F4FA8] px-4 py-2 text-sm font-black text-[#0F4FA8] disabled:opacity-60" type="button"
+                disabled={teamForm.home_venues.length >= 20}
+                onClick={() => setTeamForm((current) => ({ ...current, home_venues: [...current.home_venues, ""] }))}>Přidat hrací místo</button>
+            </fieldset>
+
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-black text-[#061A3A]">
-                Hrací místo
-                <input className={inputClass} onChange={(event) => setTeamForm((current) => ({ ...current, home_venue: event.target.value }))} value={teamForm.home_venue} />
-              </label>
               <label className="grid gap-2 text-sm font-black text-[#061A3A]">
                 Veřejný kontaktní email
                 <input className={inputClass} onChange={(event) => setTeamForm((current) => ({ ...current, public_contact_email: event.target.value }))} type="email" value={teamForm.public_contact_email} />

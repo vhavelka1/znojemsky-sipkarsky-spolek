@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
+import { matchVenue } from "@/lib/teamVenues";
 
 type Season = {
   id: string;
@@ -47,6 +48,7 @@ type LeagueGroupTeam = {
 type MatchStatus = "scheduled" | "played" | "awaiting_confirmation" | "confirmed" | "cancelled";
 
 type Match = {
+  venue_override?: string | null;
   id: string;
   season_id: string;
   league_id: string;
@@ -149,7 +151,7 @@ export async function GET(request: NextRequest) {
           .returns<LeagueGroupTeam[]>(),
         supabase
           .from("matches")
-          .select("id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at, played_at, status")
+          .select("*")
           .is("deleted_at", null)
           .returns<Match[]>(),
         supabase
@@ -268,7 +270,7 @@ export async function GET(request: NextRequest) {
           scheduledAt: match.scheduled_at,
           playedAt: match.played_at,
           status: match.status,
-          venue: homeTeam.venue,
+          venue: matchVenue(match.venue_override, homeTeam.venue),
           homeTeam,
           awayTeam,
           result: result

@@ -1,4 +1,5 @@
 import { buildLeagueGroupStandings, isFinishedMatch, type MatchStatus, type StandingRow } from "@/lib/leagueStandings";
+import { matchVenue } from "@/lib/teamVenues";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
 
@@ -136,6 +137,7 @@ type TeamRow = {
 };
 
 type MatchRow = {
+  venue_override?: string | null;
   id: string;
   season_id: string;
   league_id: string;
@@ -312,7 +314,7 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
       .order("name", { ascending: true }),
     supabase
       .from("matches")
-      .select("id, season_id, league_id, group_id, home_team_id, away_team_id, round_number, scheduled_at, played_at, status")
+      .select("*")
       .is("deleted_at", null)
       .order("scheduled_at", { ascending: true })
       .returns<MatchRow[]>(),
@@ -449,13 +451,14 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
       )
       .map((match): FacebookRoundMatch => {
         const result = resultByMatchId.get(match.id);
+        const homeTeam = teamPayload(match.home_team_id);
         return {
           id: match.id,
           roundNumber: selectedRound ?? 0,
           scheduledAt: match.scheduled_at,
           playedAt: match.played_at,
           status: match.status,
-          homeTeam: teamPayload(match.home_team_id),
+          homeTeam: { ...homeTeam, venue: matchVenue(match.venue_override, homeTeam.venue) },
           awayTeam: teamPayload(match.away_team_id),
           result: result
             ? { homePoints: result.home_points, awayPoints: result.away_points }

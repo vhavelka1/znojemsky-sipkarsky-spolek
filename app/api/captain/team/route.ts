@@ -4,10 +4,12 @@ import { homepageSettingKeys, publicSettingsFromRows, SettingRow } from "@/lib/h
 import { calculateUsefulnessScore } from "@/lib/playerUsefulness";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
+import { matchVenue, teamVenues, type TeamVenueFields } from "@/lib/teamVenues";
 
 type UpdateCaptainTeamBody = {
   public_description?: unknown;
   home_venue?: unknown;
+  home_venues?: unknown;
   public_contact_email?: unknown;
   website_url?: unknown;
   action?: unknown;
@@ -63,6 +65,7 @@ type TeamNameRow = {
 };
 
 type MatchRow = {
+  venue_override?: string | null;
   id: string;
   season_id: string;
   round_number: number | null;
@@ -121,6 +124,7 @@ type MatchRescheduleRequestRow = {
 };
 
 type TeamSeasonRow = {
+  home_venue: string | null;
   id: string;
   team_id: string;
   display_name: string | null;
@@ -438,7 +442,7 @@ async function getCaptainContext(request: Request) {
 
   let teamResult = await supabase
     .from("teams")
-    .select("id, name, slug, logo_url, playing_venue_address, public_description, public_contact_email, website_url")
+    .select("*")
     .eq("id", teamSeason.team_id)
     .is("deleted_at", null)
     .single();
@@ -542,12 +546,15 @@ export async function GET(request: Request) {
   const matchResult = ownTeamSeasonIds.length > 0
     ? await supabase
         .from("matches")
-        .select("id, season_id, round_number, home_team_id, away_team_id, scheduled_at, played_at, status")
+        .select("*")
         .or(`home_team_id.in.(${ownTeamSeasonIds.join(",")}),away_team_id.in.(${ownTeamSeasonIds.join(",")})`)
         .is("deleted_at", null)
         .order("scheduled_at", { ascending: false })
         .returns<MatchRow[]>()
     : { data: [] as MatchRow[], error: null };
+  if (matchResult.error) {
+    return NextResponse.json({ error: "Zápasy se nepodařilo načíst." }, { status: 500 });
+  }
   const matchRows = matchResult.data ?? [];
   const matchIds = matchRows.map((match) => match.id);
   const matchRescheduleRequestsResult = matchIds.length > 0
@@ -591,7 +598,7 @@ export async function GET(request: Request) {
     matchTeamSeasonIds.length > 0
       ? supabase
           .from("team_seasons")
-          .select("id, team_id, display_name")
+          .select("id, team_id, display_name, home_venue")
           .in("id", matchTeamSeasonIds)
           .is("deleted_at", null)
           .returns<TeamSeasonRow[]>()
@@ -657,11 +664,11 @@ export async function GET(request: Request) {
   const matchTeamsResult = matchTeamIds.length > 0
     ? await supabase
         .from("teams")
-        .select("id, name")
+        .select("*")
         .in("id", matchTeamIds)
         .is("deleted_at", null)
-        .returns<TeamNameRow[]>()
-    : { data: [] as TeamNameRow[], error: null };
+        .returns<Array<TeamNameRow & TeamVenueFields>>()
+    : { data: [] as Array<TeamNameRow & TeamVenueFields>, error: null };
   const leagueResult = groupResult.data?.league_id
     ? await supabase
         .from("leagues")
@@ -679,6 +686,9 @@ export async function GET(request: Request) {
   const activeTeamSeasonById = new Map((activeTeamSeasonsResult.data ?? []).map((teamSeason) => [teamSeason.id, teamSeason]));
   const activeTeamById = new Map((activeTeamsResult.data ?? []).map((activeTeam) => [activeTeam.id, activeTeam]));
   const matchTeamById = new Map((matchTeamsResult.data ?? []).map((team) => [team.id, team]));
+  if (matchTeamSeasonsResult.error || matchTeamsResult.error) {
+    return NextResponse.json({ error: "Hrací místa soupeřů se nepodařilo načíst." }, { status: 500 });
+  }
   const matchTeamName = (teamSeasonId: string, fallback: string) => {
     const teamSeason = matchTeamSeasonById.get(teamSeasonId);
     const team = teamSeason ? matchTeamById.get(teamSeason.team_id) : null;
@@ -813,6 +823,9 @@ export async function GET(request: Request) {
   };
 
   const matches = matchRows.map((match) => {
+    const homeSeason = matchTeamSeasonById.get(match.home_team_id);
+    const homeTeam = homeSeason ? matchTeamById.get(homeSeason.team_id) : null;
+    const venues = teamVenues(homeTeam, homeSeason?.home_venue);
     const result = resultsByMatchId.get(match.id) ?? null;
     const isHome = ownTeamSeasonIdsSet.has(match.home_team_id);
     const ownSide: MatchSide = isHome ? "home" : "away";
@@ -830,6 +843,10 @@ export async function GET(request: Request) {
       playedAt: match.played_at,
       status: match.status,
       statusLabel: statusLabel(match.status),
+      venue: matchVenue(match.venue_override, venues[0]),
+      venueOverride: match.venue_override ?? null,
+      availableVenues: venues,
+      canChangeVenue: match.home_team_id === teamSeason.id && match.status === "scheduled",
       side: isHome ? "Domácí" : "Hosté",
       homeTeamName,
       awayTeamName,
@@ -902,6 +919,7 @@ export async function GET(request: Request) {
       logoUrl: team.logo_url ?? null,
       publicDescription: team.public_description ?? "",
       homeVenue: team.playing_venue_address ?? teamSeason.home_venue ?? "",
+      homeVenues: teamVenues(team, teamSeason.home_venue),
       publicContactEmail: team.public_contact_email ?? teamSeason.contact_email ?? "",
       websiteUrl: team.website_url ?? "",
       seasonName: seasonResult.data?.name ?? "Sezóna",
@@ -1058,13 +1076,23 @@ export async function PATCH(request: Request) {
 
   const { supabase, teamSeason, team } = context;
   const websiteUrl = optionalString(body?.website_url);
-  const homeVenue = optionalString(body?.home_venue);
+  if (body?.home_venues !== undefined && (
+    !Array.isArray(body.home_venues) || body.home_venues.length > 20 ||
+    body.home_venues.some((venue) => typeof venue !== "string" || venue.trim().length > 500)
+  )) {
+    return NextResponse.json({ error: "Zadejte nejvýše 20 hracích míst, každé do 500 znaků." }, { status: 400 });
+  }
+  const venues = body?.home_venues === undefined
+    ? teamVenues({ playing_venue_address: optionalString(body?.home_venue), additional_playing_venues: team.additional_playing_venues })
+    : [...new Set((body.home_venues as string[]).map((venue) => venue.trim()).filter(Boolean))];
+  const homeVenue = venues[0] ?? null;
   const publicDescription = optionalString(body?.public_description);
 
   const { error: teamError } = await supabase
     .from("teams")
     .update({
       playing_venue_address: homeVenue,
+      additional_playing_venues: venues.slice(1),
       public_description: publicDescription,
       public_contact_email: publicContactEmail,
       website_url: websiteUrl,
