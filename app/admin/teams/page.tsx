@@ -1,6 +1,7 @@
 "use client";
 
 import { adminFetch } from "@/lib/adminFetch";
+import { teamVenues } from "@/lib/teamVenues";
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -12,6 +13,7 @@ type Team = {
   slug: string;
   logo_url: string | null;
   playing_venue_address: string | null;
+  additional_playing_venues: string[];
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -47,7 +49,7 @@ type Membership = {
 
 type TeamForm = {
   name: string;
-  playing_venue_address: string;
+  home_venues: string[];
 };
 
 type LeadershipDraft = {
@@ -57,8 +59,39 @@ type LeadershipDraft = {
 
 const emptyForm: TeamForm = {
   name: "",
-  playing_venue_address: "",
+  home_venues: [""],
 };
+
+function VenueEditor({ venues, onChange, disabled = false }: {
+  venues: string[];
+  onChange: (venues: string[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset className="grid min-w-0 gap-3" disabled={disabled}>
+      <legend className="text-sm font-semibold text-slate-700">Hrací místa</legend>
+      <p className="text-xs text-slate-500">První místo je výchozí pro domácí zápasy.</p>
+      {venues.map((venue, index) => (
+        <div className="flex items-end gap-2" key={index}>
+          <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-slate-600">
+            {index === 0 ? "Výchozí hrací místo" : `Hrací místo ${index + 1}`}
+            <input className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-950 outline-none focus:border-[#0F4FA8]"
+              maxLength={500} placeholder="Adresa hracího místa" value={venue}
+              onChange={(event) => onChange(venues.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
+          </label>
+          {venues.length > 1 ? (
+            <button className="rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700" type="button"
+              aria-label={`Odebrat hrací místo ${index + 1}`}
+              onClick={() => onChange(venues.filter((_, itemIndex) => itemIndex !== index))}>Odebrat</button>
+          ) : null}
+        </div>
+      ))}
+      <button className="w-fit rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+        disabled={disabled || venues.length >= 20} type="button"
+        onClick={() => onChange([...venues, ""])}>Přidat hrací místo</button>
+    </fieldset>
+  );
+}
 
 async function readJson(response: Response) {
   return (await response.json().catch(() => ({}))) as {
@@ -119,7 +152,7 @@ export default function AdminTeamsPage() {
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [editingPlayingVenueAddress, setEditingPlayingVenueAddress] = useState("");
+  const [editingVenues, setEditingVenues] = useState<string[]>([""]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [busyTeamId, setBusyTeamId] = useState<string | null>(null);
@@ -240,7 +273,7 @@ export default function AdminTeamsPage() {
       },
       body: JSON.stringify({
         name: form.name.trim(),
-        playing_venue_address: form.playing_venue_address.trim(),
+        home_venues: form.home_venues,
       }),
     });
 
@@ -276,7 +309,7 @@ export default function AdminTeamsPage() {
       },
       body: JSON.stringify({
         name: editingName.trim(),
-        playing_venue_address: editingPlayingVenueAddress.trim(),
+        home_venues: editingVenues,
       }),
     });
 
@@ -291,7 +324,7 @@ export default function AdminTeamsPage() {
     } else {
       setEditingTeamId(null);
       setEditingName("");
-      setEditingPlayingVenueAddress("");
+      setEditingVenues([""]);
       await loadTeams(false);
     }
 
@@ -381,13 +414,14 @@ export default function AdminTeamsPage() {
   function startEditing(team: Team) {
     setEditingTeamId(team.id);
     setEditingName(team.name);
-    setEditingPlayingVenueAddress(team.playing_venue_address ?? "");
+    const venues = teamVenues(team);
+    setEditingVenues(venues.length ? venues : [""]);
   }
 
   function cancelEditing() {
     setEditingTeamId(null);
     setEditingName("");
-    setEditingPlayingVenueAddress("");
+    setEditingVenues([""]);
   }
 
   return (
@@ -449,17 +483,8 @@ export default function AdminTeamsPage() {
                     />
                   </label>
 
-                  <label className="flex flex-col gap-1 text-sm font-medium">
-                    Hrací místo
-                    <input
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#0F4FA8]"
-                      placeholder="Adresa hracího místa"
-                      value={form.playing_venue_address}
-                      onChange={(event) =>
-                        setForm({ ...form, playing_venue_address: event.target.value })
-                      }
-                    />
-                  </label>
+                  <VenueEditor venues={form.home_venues} disabled={isSaving}
+                    onChange={(home_venues) => setForm((current) => ({ ...current, home_venues }))} />
 
                   <button
                     className="rounded-xl bg-[#23364D] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#1A2A3E] disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -548,17 +573,7 @@ export default function AdminTeamsPage() {
                                     onChange={(event) => setEditingName(event.target.value)}
                                   />
                                 </label>
-                                <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-                                  Hrací místo
-                                  <input
-                                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-950 outline-none focus:border-[#0F4FA8]"
-                                    placeholder="Adresa hracího místa"
-                                    value={editingPlayingVenueAddress}
-                                    onChange={(event) =>
-                                      setEditingPlayingVenueAddress(event.target.value)
-                                    }
-                                  />
-                                </label>
+                                <VenueEditor venues={editingVenues} onChange={setEditingVenues} disabled={isBusy} />
                               </div>
                             ) : (
                               <h4 className="text-lg font-semibold text-slate-950">
@@ -566,9 +581,11 @@ export default function AdminTeamsPage() {
                               </h4>
                             )}
                             <p className="mt-1 text-sm text-slate-500">{team.slug}</p>
-                            <p className="mt-1 text-sm text-slate-600">
-                              Hrací místo: {team.playing_venue_address?.trim() || "-"}
-                            </p>
+                            <div className="mt-1 text-sm text-slate-600">
+                              {teamVenues(team).length ? teamVenues(team).map((venue, index) => (
+                                <p key={venue}>{index === 0 ? "Výchozí hrací místo" : `Hrací místo ${index + 1}`}: {venue}</p>
+                              )) : <p>Hrací místo: -</p>}
+                            </div>
                             <p className="mt-1 text-xs text-slate-400">
                               Vytvořeno {new Date(team.created_at).toLocaleDateString("cs-CZ")}
                             </p>

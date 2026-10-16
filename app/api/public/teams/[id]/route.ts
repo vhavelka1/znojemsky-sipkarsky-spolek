@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUserProfile } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { teamLogoUrl } from "@/lib/teamLogos";
+import { teamVenues } from "@/lib/teamVenues";
 
 type RouteContext = {
   params: Promise<{
@@ -15,6 +16,7 @@ type Team = {
   slug: string;
   logo_url?: string | null;
   playing_venue_address?: string | null;
+  additional_playing_venues?: string[] | null;
   public_description?: string | null;
   public_contact_email?: string | null;
   website_url?: string | null;
@@ -67,7 +69,7 @@ type MatchResult = {
 };
 
 function isMissingOptionalTeamColumn(message: string) {
-  return ["logo_url", "playing_venue_address", "public_description", "public_contact_email", "website_url"].some(
+  return ["logo_url", "playing_venue_address", "additional_playing_venues", "public_description", "public_contact_email", "website_url"].some(
     (column) => message.includes(column),
   );
 }
@@ -87,7 +89,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     let teamResult = await supabase
       .from("teams")
-      .select("id, name, slug, logo_url, playing_venue_address, public_description, public_contact_email, website_url")
+      .select("id, name, slug, logo_url, playing_venue_address, additional_playing_venues, public_description, public_contact_email, website_url")
       .eq("id", id)
       .is("deleted_at", null)
       .maybeSingle<Team>();
@@ -264,6 +266,7 @@ export async function GET(request: Request, context: RouteContext) {
         logoUrl: team.logo_url ?? null,
         publicDescription: team.public_description ?? null,
         homeVenue: team.playing_venue_address ?? currentTeamSeason?.home_venue ?? null,
+        homeVenues: teamVenues(team, currentTeamSeason?.home_venue),
         publicContactEmail: team.public_contact_email ?? currentTeamSeason?.contact_email ?? null,
         websiteUrl: team.website_url ?? null,
         seasonName: activeSeason?.name ?? null,

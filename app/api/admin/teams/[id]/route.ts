@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { parseTeamVenueList } from "@/lib/teamVenues";
 
 type UpdateTeamBody = {
   name?: unknown;
   playing_venue_address?: unknown;
+  home_venues?: unknown;
 };
 
 type RouteContext = {
@@ -73,6 +75,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const body = (await request.json().catch(() => null)) as UpdateTeamBody | null;
   const name = requiredString(body?.name);
+  const venues = body?.home_venues === undefined ? undefined : parseTeamVenueList(body.home_venues);
+  if (venues === null) {
+    return NextResponse.json({ error: "Zadejte nejvýše 20 hracích míst, každé do 500 znaků." }, { status: 400 });
+  }
 
   if (!name) {
     return NextResponse.json({ error: "Název týmu je povinný." }, { status: 400 });
@@ -89,15 +95,30 @@ export async function PATCH(request: Request, context: RouteContext) {
     .update({
       name,
       slug: createSlug(name),
-      playing_venue_address: optionalString(body?.playing_venue_address),
+      playing_venue_address: venues ? venues[0] ?? null : optionalString(body?.playing_venue_address),
+      ...(venues ? { additional_playing_venues: venues.slice(1) } : {}),
     })
     .eq("id", id)
     .is("deleted_at", null)
-    .select("id, name, slug, playing_venue_address, created_at, updated_at, deleted_at")
+    .select("id, name, slug, playing_venue_address, additional_playing_venues, created_at, updated_at, deleted_at")
     .single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const { data: activeSeason, error: seasonError } = await supabase.from("seasons")
+    .select("id").eq("is_active", true).is("deleted_at", null).maybeSingle();
+  if (seasonError) {
+    return NextResponse.json({ error: "Nepodařilo se načíst aktivní sezónu pro aktualizaci hracího místa." }, { status: 500 });
+  }
+  if (activeSeason) {
+    const { error: venueError } = await supabase.from("team_seasons")
+      .update({ home_venue: data.playing_venue_address }).eq("team_id", id)
+      .eq("season_id", activeSeason.id).is("deleted_at", null);
+    if (venueError) {
+      return NextResponse.json({ error: "Nepodařilo se aktualizovat hrací místo týmu v aktivní sezóně." }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ team: data });

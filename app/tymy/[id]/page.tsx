@@ -13,6 +13,7 @@ type TeamDetail = {
     logoUrl: string | null;
     publicDescription: string | null;
     homeVenue: string | null;
+    homeVenues: string[];
     publicContactEmail: string | null;
     websiteUrl: string | null;
     seasonName: string | null;
@@ -119,6 +120,7 @@ export default function PublicTeamDetailPage({
   const [data, setData] = useState<TeamDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const venues = data?.team.homeVenues ?? (data?.team.homeVenue ? [data.team.homeVenue] : []);
 
   useEffect(() => {
     let isMounted = true;
@@ -183,13 +185,26 @@ export default function PublicTeamDetailPage({
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-[#EF233C]">{data.team.seasonName ?? "Aktuální sezóna"}</p>
                     <h2 className="mt-2 text-3xl font-black text-[#061A3A]">{data.team.name}</h2>
                     <div className="mt-3 flex flex-wrap gap-2 text-sm font-bold text-slate-600">
-                      {data.team.homeVenue ? <span className="rounded-full bg-[#F4F8FF] px-3 py-1">{data.team.homeVenue}</span> : null}
                       {data.team.captain ? <span className="rounded-full bg-[#F4F8FF] px-3 py-1">Kapitán: {data.team.captain}</span> : null}
                       {data.team.publicContactEmail ? <a className="rounded-full bg-[#F4F8FF] px-3 py-1 text-[#0F4FA8]" href={`mailto:${data.team.publicContactEmail}`}>{data.team.publicContactEmail}</a> : null}
                       {data.team.websiteUrl ? <a className="rounded-full bg-[#F4F8FF] px-3 py-1 text-[#0F4FA8]" href={data.team.websiteUrl} rel="noreferrer" target="_blank">Web týmu</a> : null}
                     </div>
                   </div>
                 </div>
+              </section>
+
+              <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">
+                <h2 className="text-2xl font-black text-[#061A3A]">{venues.length > 1 ? "Hrací místa" : "Hrací místo"}</h2>
+                {venues.length ? (
+                  <ul className="mt-5 grid gap-3">
+                    {venues.map((venue, index) => (
+                      <li className="rounded-2xl border border-[#D8E4F2] bg-[#F4F8FF] px-4 py-3" key={venue}>
+                        {venues.length > 1 ? <p className="mb-1 text-xs font-black text-[#0F4FA8]">{index === 0 ? "Výchozí hrací místo" : `Hrací místo ${index + 1}`}</p> : null}
+                        <p className="break-words text-sm font-bold text-[#061A3A]">{venue}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="mt-4 text-sm font-bold text-slate-500">Hrací místo zatím není uvedeno.</p>}
               </section>
 
               <section className="rounded-[32px] border border-[#D8E4F2] bg-white p-6 shadow-[0_20px_60px_rgba(6,26,58,0.08)]">

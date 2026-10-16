@@ -3,6 +3,13 @@ export type TeamVenueFields = {
   additional_playing_venues?: string[] | null;
 };
 
+export function parseTeamVenueList(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 20 || value.some(
+    (venue) => typeof venue !== "string" || venue.trim().length > 500,
+  )) return null;
+  return [...new Set((value as string[]).map((venue) => venue.trim()).filter(Boolean))];
+}
+
 export function teamVenues(team: TeamVenueFields | null | undefined, fallback?: string | null): string[] {
   return [...new Set([
     team?.playing_venue_address ?? fallback ?? "",

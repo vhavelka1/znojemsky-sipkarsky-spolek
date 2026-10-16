@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireModeratorOrAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { parseTeamVenueList } from "@/lib/teamVenues";
 
 type CreateTeamBody = {
   name?: unknown;
   playing_venue_address?: unknown;
+  home_venues?: unknown;
 };
 
 const bundledLogoUrls: Record<string, string> = {
@@ -104,7 +106,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from("teams")
-    .select("id, name, slug, logo_url, playing_venue_address, created_at, updated_at, deleted_at")
+    .select("id, name, slug, logo_url, playing_venue_address, additional_playing_venues, created_at, updated_at, deleted_at")
     .is("deleted_at", null)
     .order("name", { ascending: true });
 
@@ -220,6 +222,10 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as CreateTeamBody | null;
   const name = requiredString(body?.name);
+  const venues = body?.home_venues === undefined ? undefined : parseTeamVenueList(body.home_venues);
+  if (venues === null) {
+    return NextResponse.json({ error: "Zadejte nejvýše 20 hracích míst, každé do 500 znaků." }, { status: 400 });
+  }
 
   if (!name) {
     return NextResponse.json(
@@ -238,9 +244,10 @@ export async function POST(request: Request) {
     .insert({
       name,
       slug: createSlug(name),
-      playing_venue_address: optionalString(body?.playing_venue_address),
+      playing_venue_address: venues ? venues[0] ?? null : optionalString(body?.playing_venue_address),
+      additional_playing_venues: venues?.slice(1) ?? [],
     })
-    .select("id, name, slug, playing_venue_address, created_at, updated_at, deleted_at")
+    .select("id, name, slug, playing_venue_address, additional_playing_venues, created_at, updated_at, deleted_at")
     .single();
 
   if (error) {

@@ -18,6 +18,41 @@ function loadSource(path, imports = {}) {
 
 const venues = loadSource("lib/teamVenues.ts");
 
+test("admin venue lists are validated, normalized and deduplicated", () => {
+  assert.equal(JSON.stringify(venues.parseTeamVenueList([" A ", "B", "A", ""])), '["A","B"]');
+  for (const invalid of [null, "A", [12], ["A".repeat(501)], Array(21).fill("A")]) {
+    assert.equal(venues.parseTeamVenueList(invalid), null);
+  }
+  assert.equal(JSON.stringify(venues.parseTeamVenueList([""])), '[]');
+});
+
+test("admin update stores all venues; legacy updates preserve additional venues", async () => {
+  const updates = [];
+  const supabase = { from(table) {
+    const q = {
+      update(value) { updates.push({ table, value }); return q; },
+      select() { return q; }, eq() { return q; }, is() { return q; },
+      async single() { return { data: { id: "team", playing_venue_address: updates.at(-1).value.playing_venue_address }, error: null }; },
+      async maybeSingle() { return { data: null, error: null }; },
+    };
+    return q;
+  } };
+  const route = loadSource("app/api/admin/teams/[id]/route.ts", {
+    "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
+    "@/lib/teamVenues": venues,
+    "@/lib/appAuth": { requireModeratorOrAdmin: async () => ({ response: null }) },
+    "@/lib/supabaseAdmin": { createSupabaseAdminClient: () => supabase },
+  });
+  const patch = (body) => route.PATCH({ json: async () => body }, { params: Promise.resolve({ id: "team" }) });
+  assert.equal((await patch({ name: "Tým", home_venues: [" A ", "B", "A"] })).status, 200);
+  assert.equal(updates[0].value.playing_venue_address, "A");
+  assert.equal(JSON.stringify(updates[0].value.additional_playing_venues), '["B"]');
+  assert.equal((await patch({ name: "Tým", playing_venue_address: "C" })).status, 200);
+  assert.equal('additional_playing_venues' in updates[1].value, false);
+  assert.equal((await patch({ name: "Tým", home_venues: [123] })).status, 400);
+  assert.equal(updates.length, 2);
+});
+
 test("existing single venue is the default; legacy season venue remains supported", () => {
   assert.equal(venues.teamVenues({ playing_venue_address: "Hospoda A" })[0], "Hospoda A");
   assert.equal(venues.teamVenues(null, "Staré místo")[0], "Staré místo");
