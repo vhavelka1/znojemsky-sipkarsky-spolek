@@ -3,7 +3,12 @@ import { getCurrentUserProfile, hasAtLeastRole } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export async function GET(request: Request) {
-  const profile = await getCurrentUserProfile(request).catch(() => null);
+  let profile;
+  try {
+    profile = await getCurrentUserProfile(request);
+  } catch {
+    return NextResponse.json({ error: "Načítání účtu je dočasně nedostupné. Zkuste to za chvíli znovu." }, { status: 503 });
+  }
 
   if (!profile) {
     return NextResponse.json({ user: null });
@@ -12,7 +17,7 @@ export async function GET(request: Request) {
   let canManageOwnTeam = false;
   if (profile.isActive && profile.playerId) {
     const supabase = createSupabaseAdminClient();
-    const { data: leadershipMemberships } = await supabase
+    const { data: leadershipMemberships, error: membershipError } = await supabase
       .from("team_memberships")
       .select("id")
       .eq("player_id", profile.playerId)
@@ -20,7 +25,11 @@ export async function GET(request: Request) {
       .is("left_on", null)
       .is("deleted_at", null)
       .limit(1)
+      .abortSignal(AbortSignal.timeout(8000))
       .returns<Array<{ id: string }>>();
+    if (membershipError) {
+      return NextResponse.json({ error: "Načítání oprávnění je dočasně nedostupné. Zkuste to za chvíli znovu." }, { status: 503 });
+    }
     canManageOwnTeam = Boolean(leadershipMemberships?.[0]);
   }
 

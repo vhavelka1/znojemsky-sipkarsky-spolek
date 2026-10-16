@@ -69,7 +69,7 @@ begin
     select side into v_side from public.match_game_players
       where match_game_id = v_game.id and player_id = v_player_id and deleted_at is null;
     if not found then
-      raise exception using errcode = '40001', message = 'Nasazení hráče se změnilo. Obnovte zápis.';
+      raise exception using errcode = 'PT409', message = 'Nasazení hráče se změnilo. Obnovte zápis.';
     end if;
     if not p_can_manage_both_sides and v_side is distinct from p_viewer_side then
       raise exception using errcode = '42501', message = 'Můžete upravit jen statistiky vlastní strany.';
@@ -93,7 +93,7 @@ begin
       raise exception using errcode = '22023', message = 'Chybí původní verze nebo hodnota legů.';
     end if;
     if v_game.updated_at is distinct from (p_cell->>'expected_updated_at')::timestamptz then
-      raise exception using errcode = '40001', message = 'Legy mezitím upravil někdo jiný. Zkontrolujte aktuální zápis.';
+      raise exception using errcode = 'PT409', message = 'Legy mezitím upravil někdo jiný. Zkontrolujte aktuální zápis.';
     end if;
     v_home := case when p_cell ? 'home_legs' then (p_cell->>'home_legs')::integer else v_game.home_legs end;
     v_away := case when p_cell ? 'away_legs' then (p_cell->>'away_legs')::integer else v_game.away_legs end;
@@ -130,7 +130,7 @@ begin
       from public.match_game_achievements where match_game_id = v_game.id
         and player_id = v_player_id and achievement_type = v_type and deleted_at is null;
     if v_old is distinct from (p_cell->>'expected_count')::integer then
-      raise exception using errcode = '40001', message = 'Statistiku mezitím upravil někdo jiný. Zkontrolujte aktuální hodnotu.';
+      raise exception using errcode = 'PT409', message = 'Statistiku mezitím upravil někdo jiný. Zkontrolujte aktuální hodnotu.';
     end if;
     if v_new <> v_old then
       if v_type = 'checkout_100_plus' then

@@ -25,7 +25,12 @@ before(async () => {
     create table match_sheet_audit_logs (id uuid default gen_random_uuid(), match_id uuid, game_id uuid, entity_type text, entity_id uuid, field_name text, operation text, old_value jsonb, new_value jsonb, actor_user_id uuid, actor_player_id uuid, actor_role text, actor_team_season_id uuid, source text, request_id uuid);
   `);
   await db.exec(readFileSync(new URL("../supabase/migrations/20261013090000_atomic_match_summary_rpc.sql", import.meta.url), "utf8"));
-  await db.exec(readFileSync(new URL("../supabase/migrations/20261016210000_confirmed_numeric_match_cells.sql", import.meta.url), "utf8"));
+  await db.exec(readFileSync(new URL("../supabase/migrations/20261016210000_confirmed_numeric_match_cells.sql", import.meta.url), "utf8").replaceAll("errcode = 'PT409'", "errcode = '40001'"));
+  await db.exec(readFileSync(new URL("../supabase/migrations/20261016220000_non_retryable_match_sheet_conflicts.sql", import.meta.url), "utf8"));
+  await db.exec(readFileSync(new URL("../supabase/migrations/20261016220000_non_retryable_match_sheet_conflicts.sql", import.meta.url), "utf8"));
+  const { rows } = await db.query("select pg_get_functiondef(oid) as definition from pg_proc where proname = 'match_sheet_commit_numeric_cell'");
+  assert.ok(rows[0].definition.includes("PT409"));
+  assert.ok(!rows[0].definition.includes("40001"));
 });
 beforeEach(async () => {
   await db.exec("truncate matches, match_games, match_game_players, match_game_achievements, match_results, match_confirmations, match_sheet_audit_logs;");
@@ -70,12 +75,12 @@ test("3:3 is rejected without implicitly resetting the other leg field", async (
 test("a second request using an older leg revision conflicts", async () => {
   const revision = (await currentGame()).revision;
   await commit({ type: "legs", order_number: 1, away_legs: 2, expected_updated_at: revision });
-  await assert.rejects(commit({ type: "legs", order_number: 1, home_legs: 0, expected_updated_at: revision }), { code: "40001" });
+  await assert.rejects(commit({ type: "legs", order_number: 1, home_legs: 0, expected_updated_at: revision }), { code: "PT409" });
   assert.equal((await currentGame()).home_legs, 3);
 });
 test("stale achievement edits conflict and audit records the actual old value", async () => {
   await commit(achievement(5));
-  await assert.rejects(commit(achievement(0)), { code: "40001" });
+  await assert.rejects(commit(achievement(0)), { code: "PT409" });
   assert.equal(await count(), 5);
   const log = (await db.query("select * from match_sheet_audit_logs where entity_type='match_game_achievement'")).rows[0];
   assert.equal(log.old_value.achievement_count, 4); assert.equal(log.new_value.achievement_count, 5);

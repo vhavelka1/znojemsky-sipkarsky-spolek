@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PublicHeader } from "@/components/public/PublicShell";
-import { supabase } from "@/lib/supabase";
+import { usePublicUser } from "@/lib/usePublicUser";
 
 type MatchTeam = {
   name: string;
@@ -53,10 +53,6 @@ type HomepagePayload = {
   upcomingMatches: MatchPreview[];
   standings: StandingRow[];
   error?: string;
-};
-
-type HomepageUser = {
-  canManageOwnTeam: boolean;
 };
 
 const quickLinks = [
@@ -171,7 +167,7 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 export default function Home() {
   const [payload, setPayload] = useState<HomepagePayload>(emptyPayload);
-  const [user, setUser] = useState<HomepageUser | null>(null);
+  const { user } = usePublicUser();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -201,41 +197,6 @@ export default function Home() {
 
     return () => {
       isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadUser() {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) {
-        if (isMounted) setUser(null);
-        return;
-      }
-
-      const response = await fetch("/api/auth/me", {
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const body = (await response.json().catch(() => ({}))) as { user?: HomepageUser | null };
-      if (isMounted) setUser(body.user ?? null);
-    }
-
-    loadUser().catch(() => {
-      if (isMounted) setUser(null);
-    });
-
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      loadUser().catch(() => setUser(null));
-    });
-
-    return () => {
-      isMounted = false;
-      data.subscription.unsubscribe();
     };
   }, []);
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { AuthTimeoutError, withAuthTimeout } from "@/lib/authTimeout";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,21 +32,36 @@ export default function LoginPage() {
     }
 
     try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error: signInError } = await withAuthTimeout(
+        supabase.auth.signInWithPassword({ email: email.trim(), password }),
+        12000,
+        "Přihlašovací služba neodpovídá. Zkuste to za chvíli znovu.",
+      );
       if (signInError || !data.session) {
-        setError("Přihlášení se nepodařilo. Zkontrolujte email a heslo.");
-        setIsSubmitting(false);
+        setError(signInError && (signInError.status === undefined || signInError.status === 0 || signInError.status >= 500 || signInError.status === 429)
+          ? "Přihlašovací služba je dočasně nedostupná nebo přetížená. Zkuste to za chvíli znovu."
+          : "Přihlášení se nepodařilo. Zkontrolujte email a heslo.");
         return;
       }
 
       const response = await fetch("/api/auth/me", {
+        signal: AbortSignal.timeout(10000),
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${data.session.access_token}`,
         },
       });
       const body = (await response.json().catch(() => ({}))) as {
-        user?: { canAccessAdmin: boolean; role: string } | null;
+        user?: { canAccessAdmin: boolean; role: string; isActive: boolean } | null;
       };
+      if (!response.ok || !body.user) {
+        setError("Účet se nepodařilo načíst. Služba může být dočasně nedostupná. Zkuste to za chvíli znovu.");
+        return;
+      }
+      if (!body.user.isActive) {
+        setError("Uživatelský účet je deaktivovaný. Kontaktujte správce.");
+        return;
+      }
 
       const redirect = new URLSearchParams(window.location.search).get("redirect");
       if (redirect?.startsWith("/admin") && body.user?.canAccessAdmin) {
@@ -54,8 +70,12 @@ export default function LoginPage() {
       }
 
       router.replace(body.user?.canAccessAdmin ? "/admin" : "/muj-ucet");
-    } catch {
-      setError("Přihlášení se nepodařilo. Zkontrolujte připojení k internetu a zkuste to znovu.");
+    } catch (cause) {
+      setError(cause instanceof AuthTimeoutError ? cause.message
+        : cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError")
+          ? "Načítání účtu trvá příliš dlouho. Zkuste to za chvíli znovu."
+          : "Přihlášení se nepodařilo. Zkontrolujte připojení k internetu a zkuste to znovu.");
+    } finally {
       setIsSubmitting(false);
     }
   }
@@ -70,7 +90,7 @@ export default function LoginPage() {
           <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EF233C]">Znojemský šipkařský spolek</p>
           <h1 className="mt-2 text-4xl font-black text-[#061A3A]">Přihlášení</h1>
           <p className="mt-3 text-sm font-bold leading-6 text-slate-600">Přihlaste se pro administraci, účet hráče a komentování.</p>
-          {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div> : null}
+          {error ? <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div> : null}
           <div className="mt-6 grid gap-4">
             <label className="grid gap-2 text-sm font-black text-[#061A3A]">
               Email

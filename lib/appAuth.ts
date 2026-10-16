@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { withAuthTimeout } from "@/lib/authTimeout";
 
 export type AppRole = "guest" | "player" | "moderator" | "admin";
 
@@ -54,18 +55,23 @@ export async function getAppRequester(request: Request): Promise<AppRequester | 
     },
   });
 
-  const { data: userData, error: userError } = await authClient.auth.getUser();
+  const { data: userData, error: userError } = await withAuthTimeout(authClient.auth.getUser(), 8000, "Authentication service timeout");
+  if (userError && (userError.status === undefined || userError.status === 0 || userError.status >= 500 || userError.status === 429)) {
+    throw new Error("Authentication service unavailable");
+  }
   if (userError || !userData.user) {
     return null;
   }
 
   const adminClient = createSupabaseAdminClient();
-  const { data: profile } = await adminClient
+  const { data: profile, error: profileError } = await adminClient
     .from("user_profiles")
     .select("id, player_id, display_name, app_role, is_active")
     .eq("user_id", userData.user.id)
     .is("deleted_at", null)
+    .abortSignal(AbortSignal.timeout(8000))
     .maybeSingle();
+  if (profileError) throw new Error("Account database unavailable");
 
   if (profile) {
     return {
@@ -78,12 +84,14 @@ export async function getAppRequester(request: Request): Promise<AppRequester | 
     };
   }
 
-  const { data: player } = await adminClient
+  const { data: player, error: playerError } = await adminClient
     .from("players")
     .select("id, display_name, role")
     .eq("user_id", userData.user.id)
     .is("deleted_at", null)
+    .abortSignal(AbortSignal.timeout(8000))
     .maybeSingle();
+  if (playerError) throw new Error("Account database unavailable");
 
   if (!player) {
     return null;

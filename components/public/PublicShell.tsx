@@ -2,15 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-
-type PublicUser = {
-  displayName: string;
-  role: string;
-  isActive: boolean;
-  canAccessAdmin: boolean;
-};
+import { usePublicUser } from "@/lib/usePublicUser";
 
 const leagueNavigationItems = [
   { href: "/tabulky", label: "Tabulky" },
@@ -28,57 +22,13 @@ const baseNavigationItems = [
   { href: "/scoreboard", label: "Počítadlo" },
 ];
 
-async function loadPublicUser() {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) return null;
-
-  const response = await fetch("/api/auth/me", {
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  const body = (await response.json().catch(() => ({}))) as { user?: PublicUser | null };
-  return body.user ?? null;
-}
-
 export function PublicHeader({ activeHref = "/" }: { activeHref?: string }) {
-  const [user, setUser] = useState<PublicUser | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const { user, isAuthLoading } = usePublicUser();
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
     window.location.href = "/";
   };
-
-  useEffect(() => {
-    let isMounted = true;
-
-    loadPublicUser()
-      .then((loadedUser) => {
-        if (!isMounted) return;
-        setUser(loadedUser);
-        setIsAuthLoading(false);
-      })
-      .catch(() => {
-        if (!isMounted) return;
-        setUser(null);
-        setIsAuthLoading(false);
-      });
-
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      loadPublicUser()
-        .then((loadedUser) => setUser(loadedUser))
-        .catch(() => setUser(null));
-    });
-
-    return () => {
-      isMounted = false;
-      data.subscription.unsubscribe();
-    };
-  }, []);
 
   const navigationItems = useMemo(
     () => (user ? [...baseNavigationItems, { href: "/admin", label: "Administrace" }] : baseNavigationItems),

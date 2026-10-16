@@ -1360,7 +1360,7 @@ async function handleAutosaveCell(
       p_request_id: submittedRequestId,
     });
     if (error) {
-      const status = error.code === "40001" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 500;
+      const status = (error.code === "PT409" || error.code === "40001") ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 500;
       return NextResponse.json({ error: error.message }, { status });
     }
     return NextResponse.json({ game: data, request_id: submittedRequestId });
