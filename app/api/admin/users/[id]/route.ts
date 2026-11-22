@@ -56,6 +56,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     display_name?: unknown;
     app_role?: unknown;
     is_active?: unknown;
+    receive_approval_emails?: unknown;
   };
   const supabase = createSupabaseAdminClient();
   const { data: currentProfile, error: currentError } = await supabase
@@ -95,6 +96,15 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (error) {
     return NextResponse.json({ error: schemaError(error) }, { status: 500 });
+  }
+
+  if (typeof body.receive_approval_emails === "boolean") {
+    const { data: authData, error: authError } = await supabase.auth.admin.getUserById(profile.user_id);
+    if (authError || !authData.user) return NextResponse.json({ error: "Nastavení e-mailů se nepodařilo načíst." }, { status: 500 });
+    const { error: updateError } = await supabase.auth.admin.updateUserById(profile.user_id, {
+      app_metadata: { ...authData.user.app_metadata, receive_approval_emails: body.receive_approval_emails },
+    });
+    if (updateError) return NextResponse.json({ error: "Nastavení e-mailů se nepodařilo uložit." }, { status: 500 });
   }
 
   if (profile.player_id) {

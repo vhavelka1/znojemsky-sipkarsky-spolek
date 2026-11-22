@@ -73,3 +73,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+### Oznámení o žádostech o soupisku
+
+Nastavte serverové proměnné RESEND_API_KEY, APPROVAL_EMAIL_FROM (ověřený odesílatel u Resend) a APP_URL (veřejná HTTPS adresa webu). Oznámení chodí aktivním administrátorům a moderátorům se zapnutým příjmem. Odkaz vede na žádost, kterou lze schválit po přihlášení. Chyby odeslání se zaznamenávají do serverového logu bez opakování; uložená změna se nevrací zpět. Oznámení se odesílají při vytvoření přes kapitánské rozhraní a při schválení, nikoliv zpětně.

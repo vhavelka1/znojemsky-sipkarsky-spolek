@@ -14,6 +14,7 @@ type ManagedUser = {
   displayName: string;
   appRole: AppRole;
   isActive: boolean;
+  receiveApprovalEmails: boolean;
   createdAt: string;
   teamNames: string[];
 };
@@ -178,6 +179,7 @@ export default function AdminUsersPage() {
         display_name: draft.displayName,
         app_role: draft.appRole,
         is_active: draft.isActive,
+        receive_approval_emails: draft.receiveApprovalEmails,
       }),
       headers: { "Content-Type": "application/json" },
       method: "PATCH",
@@ -376,6 +378,7 @@ export default function AdminUsersPage() {
                 <th className="px-4 py-3">Hráč</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Aktivní</th>
+                <th className="px-4 py-3">Příjem e-mailů na schválení</th>
                 <th className="px-4 py-3">Akce</th>
               </tr>
             </thead>
@@ -420,6 +423,9 @@ export default function AdminUsersPage() {
                         <input checked={draft.isActive} onChange={(event) => updateDraft(user.id, { isActive: event.target.checked })} type="checkbox" />
                         {draft.isActive ? "Aktivní" : "Deaktivovaný"}
                       </label>
+                    </td>
+                    <td className="px-4 py-4">
+                      <input aria-label={`Příjem e-mailů na schválení: ${draft.displayName}`} type="checkbox" checked={Boolean(draft.receiveApprovalEmails)} onChange={(event) => updateDraft(user.id, { receiveApprovalEmails: event.target.checked })} />
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">

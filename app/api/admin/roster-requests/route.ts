@@ -1,3 +1,4 @@
+import { sendRosterApprovalEmail } from "@/lib/rosterApprovalEmails";
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile, hasAtLeastRole, requireAdmin } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
@@ -414,6 +415,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  await sendRosterApprovalEmail(id, "approved", guard.profile.displayName);
   return NextResponse.json({ request: data });
 }
 

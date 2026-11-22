@@ -85,6 +85,10 @@ export default function AdminRosterRequestsPage() {
     return () => window.clearTimeout(timeoutId);
   }, []);
 
+  useEffect(() => {
+    if (!isLoading && window.location.hash.startsWith("#request-")) document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+  }, [isLoading, requests]);
+
   const reviewRequest = async (id: string, action: "approve" | "reject") => {
     setProcessingId(id);
     setError(null);
@@ -176,7 +180,7 @@ export default function AdminRosterRequestsPage() {
         ) : (
           <div className="space-y-4">
             {requests.map((request) => (
-              <article className="rounded-2xl border border-[var(--admin-border)] bg-white p-4" key={request.id}>
+              <article id={`request-${request.id}`} className="rounded-2xl border border-[var(--admin-border)] bg-white p-4" key={request.id}>
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">

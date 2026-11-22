@@ -148,6 +148,7 @@ export async function GET() {
       displayName: profile.display_name,
       appRole: profile.app_role,
       isActive: profile.is_active,
+      receiveApprovalEmails: Boolean(authUsersById.get(profile.user_id)?.app_metadata?.receive_approval_emails),
       createdAt: profile.created_at,
       teamNames: playerTeamNames(profile.player_id),
     })),

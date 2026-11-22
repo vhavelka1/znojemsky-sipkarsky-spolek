@@ -1,3 +1,4 @@
+import { sendRosterApprovalEmail } from "@/lib/rosterApprovalEmails";
 import { NextResponse } from "next/server";
 import { getCurrentUserProfile } from "@/lib/appAuth";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
@@ -278,5 +279,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  await sendRosterApprovalEmail(data.id, "created");
   return NextResponse.json({ request: data }, { status: 201 });
 }
