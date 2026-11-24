@@ -427,35 +427,38 @@ export async function GET(request: NextRequest) {
     let gamePlayerRows: MatchGamePlayer[] = [];
     let achievementRows: MatchAchievement[] = [];
     if (selectedMatchIds.length > 0) {
-      const games = await supabase
-        .from("match_games")
-        .select("id, match_id, game_type, home_legs, away_legs, winner_side")
-        .in("match_id", selectedMatchIds)
-        .is("deleted_at", null)
-        .returns<MatchGame[]>();
-
-      gameRows = games.error ? [] : games.data ?? [];
-
-      const gameIds = gameRows.map((game) => game.id);
-      if (gameIds.length > 0) {
-        const [gamePlayers, achievements] = await Promise.all([
-          supabase
-            .from("match_game_players")
-            .select("match_game_id, side, player_id")
-            .in("match_game_id", gameIds)
-            .is("deleted_at", null)
-            .returns<MatchGamePlayer[]>(),
-          supabase
-            .from("match_game_achievements")
-            .select("player_id, achievement_type, achievement_count")
-            .in("match_id", selectedMatchIds)
-            .is("deleted_at", null)
-            .returns<MatchAchievement[]>(),
-        ]);
-
-        gamePlayerRows = gamePlayers.error ? [] : gamePlayers.data ?? [];
-        achievementRows = achievements.error ? [] : achievements.data ?? [];
+      // PostgREST limits both URL length and rows per response. Small batches keep
+      // large league-wide selections from silently losing player/game records.
+      const batches = <T,>(items: T[], size: number) =>
+        Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+      const matchIdBatches = batches(selectedMatchIds, 5);
+      const [gameResults, achievementResults] = await Promise.all([
+        Promise.all(matchIdBatches.map((ids) => supabase
+          .from("match_games")
+          .select("id, match_id, game_type, home_legs, away_legs, winner_side")
+          .in("match_id", ids)
+          .is("deleted_at", null)
+          .returns<MatchGame[]>())),
+        Promise.all(matchIdBatches.map((ids) => supabase
+          .from("match_game_achievements")
+          .select("player_id, achievement_type, achievement_count")
+          .in("match_id", ids)
+          .is("deleted_at", null)
+          .returns<MatchAchievement[]>())),
+      ]);
+      if (gameResults.some((result) => result.error) || achievementResults.some((result) => result.error)) {
+        throw new Error("Statistiky zápasů se nepodařilo načíst.");
       }
+      gameRows = gameResults.flatMap((result) => result.data ?? []);
+      achievementRows = achievementResults.flatMap((result) => result.data ?? []);
+      const playerResults = await Promise.all(batches(gameRows.map((game) => game.id), 100).map((ids) => supabase
+        .from("match_game_players")
+        .select("match_game_id, side, player_id")
+        .in("match_game_id", ids)
+        .is("deleted_at", null)
+        .returns<MatchGamePlayer[]>()));
+      if (playerResults.some((result) => result.error)) throw new Error("Účastníky her se nepodařilo načíst.");
+      gamePlayerRows = playerResults.flatMap((result) => result.data ?? []);
     }
 
     const gamePlayersByGameId = new Map<string, MatchGamePlayer[]>();
