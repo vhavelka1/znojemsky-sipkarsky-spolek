@@ -31,6 +31,7 @@ type AutosaveCell =
       home_legs?: unknown;
       away_legs?: unknown;
       expected_updated_at?: unknown;
+      expected_count?: unknown;
     }
   | {
       type?: "player";
@@ -52,6 +53,11 @@ type AutosaveCell =
       request_id?: unknown;
       expected_count?: unknown;
       achievement?: unknown;
+    }
+  | {
+      type?: "disagreement_confirm";
+      id?: unknown;
+      revision?: unknown;
     }
   | {
       type?: "lineup_reveal";
@@ -456,7 +462,7 @@ function canViewerSeeSideInBlock(
   side: MatchSide,
   blockNumber: number | null,
 ) {
-  if (lineupsVisibleForAll || viewer.canManageBothSides || viewer.side === side || !blockNumber) {
+  if (lineupsVisibleForAll || viewer.canManageBothSides || viewer.side !== null || !blockNumber) {
     return true;
   }
 
@@ -867,6 +873,11 @@ async function loadSheetData(
     return { data: null, error: error.message };
   }
 
+  const disagreements = await supabase.from("match_sheet_disagreements")
+    .select("id, field_key, value, revision, home_confirmed_by, away_confirmed_by")
+    .eq("match_id", matchId).is("resolved_at", null);
+  if (disagreements.error) return { data: null, error: `Neshody zápisu nejsou dostupné. Spusťte databázovou migraci 20261124130000_match_sheet_disagreements.sql. (${disagreements.error.message})` };
+
   const activeGameIds = (games.data ?? []).map((game) => game.id);
   const gamePlayers = activeGameIds.length > 0
     ? await supabase
@@ -973,11 +984,8 @@ async function loadSheetData(
   const statistics = buildStatistics(games.data ?? [], visibleGamePlayers);
   const visiblePayloadPlayerIds = new Set<string>();
   if (!viewer.canManageBothSides) {
-    const viewerTeamSeasonId =
-      viewer.side === "home" ? match.home_team_id : viewer.side === "away" ? match.away_team_id : null;
-
     (memberships.data ?? []).forEach((membership) => {
-      if (viewerTeamSeasonId && membership.team_season_id === viewerTeamSeasonId) {
+      if (viewer.side && (membership.team_season_id === match.home_team_id || membership.team_season_id === match.away_team_id)) {
         visiblePayloadPlayerIds.add(membership.player_id);
       }
     });
@@ -1006,6 +1014,7 @@ async function loadSheetData(
       slots: slots.data ?? [],
       confirmations: confirmations.data ?? [],
       lineupReveals,
+      disagreements: disagreements.data ?? [],
       lineupRevealSchemaReady: revealSchemaReady,
       viewer,
       matchScore,
@@ -1031,6 +1040,23 @@ async function handleAutosaveCell(
 
   const supabase = access.supabase;
   const canManageConfirmedMatch = hasAtLeastRole(access.requester?.role, "moderator");
+
+  if (cell.type === "disagreement_confirm") {
+    const id = parseString(cell.id);
+    const revision = parseString(cell.revision);
+    if (!id || !revision || !access.requester?.userId || !access.requester.playerId) {
+      return NextResponse.json({ error: "Potvrzení vyžaduje přihlášeného zástupce týmu." }, { status: 400 });
+    }
+    const { data: membership, error: membershipError } = await supabase.from("team_memberships")
+      .select("team_season_id").eq("player_id", access.requester.playerId)
+      .in("team_season_id", [access.match?.home_team_id ?? "", access.match?.away_team_id ?? ""])
+      .in("member_role", ["captain", "assistant_captain"]).is("left_on", null).is("deleted_at", null);
+    if (membershipError || !membership?.length || !access.match) return NextResponse.json({ error: "Potvrdit neshodu může pouze zástupce týmu." }, { status: 403 });
+    const side = membership[0].team_season_id === access.match.home_team_id ? "home" : "away";
+    const { error } = await supabase.rpc("match_sheet_confirm_disagreement", { p_match_id: matchId, p_id: id, p_revision: revision, p_side: side, p_user: access.requester.userId });
+    if (error) return NextResponse.json({ error: error.message }, { status: error.code === "PT409" ? 409 : 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   if (cell.type === "lineup_reveal") {
     const side = parseSide(cell.side);
@@ -1071,9 +1097,6 @@ async function handleAutosaveCell(
     const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
     if (!viewer.canManageBothSides && !viewer.side) {
       return NextResponse.json({ error: "Nemate opravneni zobrazit nasazeni tohoto zapasu." }, { status: 403 });
-    }
-    if (!viewer.canManageBothSides && viewer.side !== side) {
-      return NextResponse.json({ error: "Nasazeni muze potvrdit jen vlastni strana." }, { status: 403 });
     }
 
     const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
@@ -1187,8 +1210,8 @@ async function handleAutosaveCell(
       ? await forcedTeamSideForRequest(supabase, access.requester, matchResult.data, requestedTeamSeasonId)
       : null;
     const viewer = viewerContextForMatch(access.requester, matchResult.data, membershipsResult.data ?? [], { forcedTeamSide, preferTeamSide });
-    if (!viewer.canManageBothSides && viewer.side !== side) {
-      return NextResponse.json({ error: "Muzete upravit jen vlastni stranu zapisu." }, { status: 403 });
+    if (!viewer.canManageBothSides && !viewer.side) {
+      return NextResponse.json({ error: "Nemáte oprávnění upravit nasazení." }, { status: 403 });
     }
     const { confirmedSides, error: confirmationsLookupError } = await confirmedSidesForMatch(supabase, matchId);
     if (confirmationsLookupError) {
@@ -1319,7 +1342,7 @@ async function handleAutosaveCell(
       if (!orderNumber || orderNumber > 19 || !expectedUpdatedAt || !Number.isFinite(Date.parse(expectedUpdatedAt)) || fields.length === 0 || fields.some((field) => parseInteger(cell[field]) === null || Number(cell[field]) > 3)) {
         return NextResponse.json({ error: "Změna legů není platná. Obnovte zápis a zadejte celé číslo." }, { status: 400 });
       }
-      normalizedCell = { type: "legs", order_number: orderNumber, expected_updated_at: expectedUpdatedAt };
+      normalizedCell = { type: "legs", order_number: orderNumber, expected_updated_at: expectedUpdatedAt, expected_count: parseInteger(cell.expected_count) };
       for (const field of fields) normalizedCell[field] = parseInteger(cell[field]);
     } else if (cell.type === "achievement") {
       const achievement = typeof cell.achievement === "object" && cell.achievement !== null ? cell.achievement as SubmittedAchievement : {};

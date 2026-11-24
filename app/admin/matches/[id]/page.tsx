@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, PageHeader } from "@/components/ui/admin";
 import { type NumberFieldBaseline } from "@/components/matches/AutosaveNumberField";
-import { MatchInfo, MatchSheet, MatchStatisticsSection } from "@/components/matches/MatchSheet";
+import { MatchInfo, MatchSheet, MatchStatisticsSection, type SheetDisagreement } from "@/components/matches/MatchSheet";
 import { calculateUsefulnessScore } from "@/lib/playerUsefulness";
 import { supabase } from "@/lib/supabase";
 
@@ -115,6 +115,7 @@ type SheetPayload = {
   slots?: MatchPlayerSlot[];
   confirmations?: MatchConfirmation[];
   lineupReveals?: MatchBlockLineupReveal[];
+  disagreements?: SheetDisagreement[];
   lineupRevealSchemaReady?: boolean;
   viewer?: {
     side: MatchSide | null;
@@ -196,6 +197,7 @@ const emptyPayload = {
   slots: [] as MatchPlayerSlot[],
   confirmations: [] as MatchConfirmation[],
   lineupReveals: [] as MatchBlockLineupReveal[],
+  disagreements: [] as SheetDisagreement[],
   lineupRevealSchemaReady: true,
   viewer: { side: null as MatchSide | null, canManageBothSides: true },
 };
@@ -309,6 +311,7 @@ function buildSheetPayloadState(body: SheetPayload): SheetPayloadState {
     slots: body.slots ?? [],
     confirmations: body.confirmations ?? [],
     lineupReveals: body.lineupReveals ?? [],
+    disagreements: body.disagreements ?? [],
     lineupRevealSchemaReady: body.lineupRevealSchemaReady ?? false,
     viewer: body.viewer ?? { side: null, canManageBothSides: true },
   };
@@ -1230,7 +1233,7 @@ export default function AdminMatchSheetPage({
     const showLoading = options.showLoading ?? true;
     const refreshRescheduleRequests = options.refreshRescheduleRequests ?? true;
     if (showLoading) setIsLoading(true);
-    setError(null);
+    if (showLoading) setError(null);
     try {
       const response = await adminFetch(sheetApiUrl);
       const body = (await response.json().catch(() => ({}))) as SheetPayload;
@@ -1349,7 +1352,7 @@ export default function AdminMatchSheetPage({
   }
 
   async function handleConfirm(side: MatchSide) {
-    if (draftKeys.size > 0 || pendingFields.current.size > 0) return;
+    if (draftKeys.size > 0 || pendingFields.current.size > 0 || payload.disagreements.length > 0) return;
     setConfirmingSide(side);
     setError(null);
     try {
@@ -1385,9 +1388,18 @@ export default function AdminMatchSheetPage({
     setUnlockingSide(null);
   }
 
+  async function handleConfirmDisagreement(entry: SheetDisagreement) {
+    try {
+      const response = await adminFetch(sheetApiUrl, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cell: { type: "disagreement_confirm", id: entry.id, revision: entry.revision } }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Neshodu se nepodařilo potvrdit.");
+      await loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Neshodu se nepodařilo potvrdit."); }
+  }
+
   async function handleRevealLineup(side: MatchSide, blockNumber: number) {
-    if (payload.viewer.side && !payload.viewer.canManageBothSides && payload.viewer.side !== side) {
-      setError("Nasazení může potvrdit jen vlastní strana.");
+    if (payload.viewer.side && !payload.viewer.canManageBothSides && payload.viewer.side !== side &&
+      !window.confirm("Potvrzujete nasazení hráčů soupeře. Tato změna bude zaznamenána. Chcete pokračovat?")) {
       return;
     }
 
@@ -1490,21 +1502,6 @@ export default function AdminMatchSheetPage({
       .channel(`match-sheet:${matchId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
-        scheduleRealtimeSheetReload,
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "match_games", filter: `match_id=eq.${matchId}` },
-        scheduleRealtimeSheetReload,
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "match_game_achievements", filter: `match_id=eq.${matchId}` },
-        scheduleRealtimeSheetReload,
-      )
-      .on(
-        "postgres_changes",
         { event: "*", schema: "public", table: "match_player_slots", filter: `match_id=eq.${matchId}` },
         scheduleRealtimeSheetReload,
       )
@@ -1529,6 +1526,17 @@ export default function AdminMatchSheetPage({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId]);
+
+  useEffect(() => {
+    if (teamView && !isAuthReady) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId, sheetApiUrl, teamView, isAuthReady, authRefreshKey]);
 
   function updateGame(orderNumber: number, changes: Partial<SheetGame>) {
     setPayload((current) => ({
@@ -1620,12 +1628,34 @@ export default function AdminMatchSheetPage({
         if (response.status === 409) failure.name = "MatchSheetConflict";
         throw failure;
       }
-      // The server is the source of saved values; drafts stay inside individual inputs.
+      // Invalidate an older poll and update only the saved cell. Other fields and
+      // active input drafts remain untouched until the next background sync.
+      sheetLoadSequence.current += 1;
+      if (requestIsCurrent(fieldKey, requestId)) {
+        setPayload((current) => {
+          if (cell.type === "legs" && body.game) {
+            const saved = body.game;
+            return { ...current, games: current.games.map((game) => {
+              if (game.order_number !== cell.order_number) return game;
+              const next = { ...game, ...(Object.hasOwn(cell, "home_legs") ? { home_legs: saved.home_legs } : { away_legs: saved.away_legs }), updated_at: saved.updated_at };
+              return { ...next, winner_side: getWinner(next) };
+            }) };
+          }
+          if (cell.type === "achievement") {
+            const entry = cell.achievement as { order_number: number; player_id: string; achievement_type: AchievementType; achievement_count: number };
+            const achievements = current.achievements.filter((item) => !(item.order_number === entry.order_number && item.player_id === entry.player_id && item.achievement_type === entry.achievement_type));
+            if (entry.achievement_count > 0) achievements.push(entry);
+            return { ...current, achievements };
+          }
+          return current;
+        });
+      }
       finishFieldSave(fieldKey, requestId);
-      await loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
     } catch (cause) {
       finishFieldSave(fieldKey, requestId);
-      await loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
+      if (cause instanceof Error && cause.name === "MatchSheetConflict") {
+        await loadSheet({ merge: true, showLoading: false, refreshRescheduleRequests: false });
+      }
       throw cause;
     }
   }
@@ -1633,7 +1663,7 @@ export default function AdminMatchSheetPage({
   async function commitLegs(game: SheetGame, side: "home_legs" | "away_legs", value: number, baseline: NumberFieldBaseline) {
     await commitNumericCell({
       type: "legs", order_number: game.order_number, [side]: value,
-      expected_updated_at: baseline.revision,
+      expected_count: baseline.value, expected_updated_at: baseline.revision,
     }, gameFieldKey(game.order_number, side), baseline);
   }
 
@@ -1872,10 +1902,13 @@ export default function AdminMatchSheetPage({
       </Card>
       {error ? <Card><p className="text-sm text-red-700">{error}</p></Card> : null}
       <p className="text-sm text-[var(--admin-muted)]">Legy a statistiky se ukládají automaticky při opuštění pole. Vymazání pole nemění uloženou hodnotu; pro nulu napište 0.</p>
-      {draftKeys.size > 0 ? <p role="status" className="text-sm font-semibold text-amber-800">Probíhá úprava nebo ukládání polí ({draftKeys.size}). Před potvrzením zápasu dokončete úpravy a počkejte na uložení.</p> : null}
+      {!payload.viewer.canManageBothSides && payload.viewer.side ? <p className="text-sm font-semibold text-slate-600">Šedá pole patří soupeři. Výběr i potvrzení soupeřova nasazení se zaznamenávají.</p> : null}
+      {payload.disagreements.length > 0 ? <p className="text-sm font-semibold text-red-700">Červeně označené neshody musí potvrdit oba týmy před potvrzením zápisu.</p> : null}
       <div className="flex flex-col gap-6">
         <MatchSheet
           achievements={payload.achievements}
+          disagreements={payload.disagreements}
+          onConfirmDisagreement={handleConfirmDisagreement}
           awayPlayers={awayPlayers}
           awayTeamLogoUrl={awayTeamLogoUrl}
           blockReveals={payload.lineupReveals}
@@ -1920,7 +1953,7 @@ export default function AdminMatchSheetPage({
                   {!confirmation ? (
                     <div className="mt-4">
                       <Button
-                        disabled={payload.match?.status !== "awaiting_confirmation" || confirmingSide !== null || draftKeys.size > 0 || isAutosaving}
+                        disabled={payload.match?.status !== "awaiting_confirmation" || confirmingSide !== null || draftKeys.size > 0 || isAutosaving || payload.disagreements.length > 0}
                         onClick={() => void handleConfirm(side)}
                         type="button"
                       >

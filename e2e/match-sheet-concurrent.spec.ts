@@ -116,8 +116,8 @@ test.describe("captain match sheet concurrent autosave", () => {
       await logPhase(testInfo, "1-baseline", sessions, "Opened all three captain sessions and captured the initial match-sheet state.");
       await recordAndChangeLineups(sessions, recordedLineups, testInfo);
 
-      await logPhase(testInfo, "2-hidden-opponent-lineups", sessions, "Checking that opponent lineups are still hidden before lineup reveal.");
-      await assertOpponentLineupsHidden(sessions, recordedLineups);
+      await logPhase(testInfo, "2-opponent-lineups", sessions, "Checking that opponent lineups are visible and grey before lineup confirmation.");
+      await assertOpponentLineupsEditable(sessions, recordedLineups);
 
       await reloadAllSessions(sessions, "after lineup edits before reveal");
       await assertLineupsPreserved(sessions, recordedLineups, "after lineup edit reload");
@@ -611,40 +611,14 @@ async function assertLineupsPreserved(
   }
 }
 
-async function assertOpponentLineupsHidden(sessions: ActorSession[], records: RecordedPlayerLineup[]) {
+async function assertOpponentLineupsEditable(sessions: ActorSession[], records: RecordedPlayerLineup[]) {
   const kohouti = sessionByKey(sessions, "kohouti-1");
   const kobry = sessionByKey(sessions, "kobry");
-
-  for (const record of records.filter((item) => item.side === "away")) {
-    await assertOpponentLineupHidden(kohouti.page, record, "kohouti-1");
-  }
-  for (const record of records.filter((item) => item.side === "home")) {
-    await assertOpponentLineupHidden(kobry.page, record, "kobry");
-  }
-}
-
-async function assertOpponentLineupHidden(page: Page, target: RecordedPlayerLineup, tester: string) {
-  const cell = playerCell(page, target);
-  await assertSingle(cell, `${tester} opponent ${lineupTargetName(target)} cell`);
-  const editableSelects = await cell.locator("select").count();
-  if (editableSelects > 0) {
-    throw new SafeAbortError(
-      `${tester} can already edit opponent lineup ${lineupTargetName(target)} before reveal. The lifecycle scenario requires unpublished opponent lineups.`,
-      {
-        step: "opponent lineup editable select check",
-        tester,
-      },
-    );
-  }
-
-  if (target.testPlayerLabel && await cell.getByText(target.testPlayerLabel, { exact: true }).count() > 0) {
-    throw new SafeAbortError(
-      `${tester} can already see opponent player "${target.testPlayerLabel}" in ${lineupTargetName(target)} before reveal. The lifecycle scenario requires unpublished opponent lineups.`,
-      {
-        step: "opponent lineup player visibility check",
-        tester,
-      },
-    );
+  for (const record of records) {
+    const observer = record.side === "away" ? kohouti : kobry;
+    const select = playerCell(observer.page, record).locator("select");
+    await expect(select).toHaveClass(/bg-slate-200/);
+    await expect(select).toHaveValue(record.testValue, { timeout: 15_000 });
   }
 }
 
@@ -685,8 +659,8 @@ async function assertOpponentLineupsVisibleAfterReveal(sessions: ActorSession[],
 async function opponentLineupPlayerIsVisible(page: Page, target: RecordedPlayerLineup) {
   const cell = playerCell(page, target);
   if ((await cell.count()) !== 1) return false;
-  if ((await cell.locator("select").count()) > 0) return false;
-  return (await cell.getByText(target.testPlayerLabel, { exact: true }).count()) > 0;
+  const select = cell.locator("select");
+  return (await select.count()) === 1 && (await select.inputValue()) === target.testValue;
 }
 
 async function lineupRevealDebugState(sessions: ActorSession[], records: RecordedPlayerLineup[]) {

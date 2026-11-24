@@ -50,8 +50,12 @@ type Block = {
   highlighted?: boolean;
 };
 
+export type SheetDisagreement = { id: string; field_key: string; value: number; revision: string; home_confirmed_by: string | null; away_confirmed_by: string | null };
+
 type MatchSheetProps = {
   achievements: SheetAchievement[];
+  disagreements?: SheetDisagreement[];
+  onConfirmDisagreement?: (entry: SheetDisagreement) => void;
   awayPlayers: Player[];
   awayTeamLogoUrl?: string | null;
   blockReveals?: Array<{ side: MatchSide; block_number: number; revealed_at: string }>;
@@ -279,6 +283,8 @@ export function MatchInfo({ label, children }: { label: string; children: ReactN
 
 export function MatchSheet({
   achievements,
+  disagreements = [],
+  onConfirmDisagreement,
   awayPlayers,
   awayTeamLogoUrl = null,
   blockReveals = [],
@@ -316,11 +322,11 @@ export function MatchSheet({
   }
 
   function canSeeLineup(side: MatchSide, blockNumber: number) {
-    return lineupsVisibleForAll || canManageBothSides || viewerSide === side || isBlockMutuallyRevealed(blockNumber);
+    return lineupsVisibleForAll || canManageBothSides || viewerSide !== null || isBlockMutuallyRevealed(blockNumber);
   }
 
   function canEditLineup(side: MatchSide) {
-    return !readOnly && (canManageBothSides || (viewerSide === side && !lockedSideSet.has(side)));
+    return !readOnly && (canManageBothSides || (viewerSide !== null && !lockedSideSet.has(side)));
   }
 
   function canEditAchievements(side: MatchSide) {
@@ -329,6 +335,14 @@ export function MatchSheet({
 
   function canEditLegs() {
     return !readOnly && (canManageBothSides || (viewerSide !== null && !lockedSideSet.has(viewerSide)));
+  }
+
+  function disagreementFor(key: string) {
+    const entry = disagreements.find((item) => item.field_key === key);
+    if (!entry) return undefined;
+    return { value: entry.value, homeConfirmed: Boolean(entry.home_confirmed_by), awayConfirmed: Boolean(entry.away_confirmed_by),
+      canConfirm: Boolean(viewerSide && onConfirmDisagreement && !(viewerSide === "home" ? entry.home_confirmed_by : entry.away_confirmed_by)),
+      onConfirm: () => onConfirmDisagreement?.(entry) };
   }
 
   function achievementCount(orderNumber: number, playerId: string, type: AchievementType) {
@@ -352,6 +366,7 @@ export function MatchSheet({
       <AutosaveNumberField
         key={playerId || "empty"}
         label={`${achievementLabels[type]} ${side === "home" ? "domácí" : "hosté"} hra ${game.order_number}`}
+        disagreement={disagreementFor(`achievement:${game.order_number}:${playerId}:${type}`)}
         disabled={!playerId || !onAchievementCommit}
         value={value}
         maximum={type === "checkout_100_plus" ? 3 : 2147483647}
@@ -379,7 +394,7 @@ export function MatchSheet({
           <ReadOnlyValue>{selectedPlayer ? playerLabel(selectedPlayer) : ""}</ReadOnlyValue>
         ) : (
           <select
-            className={`${inputClass} min-w-0 px-2 py-1.5 text-xs`}
+            className={`${inputClass} min-w-0 px-2 py-1.5 text-xs ${!canManageBothSides && viewerSide !== side ? "!bg-slate-200 !text-slate-700" : ""}`}
             value={playerIds[0] ?? ""}
             onBlur={() => onPlayerBlur?.(game, side, 0)}
             onFocus={() => onPlayerFocus?.(game, side, 0)}
@@ -429,7 +444,7 @@ export function MatchSheet({
               <span className="text-center text-[11px] font-bold text-[var(--admin-muted)]">{index + 1}.</span>
               <select
                 aria-label={`${side === "home" ? "Domácí" : "Hosté"} hráč ${index + 1}`}
-                className={`${inputClass} min-w-0 px-1 py-1 text-[11px]`}
+                className={`${inputClass} min-w-0 px-1 py-1 text-[11px] ${!canManageBothSides && viewerSide !== side ? "!bg-slate-200 !text-slate-700" : ""}`}
                 value={playerIds[index] ?? ""}
                 onBlur={() => onPlayerBlur?.(game, side, index)}
                 onFocus={() => onPlayerFocus?.(game, side, index)}
@@ -458,6 +473,7 @@ export function MatchSheet({
             {index === 1 ? <span className="pt-1">:</span> : null}
             <AutosaveNumberField
               label={`Legy ${side === "home_legs" ? "domácí" : "hosté"} hra ${game.order_number}`}
+              disagreement={disagreementFor(`game:${game.order_number}:${side}`)}
               className={`${inputClass} h-8 w-11 px-1 py-0 text-center text-sm font-semibold`}
               value={game[side]}
               revision={game.updated_at}
@@ -512,7 +528,7 @@ export function MatchSheet({
   function renderRevealControl(side: MatchSide, blockNumber: number) {
     const revealed = isLineupRevealed(side, blockNumber);
     const mutuallyRevealed = isBlockMutuallyRevealed(blockNumber);
-    const canReveal = !readOnly && (canManageBothSides || (viewerSide === side && !lockedSideSet.has(side)));
+    const canReveal = !readOnly && (canManageBothSides || (viewerSide !== null && !lockedSideSet.has(side)));
     const isOwnSide = canManageBothSides || viewerSide === side;
     const buttonClass = isOwnSide
       ? "bg-[#EF233C] text-white hover:bg-[#C91D32]"

@@ -13,10 +13,11 @@ type Props = {
   className?: string;
   onCommit: (value: number, baseline: NumberFieldBaseline) => Promise<void>;
   onDraftChange?: (key: string, dirty: boolean) => void;
+  disagreement?: { value: number; homeConfirmed: boolean; awayConfirmed: boolean; canConfirm: boolean; onConfirm: () => void };
 };
 
 // Only direct input creates a draft. Valid changes save on blur; incoming data never saves.
-export function AutosaveNumberField({ label, value, revision = null, maximum = 2147483647, disabled, className, onCommit, onDraftChange }: Props) {
+export function AutosaveNumberField({ label, value, revision = null, maximum = 2147483647, disabled, className, onCommit, onDraftChange, disagreement }: Props) {
   const [draft, setDraft] = useState<{ text: string; baseline: NumberFieldBaseline } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +55,6 @@ export function AutosaveNumberField({ label, value, revision = null, maximum = 2
       setError(`Zadejte celé číslo od 0 do ${maximum}.`);
       return;
     }
-    // Retyping the original value must not overwrite a newer value from realtime.
-    if (Number(draft.text) === draft.baseline.value) { cancel(); return; }
     inFlight.current = true;
     setSaving(true);
     setError(null);
@@ -79,7 +78,7 @@ export function AutosaveNumberField({ label, value, revision = null, maximum = 2
         aria-label={label}
         aria-invalid={Boolean(error)}
         title={saving ? "Ukládám…" : draft ? "Rozpracováno — uloží se při opuštění pole" : saved ? "Uloženo" : undefined}
-        className={`${className ?? "h-8 w-8 rounded-md border border-[var(--admin-border)] bg-white px-0.5 text-center text-xs outline-none focus:border-[var(--brand-blue)]"} ${draft ? "ring-2 ring-amber-400" : ""}`}
+        className={`${className ?? "h-8 w-8 rounded-md border border-[var(--admin-border)] bg-white px-0.5 text-center text-xs outline-none focus:border-[var(--brand-blue)]"} ${disagreement ? "!border-red-600 !bg-red-100 ring-2 ring-red-500" : draft ? "ring-2 ring-amber-400" : ""}`}
         disabled={disabled || saving}
         inputMode="numeric"
         pattern="[0-9]*"
@@ -106,6 +105,12 @@ export function AutosaveNumberField({ label, value, revision = null, maximum = 2
           if (event.key === "Escape") { event.preventDefault(); skipNextBlur.current = true; cancel(); input.current?.blur(); }
         }}
       />
+      {disagreement ? (
+        <div className="flex items-center gap-1 text-[10px] font-bold text-red-700" title="Neshodu musí potvrdit oba týmy">
+          <span>D{disagreement.homeConfirmed ? "✓" : "·"} H{disagreement.awayConfirmed ? "✓" : "·"}</span>
+          {disagreement.canConfirm ? <button type="button" disabled={Boolean(draft) || saving || value !== disagreement.value} aria-label={`Potvrdit neshodu: ${label}`} onClick={disagreement.onConfirm} className="rounded border border-red-400 bg-white px-1 text-red-700">✓</button> : null}
+        </div>
+      ) : null}
       <span role="status" className="sr-only">{saving ? "Ukládám" : draft ? "Neuložená změna" : saved ? "Uloženo" : ""}</span>
       {saving ? <span aria-hidden="true" className="absolute -right-1 -top-1 h-2 w-2 animate-pulse rounded-full bg-blue-500" /> : null}
       {error ? (

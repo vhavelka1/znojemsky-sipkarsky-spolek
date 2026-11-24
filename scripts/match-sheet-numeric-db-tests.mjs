@@ -22,7 +22,7 @@ before(async () => {
     create table match_game_achievements (id uuid default gen_random_uuid(), match_id uuid, match_game_id uuid, player_id uuid, achievement_type match_achievement_type, achievement_count int check (achievement_count > 0), deleted_at timestamptz);
     create table match_results (id uuid default gen_random_uuid(), match_id uuid, home_points int, away_points int, deleted_at timestamptz);
     create table match_confirmations (id uuid default gen_random_uuid(), match_id uuid, side match_side, captain_player_id uuid, confirmed_at timestamptz default now(), deleted_at timestamptz);
-    create table match_sheet_audit_logs (id uuid default gen_random_uuid(), match_id uuid, game_id uuid, entity_type text, entity_id uuid, field_name text, operation text, old_value jsonb, new_value jsonb, actor_user_id uuid, actor_player_id uuid, actor_role text, actor_team_season_id uuid, source text, request_id uuid);
+    create table match_sheet_audit_logs (id uuid default gen_random_uuid(), match_id uuid, game_id uuid, entity_type text, entity_id uuid, field_name text, operation text, old_value jsonb, new_value jsonb, actor_user_id uuid, actor_player_id uuid, actor_role text, actor_team_season_id uuid, source text, request_id uuid, created_at timestamptz default clock_timestamp());
   `);
   await db.exec(readFileSync(new URL("../supabase/migrations/20261013090000_atomic_match_summary_rpc.sql", import.meta.url), "utf8"));
   const legacyRestriction = "    if not p_can_manage_both_sides and v_side is distinct from p_viewer_side then\n      raise exception using errcode = '42501', message = 'Můžete upravit jen statistiky vlastní strany.';\n    end if;";
@@ -35,13 +35,15 @@ before(async () => {
   const accessHotfix = readFileSync(new URL("../supabase/migrations/20261016230000_restore_captain_achievement_access.sql", import.meta.url), "utf8");
   await db.exec(accessHotfix);
   await db.exec(accessHotfix);
+  await db.exec(readFileSync(new URL("../supabase/migrations/20261124120000_match_numeric_last_write.sql", import.meta.url), "utf8"));
+  await db.exec(readFileSync(new URL("../supabase/migrations/20261124130000_match_sheet_disagreements.sql", import.meta.url), "utf8"));
   const { rows } = await db.query("select pg_get_functiondef(oid) as definition from pg_proc where proname = 'match_sheet_commit_numeric_cell'");
-  assert.ok(rows[0].definition.includes("PT409"));
-  assert.ok(!rows[0].definition.includes("40001"));
-  assert.ok(!rows[0].definition.includes("Můžete upravit jen statistiky vlastní strany."));
+  assert.ok(rows[0].definition.includes("match_sheet_commit_numeric_cell_base"));
+
+
 });
 beforeEach(async () => {
-  await db.exec("truncate matches, match_games, match_game_players, match_game_achievements, match_results, match_confirmations, match_sheet_audit_logs;");
+  await db.exec("truncate match_sheet_disagreements, match_sheet_numeric_requests, matches, match_games, match_game_players, match_game_achievements, match_results, match_confirmations, match_sheet_audit_logs;");
   await db.query("insert into matches (id) values ($1)", [match]);
   await db.query("insert into match_games (id,match_id,order_number,game_type,home_legs,away_legs,winner_side) values ($1,$2,1,'singles',3,1,'home')", [game, match]);
   await db.query("insert into match_game_players (match_game_id,player_id,side) values ($1,$2,'home')", [game, player]);
@@ -50,8 +52,8 @@ beforeEach(async () => {
 after(() => db.close());
 async function currentGame() { return (await db.query("select *, updated_at::text as revision from match_games where id=$1", [game])).rows[0]; }
 async function count() { return Number((await db.query("select coalesce(sum(achievement_count),0) as n from match_game_achievements where deleted_at is null")).rows[0].n); }
-async function commit(cell, { requestId = randomUUID(), side = "home", staff = false } = {}) {
-  return (await db.query("select match_sheet_commit_numeric_cell($1,$2::jsonb,$3::match_side,$4,$4,null,null,'captain',null,'captain_sheet',$5) as game", [match, JSON.stringify(cell), side, staff, requestId])).rows[0].game;
+async function commit(cell, { requestId = randomUUID(), side = "home", staff = false, actor = null } = {}) {
+  return (await db.query("select match_sheet_commit_numeric_cell($1,$2::jsonb,$3::match_side,$4,$4,$6,null,'captain',null,'captain_sheet',$5) as game", [match, JSON.stringify(cell), side, staff, requestId, actor])).rows[0].game;
 }
 const achievement = (n, expected = 4) => ({ type: "achievement", order_number: 1, player_id: player, achievement_type: "score_95_plus", achievement_count: n, expected_count: expected });
 
@@ -80,18 +82,54 @@ test("3:3 is rejected without implicitly resetting the other leg field", async (
   assert.equal((await currentGame()).home_legs, 3); assert.equal((await currentGame()).away_legs, 1);
   assert.equal((await db.query("select * from match_sheet_audit_logs")).rows.length, 0);
 });
-test("a second request using an older leg revision conflicts", async () => {
+test("stale revisions update different leg fields independently", async () => {
   const revision = (await currentGame()).revision;
   await commit({ type: "legs", order_number: 1, away_legs: 2, expected_updated_at: revision });
-  await assert.rejects(commit({ type: "legs", order_number: 1, home_legs: 0, expected_updated_at: revision }), { code: "PT409" });
-  assert.equal((await currentGame()).home_legs, 3);
+  await commit({ type: "legs", order_number: 1, home_legs: 0, expected_updated_at: revision });
+  const saved = await currentGame();
+  assert.equal(saved.home_legs, 0); assert.equal(saved.away_legs, 2);
 });
-test("stale achievement edits conflict and audit records the actual old value", async () => {
+test("same-value edits are harmless and later edits log the actual prior value", async () => {
   await commit(achievement(5));
-  await assert.rejects(commit(achievement(0)), { code: "PT409" });
-  assert.equal(await count(), 5);
-  const log = (await db.query("select * from match_sheet_audit_logs where entity_type='match_game_achievement'")).rows[0];
-  assert.equal(log.old_value.achievement_count, 4); assert.equal(log.new_value.achievement_count, 5);
+  await commit(achievement(5));
+  await commit(achievement(0));
+  assert.equal(await count(), 0);
+  const logs = (await db.query("select * from match_sheet_audit_logs where entity_type='match_game_achievement' order by old_value->>'achievement_count'")).rows;
+  assert.equal(logs.length, 2);
+  assert.equal(logs[0].old_value.achievement_count, 4); assert.equal(logs[0].new_value.achievement_count, 5);
+  assert.equal(logs[1].old_value.achievement_count, 5); assert.equal(logs[1].new_value.achievement_count, 0);
+});
+test("different simultaneous values need one confirmation per team; a new edit resets them", async () => {
+  const a = randomUUID(), b = randomUUID();
+  await commit(achievement(5, 4), { actor: a });
+  await commit(achievement(6, 4), { actor: b, side: "away" });
+  let rows = (await db.query("select * from match_sheet_disagreements where resolved_at is null")).rows;
+  assert.equal(rows.length, 1); assert.equal(rows[0].value, 6);
+  await assert.rejects(db.query("insert into match_confirmations (match_id,side) values ($1,'home')", [match]), { code: "PT409" });
+  await db.query("select match_sheet_confirm_disagreement($1,$2,$3,'home',$4)", [match, rows[0].id, rows[0].revision, a]);
+  await commit(achievement(7, 6), { actor: b, side: "away" });
+  let updated = (await db.query("select * from match_sheet_disagreements where id=$1", [rows[0].id])).rows[0];
+  assert.equal(updated.home_confirmed_by, null);
+  await assert.rejects(db.query("select match_sheet_confirm_disagreement($1,$2,$3,'away',$4)", [match, rows[0].id, rows[0].revision, b]), { code: "PT409" });
+  await db.query("select match_sheet_confirm_disagreement($1,$2,$3,'home',$4)", [match, updated.id, updated.revision, a]);
+  await db.query("select match_sheet_confirm_disagreement($1,$2,$3,'away',$4)", [match, updated.id, updated.revision, b]);
+  assert.ok((await db.query("select resolved_at from match_sheet_disagreements where id=$1", [updated.id])).rows[0].resolved_at);
+});
+test("opposite leg fields do not conflict, but differing concurrent edits to the same leg do", async () => {
+  const a = randomUUID(), b = randomUUID(), revision = (await currentGame()).revision;
+  await commit({ type: "legs", order_number: 1, home_legs: 2, expected_count: 3, expected_updated_at: revision }, { actor: a });
+  await commit({ type: "legs", order_number: 1, away_legs: 2, expected_count: 1, expected_updated_at: revision }, { actor: b, side: "away" });
+  assert.equal((await db.query("select * from match_sheet_disagreements")).rows.length, 0);
+  await commit({ type: "legs", order_number: 1, home_legs: 1, expected_count: 3, expected_updated_at: revision }, { actor: b, side: "away" });
+  const rows = (await db.query("select * from match_sheet_disagreements")).rows;
+  assert.equal(rows.length, 1); assert.equal(rows[0].field_key, "game:1:home_legs"); assert.equal(rows[0].value, 1);
+});
+test("same value and edits by the same user do not create disagreement", async () => {
+  const actor = randomUUID();
+  await commit(achievement(5, 4), { actor });
+  await commit(achievement(5, 4), { actor: randomUUID(), side: "away" });
+  await commit(achievement(6, 4), { actor });
+  assert.equal((await db.query("select * from match_sheet_disagreements")).rows.length, 0);
 });
 test("explicit zero is accepted, missing numeric values are rejected", async () => {
   await assert.rejects(commit({ ...achievement(0), achievement_count: undefined }), { code: "22023" });
@@ -105,6 +143,13 @@ test("retry after a lost response cannot roll back a later edit", async () => {
   await commit(achievement(5), { requestId });
   assert.equal(await count(), 6);
   assert.equal((await db.query("select * from match_sheet_audit_logs where entity_type='match_game_achievement'")).rows.length, 2);
+});
+test("a retry of an initially unchanged value cannot overwrite a later edit", async () => {
+  const requestId = randomUUID();
+  await commit(achievement(4), { requestId });
+  await commit(achievement(5));
+  await commit(achievement(4), { requestId });
+  assert.equal(await count(), 5);
 });
 test("summary failure rolls back data and audit together", async () => {
   await db.exec("alter table match_results add constraint reject_test_summary check (home_points < 0);");

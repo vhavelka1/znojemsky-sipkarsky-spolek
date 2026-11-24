@@ -5,7 +5,7 @@ const matchId = "00000000-0000-4000-8000-000000000001";
 const playerId = "00000000-0000-4000-8000-000000000002";
 const sheetPath = `/api/admin/matches/${matchId}/sheet`;
 
-async function mockSheet(page: Page, baseURL: string) {
+async function mockSheet(page: Page, baseURL: string, captainView = false, disagreement = false) {
   expect(["localhost", "127.0.0.1"]).toContain(new URL(baseURL).hostname);
   let env = "";
   try { env = readFileSync(".env.local", "utf8"); } catch { /* placeholder config is supported */ }
@@ -27,8 +27,14 @@ async function mockSheet(page: Page, baseURL: string) {
     players: [{ id: playerId, display_name: "Testovací hráč" }],
     games: [{ id: "game", order_number: 1, game_type: "singles", home_legs: 3, away_legs: 1, winner_side: "home", updated_at: "2026-10-16T17:00:00Z", home_player_ids: [playerId], away_player_ids: [], home_slot_codes: ["1"], away_slot_codes: ["A"] }],
     achievements: [{ id: "achievement", order_number: 1, player_id: playerId, achievement_type: "score_95_plus", achievement_count: 4 }],
-    viewer: { canManageBothSides: true, side: null }, confirmations: [], lineupReveals: [], statistics: [],
+    viewer: { canManageBothSides: true, side: null as "home" | "away" | null }, confirmations: [], lineupReveals: [], statistics: [],
+    disagreements: disagreement ? [{ id: "disagreement", field_key: "game:1:away_legs", value: 1, revision: "revision", home_confirmed_by: null as string | null, away_confirmed_by: null as string | null }] : [],
   };
+  if (captainView) {
+    payload.viewer = { canManageBothSides: false, side: "home" };
+    payload.memberships.push({ team_season_id: "away", player_id: "away-player", member_role: "captain" });
+    payload.players.push({ id: "away-player", display_name: "Hráč soupeře" });
+  }
   const writes: Array<Record<string, unknown>> = [];
   let conflict = false;
   let delay = 0;
@@ -49,6 +55,19 @@ async function mockSheet(page: Page, baseURL: string) {
         payload.games[0].away_legs = 2;
         payload.achievements[0].achievement_count = 6;
         await route.fulfill({ status: 409, json: { error: "Hodnotu mezitím upravil někdo jiný." } });
+        return;
+      }
+      if (cell.type === "disagreement_confirm") {
+        payload.disagreements[0].home_confirmed_by = playerId;
+        await route.fulfill({ json: { ok: true } });
+        return;
+      }
+      if (cell.type === "lineup_reveal") {
+        await route.fulfill({ json: { lineupReveal: { side: cell.side, block_number: cell.block_number, revealed_at: new Date().toISOString() } } });
+        return;
+      }
+      if (cell.type === "player") {
+        await route.fulfill({ json: { game: payload.games[0] } });
         return;
       }
       if (cell.type === "legs") Object.assign(payload.games[0], { ...(cell.home_legs !== undefined ? { home_legs: cell.home_legs } : {}), ...(cell.away_legs !== undefined ? { away_legs: cell.away_legs } : {}), updated_at: "2026-10-16T17:01:00Z" });
@@ -72,11 +91,10 @@ async function mockSheet(page: Page, baseURL: string) {
   };
 }
 
-test("focus, unchanged input and a cleared field never write to the database", async ({ page, baseURL }) => {
+test("focus and a cleared field never write; an explicit same value is safe", async ({ page, baseURL }) => {
   const { writes } = await mockSheet(page, baseURL!);
   const field = page.getByRole("textbox", { name: "Legy hosté hra 1", exact: true });
   await field.focus(); await field.blur();
-  await field.fill("1"); await field.blur();
   await field.fill("");
   await page.waitForTimeout(600);
   expect(writes).toHaveLength(0);
@@ -179,7 +197,7 @@ test("a failed save retains the draft and retries only on request with the same 
   await expect(page.getByRole("alert").filter({ hasText: "Uložení" })).toHaveCount(0);
 });
 
-test("retyping the original number cannot overwrite a newer incoming value", async ({ page, baseURL }) => {
+test("retyping the original number is submitted with its baseline for disagreement detection", async ({ page, baseURL }) => {
   const fixture = await mockSheet(page, baseURL!); fixture.setDelay(600);
   const legs = page.getByRole("textbox", { name: "Legy hosté hra 1", exact: true });
   await legs.fill("2"); await legs.blur();
@@ -190,8 +208,9 @@ test("retyping the original number cannot overwrite a newer incoming value", asy
   await expect(legs).toBeEnabled();
   await expect(statistic).toHaveValue("4");
   await statistic.blur();
-  await expect(statistic).toHaveValue("6");
-  expect(fixture.writes).toHaveLength(1);
+  await expect.poll(() => fixture.writes.length).toBe(2);
+  expect(fixture.writes[1]).toMatchObject({ expected_count: 4, achievement: { achievement_count: 4 } });
+  await expect(statistic).toHaveValue("4");
 });
 
 test("mobile fields autosave without confirmation controls and reject invalid input", async ({ page, baseURL }, testInfo) => {
@@ -209,4 +228,30 @@ test("mobile fields autosave without confirmation controls and reject invalid in
   await page.screenshot({ path: testInfo.outputPath("autosave-fields-mobile.png") });
   await field.blur();
   await expect.poll(() => fixture.writes.length).toBe(1);
+});
+
+
+test("a captain can edit and confirm the grey opponent lineup after a warning", async ({ page, baseURL }) => {
+  const fixture = await mockSheet(page, baseURL!, true);
+  const opponent = page.locator("tr").filter({ has: page.getByRole("textbox", { name: "Legy hosté hra 1", exact: true }) }).locator("select").last();
+  await expect(opponent).toHaveClass(/bg-slate-200/);
+  await opponent.selectOption("away-player");
+  await expect.poll(() => fixture.writes.some((cell) => cell.type === "player" && cell.side === "away" && cell.player_id === "away-player")).toBe(true);
+  const button = page.getByRole("button", { name: "Potvrdit nasazení", exact: true }).nth(1);
+  await expect(button).toHaveClass(/bg-slate-100/);
+  page.once("dialog", async (dialog) => { expect(dialog.message()).toContain("soupeře"); expect(dialog.message()).toContain("zaznamenána"); await dialog.accept(); });
+  await button.click();
+  await expect.poll(() => fixture.writes.some((cell) => cell.type === "lineup_reveal" && cell.side === "away")).toBe(true);
+});
+
+
+test("a disagreement highlights the field and allows only this team's confirmation", async ({ page, baseURL }) => {
+  const fixture = await mockSheet(page, baseURL!, true, true);
+  const field = page.getByRole("textbox", { name: "Legy hosté hra 1", exact: true });
+  await expect(field).toHaveClass(/border-red-600/);
+  const confirm = page.getByRole("button", { name: "Potvrdit neshodu: Legy hosté hra 1", exact: true });
+  await confirm.click();
+  await expect.poll(() => fixture.writes.some((cell) => cell.type === "disagreement_confirm" && cell.revision === "revision")).toBe(true);
+  await expect(confirm).toHaveCount(0);
+  await expect(field).toHaveClass(/border-red-600/);
 });
