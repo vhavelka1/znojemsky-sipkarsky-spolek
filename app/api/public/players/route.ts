@@ -118,6 +118,7 @@ type PlayerStat = {
   teamName: string;
   teamLogoUrl: string | null;
   playedMatches: number;
+  maxPossibleSingles: number;
   wonMatches: number;
   lostMatches: number;
   winPercentage: number;
@@ -174,6 +175,7 @@ function createEmptyStat(player: Player, membership: Membership | null, team: Pu
     teamName: team?.name ?? "Bez týmu",
     teamLogoUrl: team?.logoUrl ?? null,
     playedMatches: 0,
+    maxPossibleSingles: 0,
     wonMatches: 0,
     lostMatches: 0,
     winPercentage: 0,
@@ -537,6 +539,7 @@ export async function GET(request: NextRequest) {
 
       return {
         ...stat,
+        maxPossibleSingles,
         winPercentage: stat.playedMatches > 0 ? Math.round((stat.wonMatches / stat.playedMatches) * 1000) / 10 : 0,
         usefulnessScore: calculateUsefulnessScore(stat, maxPossibleSingles),
       };

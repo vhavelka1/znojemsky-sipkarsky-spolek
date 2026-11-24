@@ -40,6 +40,7 @@ type PlayerStat = {
   teamName: string;
   teamLogoUrl: string | null;
   playedMatches: number;
+  maxPossibleSingles: number;
   wonMatches: number;
   lostMatches: number;
   winPercentage: number;
@@ -173,6 +174,7 @@ export default function PublicPlayersPage() {
   const [playersCount, setPlayersCount] = useState(0);
   const [playerStats, setPlayerStats] = useState<PlayerStat[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [onlyActivePlayers, setOnlyActivePlayers] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,6 +190,9 @@ export default function PublicPlayersPage() {
   const selectedLeague = leagues.find((league) => league.id === filters.leagueId);
   const selectedGroup = groups.find((group) => group.id === filters.groupId);
   const hasPlayedStats = playerStats.some((stat) => stat.playedMatches > 0);
+  const visiblePlayerStats = onlyActivePlayers
+    ? playerStats.filter((stat) => stat.maxPossibleSingles > 0 && stat.playedMatches * 2 > stat.maxPossibleSingles)
+    : playerStats;
 
   useEffect(() => {
     let isMounted = true;
@@ -369,6 +374,10 @@ export default function PublicPlayersPage() {
               />
             </label>
           </div>
+          <label className="mt-5 flex items-center gap-3 text-sm font-bold text-[#061A3A]">
+            <input type="checkbox" checked={onlyActivePlayers} onChange={(event) => setOnlyActivePlayers(event.target.checked)} className="h-4 w-4 accent-[#0F4FA8]" />
+            Zobrazovat jen hráče, kteří odehráli více než polovinu možných dvouher
+          </label>
         </div>
       </section>
 
@@ -396,8 +405,8 @@ export default function PublicPlayersPage() {
             <div className="px-6 py-8 text-sm font-bold text-slate-500">Načítám hráče...</div>
           ) : playersCount === 0 ? (
             <div className="px-6 py-8 text-sm font-bold text-slate-500">Zatím nejsou zadaní žádní hráči.</div>
-          ) : playerStats.length === 0 ? (
-            <div className="px-6 py-8 text-sm font-bold text-slate-500">Zatím nejsou zadaní žádní hráči.</div>
+          ) : visiblePlayerStats.length === 0 ? (
+            <div className="px-6 py-8 text-sm font-bold text-slate-500">Žádní hráči neodpovídají vybraným filtrům.</div>
           ) : (
             <>
               {!hasPlayedStats ? (
@@ -430,7 +439,7 @@ export default function PublicPlayersPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#D8E4F2]">
-                    {playerStats.map((player, index) => (
+                    {visiblePlayerStats.map((player, index) => (
                       <tr className="transition hover:bg-[#F4F8FF]" key={player.playerId}>
                         <td className="px-4 py-4">
                           <span
@@ -477,7 +486,7 @@ export default function PublicPlayersPage() {
               </div>
 
               <div className="grid gap-4 p-4 md:hidden">
-                {playerStats.map((player, index) => (
+                {visiblePlayerStats.map((player, index) => (
                   <article className="rounded-[24px] border border-[#D8E4F2] bg-[#F4F8FF] p-4" key={player.playerId}>
                     <div className="flex items-start justify-between gap-4">
                       <div>
