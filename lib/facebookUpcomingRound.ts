@@ -168,6 +168,16 @@ function roundValue(value: string | number | null | undefined) {
   return null;
 }
 
+// Use the local calendar week, so a match around midnight or a DST change is
+// associated with the same round as it is in the Czech schedule.
+function pragueWeek(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Prague", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+  const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
+  const date = new Date(Date.UTC(part("year"), part("month") - 1, part("day")));
+  date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+  return date.toISOString().slice(0, 10);
+}
+
 function postTypeValue(value: string | null | undefined): FacebookPostType {
   return value === "results" ? "results" : "upcoming";
 }
@@ -412,6 +422,16 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
     ? requestedRound
     : roundValue(nextRound) ?? rounds[0] ?? null;
 
+  // The most common week of a round represents its regular date; individual
+  // moved fixtures must not redefine the round's date.
+  const roundWeeks = new Map<string, number>();
+  for (const match of matchesForLeague) {
+    if (roundValue(match.round_number) !== selectedRound || match.status === "cancelled") continue;
+    const week = pragueWeek(match.scheduled_at);
+    roundWeeks.set(week, (roundWeeks.get(week) ?? 0) + 1);
+  }
+  const selectedRoundWeek = [...roundWeeks.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+
   const teamById = new Map(teams.map((team) => [team.id, team]));
   const teamSeasonById = new Map(teamSeasonRows.map((teamSeason) => [teamSeason.id, teamSeason]));
   const resultByMatchId = new Map(resultRows.map((result) => [result.match_id, result]));
@@ -447,14 +467,17 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
       .filter(
         (match) =>
           match.group_id === group.id &&
-          roundValue(match.round_number) === selectedRound,
+          (roundValue(match.round_number) === selectedRound ||
+            (postType === "upcoming" && selectedRound !== null && selectedRoundWeek !== null &&
+              (roundValue(match.round_number) ?? 0) > selectedRound && match.status !== "cancelled" &&
+              pragueWeek(match.scheduled_at) === selectedRoundWeek)),
       )
       .map((match): FacebookRoundMatch => {
         const result = resultByMatchId.get(match.id);
         const homeTeam = teamPayload(match.home_team_id);
         return {
           id: match.id,
-          roundNumber: selectedRound ?? 0,
+          roundNumber: roundValue(match.round_number) ?? 0,
           scheduledAt: match.scheduled_at,
           playedAt: match.played_at,
           status: match.status,
@@ -467,7 +490,8 @@ export async function loadFacebookUpcomingRound(input: QueryInput): Promise<Face
       });
 
     const playingTeamSeasonIds = new Set(
-      groupRoundMatches.flatMap((match) => [match.homeTeam.teamSeasonId, match.awayTeam.teamSeasonId]),
+      groupRoundMatches.filter((match) => match.roundNumber === selectedRound)
+        .flatMap((match) => [match.homeTeam.teamSeasonId, match.awayTeam.teamSeasonId]),
     );
     const byes = assignmentRows
       .filter(

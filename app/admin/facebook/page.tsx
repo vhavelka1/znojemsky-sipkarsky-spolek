@@ -1,6 +1,7 @@
 "use client";
 
 import { adminFetch } from "@/lib/adminFetch";
+import { scheduleImageHeight } from "@/lib/facebookImageSizes";
 import { Button, Card, PageHeader } from "@/components/ui/admin";
 import { useEffect, useMemo, useState } from "react";
 
@@ -242,7 +243,10 @@ export default function AdminFacebookPage() {
   }
 
   function imageHeight(image: RoundImage) {
-    return image.kind === "standings" ? standingsImageHeight(standingsCountForImage(image)) : 1080;
+    const group = payload?.selectedGroups.find((item) => item.group.id === image.groupId);
+    return image.kind === "standings" ? standingsImageHeight(standingsCountForImage(image))
+      : image.kind === "upcoming_schedule" ? scheduleImageHeight(group?.matches.length ?? 0, Boolean(group?.byes.length))
+      : 1080;
   }
 
   function imageSizeLabel(image: RoundImage) {

@@ -1,3 +1,5 @@
+import { scheduleImageHeight } from "@/lib/facebookImageSizes";
+import { isFinishedMatch } from "@/lib/leagueStandings";
 import * as React from "react";
 import { ImageResponse } from "next/og";
 import {
@@ -288,7 +290,9 @@ function emptyBox(text: string) {
   );
 }
 
-function scheduleRow(match: FacebookRoundMatch, origin: string) {
+function scheduleRow(match: FacebookRoundMatch, origin: string, selectedRound: number | null) {
+  const finished = isFinishedMatch(match);
+  const movedFromRound = match.roundNumber !== selectedRound;
   return h(
     "div",
     {
@@ -302,6 +306,7 @@ function scheduleRow(match: FacebookRoundMatch, origin: string) {
         borderRadius: 26,
         padding: "14px 20px",
         minHeight: 118,
+        flexShrink: 0,
       },
     },
     teamBlock(match.homeTeam, origin, "left"),
@@ -316,7 +321,12 @@ function scheduleRow(match: FacebookRoundMatch, origin: string) {
           flexShrink: 0,
         },
       },
-      h("div", { style: { color: "#EF233C", fontSize: 34, fontWeight: 900 } }, "VS"),
+      h("div", { style: { color: "#EF233C", fontSize: finished ? 29 : 34, fontWeight: 900 } },
+        finished ? (match.result ? `${match.result.homePoints} : ${match.result.awayPoints}` : "– : –") : "VS"),
+      finished || movedFromRound
+        ? h("div", { style: { color: "#0B2F6B", fontSize: 17, fontWeight: 900, textAlign: "center" } },
+            finished ? "ODEHRÁNO" : `${match.roundNumber}. KOLO`)
+        : null,
       h(
         "div",
         {
@@ -373,7 +383,7 @@ function resultRow(match: FacebookRoundMatch, origin: string) {
   );
 }
 
-function byesBox(byes: FacebookTeam[]) {
+function byesBox(byes: FacebookTeam[], roundNumber?: number | null) {
   if (byes.length === 0) return null;
 
   return h(
@@ -396,12 +406,12 @@ function byesBox(byes: FacebookTeam[]) {
         flexShrink: 0,
       },
     },
-    `VOLNO: ${byes.map((team) => team.name).join(", ")}`,
+    `VOLNO${roundNumber ? ` V ${roundNumber}. KOLE` : ""}: ${byes.map((team) => team.name).join(", ")}`,
   );
 }
 
 function renderSchedule(payload: FacebookRoundPayload, groupRound: FacebookGroupRound, origin: string) {
-  const shownMatches = groupRound.matches.slice(0, groupRound.byes.length > 0 ? 5 : 6);
+  const shownMatches = groupRound.matches;
 
   return shell({
     eyebrow: "LIGOVÝ PROGRAM",
@@ -431,10 +441,10 @@ function renderSchedule(payload: FacebookRoundPayload, groupRound: FacebookGroup
           },
         },
         shownMatches.length > 0
-          ? shownMatches.map((match) => scheduleRow(match, origin))
+          ? shownMatches.map((match) => scheduleRow(match, origin, payload.selections.roundNumber))
           : emptyBox("Pro vybrané kolo nejsou zadané zápasy."),
       ),
-      byesBox(groupRound.byes),
+      byesBox(groupRound.byes, payload.selections.roundNumber),
     ),
   });
 }
@@ -601,7 +611,9 @@ export function createFacebookUpcomingRoundImageResponse(
 
   return new ImageResponse(content, {
     width: imageWidth,
-    height: image?.kind === "standings" ? standingsImageHeight(groupRound?.standings.length ?? 0) : defaultImageHeight,
+    height: image?.kind === "standings" ? standingsImageHeight(groupRound?.standings.length ?? 0)
+      : image?.kind === "upcoming_schedule" ? scheduleImageHeight(groupRound?.matches.length ?? 0, Boolean(groupRound?.byes.length))
+      : defaultImageHeight,
     headers: {
       "Cache-Control": "no-store",
     },
